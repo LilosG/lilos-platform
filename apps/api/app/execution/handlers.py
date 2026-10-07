@@ -714,8 +714,6 @@ def _content_rejection_code(safe_message: str) -> str:
 
     if "below the publishing quality floor" in safe_message:
         return ComposeFailureCode.BELOW_QUALITY_FLOOR.value
-    if "overlaps an existing website page" in safe_message:
-        return ComposeFailureCode.TOPIC_OVERLAP.value
     return "CONTENT_GENERATION_REJECTED"
 
 

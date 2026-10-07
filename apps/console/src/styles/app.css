@@ -2386,6 +2386,11 @@ details.activity summary {
   padding: 0;
   margin-bottom: 6px;
 }
+.typechips .chips {
+  flex-wrap: wrap;
+  overflow: visible;
+  padding: 0;
+}
 .typechip {
   display: inline-flex;
   position: relative;

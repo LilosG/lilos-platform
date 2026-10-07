@@ -274,6 +274,29 @@ const failed = v.compose?.status === "failed" && !revision;
         )}
       </section>
 
+      {r.similarPage && (
+        <section class="panel" data-similar-page>
+          <SectionHeading>
+            <Fragment slot="title">
+              Similar page on your site{" "}
+              <StatusBadge text="Heads up" tone="warn" />
+            </Fragment>
+          </SectionHeading>
+          <p class="muted">
+            <a
+              class="link"
+              href={r.similarPage.href}
+              target="_blank"
+              rel="noopener"
+            >
+              {r.similarPage.title}
+            </a>
+            <br />
+            This draft takes a different angle. Review before approving.
+          </p>
+        </section>
+      )}
+
       {r.claims.length > 0 && (
         <section class="panel" data-claims>
           <SectionHeading>

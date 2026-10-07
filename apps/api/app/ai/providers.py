@@ -150,8 +150,11 @@ def _topic_tokens(value: object) -> set[str]:
     return {token for token in tokens if len(token) > 2 and token not in _TOPIC_STOPWORDS}
 
 
-def _find_existing_topic_overlap(input_document: dict[str, Any]) -> str | None:
-    """Return the URL of a strongly overlapping indexed page, when one exists."""
+def _find_existing_topic_overlap(input_document: dict[str, Any]) -> dict[str, str] | None:
+    """Return ``{url, title}`` of a strongly overlapping indexed page, when one exists.
+
+    Advisory only: an operator who asks for a piece is never blocked by similarity.
+    """
     if not _is_article_content_type(input_document.get("content_type")):
         return None
     target_tokens = _topic_tokens(input_document.get("content_title"))
@@ -181,7 +184,10 @@ def _find_existing_topic_overlap(input_document: dict[str, Any]) -> str | None:
         shared = target_tokens & page_tokens
         containment = len(shared) / min(len(target_tokens), len(page_tokens))
         if len(shared) >= 4 and containment >= _TOPIC_OVERLAP_THRESHOLD:
-            return str(page.get("url") or page_title or "existing website page")
+            url = str(page.get("url") or "").strip()
+            if not url:
+                continue
+            return {"url": url, "title": str(page_title or url).strip()}
     return None
 
 
@@ -469,13 +475,13 @@ class OpenRouterProvider:
         ``cost_microunits`` (actual provider-reported USD cost when available).
         """
         del organization_id, location_id
-        if task_key == "content.draft_revision":
-            overlap = _find_existing_topic_overlap(input_document)
-            if overlap:
-                raise AIProviderError(
-                    "permanent",
-                    f"Content topic substantially overlaps an existing website page: {overlap}",
-                )
+        topic_overlap = (
+            _find_existing_topic_overlap(input_document)
+            if task_key == "content.draft_revision"
+            else None
+        )
+        if topic_overlap:
+            input_document = {**input_document, "topic_overlap": topic_overlap}
 
         model = self._default_model
         prompt = _build_prompt(task_key, input_document)
@@ -625,6 +631,8 @@ class OpenRouterProvider:
             "request_id": request_id,
         }
         result.update(content_fields)
+        if topic_overlap:
+            result["topic_overlap"] = topic_overlap
         return result
 
 
@@ -864,6 +872,15 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                 parts.append(
                     "\nOPERATOR PROMPT (claims stated here are verified by the operator and may "
                     f"be asserted):\n{source_prompt}"
+                )
+            overlap = input_document.get("topic_overlap")
+            if isinstance(overlap, dict) and overlap.get("url"):
+                parts.append(
+                    f"\nSIMILAR EXISTING PAGE: the page at {overlap['url']} "
+                    f'("{overlap.get("title") or overlap["url"]}") already covers a related '
+                    "topic. Write a clearly distinct angle: a different search intent and "
+                    "structure, with no duplicated sections. Link to that page naturally "
+                    "as a related read."
                 )
             reviewer_instructions = str(input_document.get("instructions") or "").strip()
             if reviewer_instructions:
