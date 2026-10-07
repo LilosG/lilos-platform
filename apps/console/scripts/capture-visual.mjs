@@ -245,17 +245,13 @@ const hexId = (n) =>
   `${n.toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`;
 const readyDraft = `${site}content/${hexId(0xc1)}/`;
 const referenceContent = `${referenceSite}content/`;
-const referenceOpenContent = async (page) => {
-  await page.getByRole("button", { name: "Edit brief" }).first().click();
-  await page.locator("dialog[open]").waitFor();
-};
 const openComposer = async (page) => {
   await page.getByRole("button", { name: "New content" }).click();
   await page.locator("dialog[open]").waitFor();
   await page
     .getByLabel("What should it be about?")
     .fill("listicle: best places to watch Packers games in San Diego");
-  await page.getByText("Listicle", { exact: true }).click();
+  await page.getByRole("radio", { name: "Listicle" }).check();
 };
 const openApproval = async (page) => {
   await page.getByRole("button", { name: "Confirm" }).click();
@@ -285,7 +281,7 @@ const contentScreens = [
     referenceContent,
     openComposer,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
   [
     "content-empty",
@@ -313,30 +309,30 @@ const contentScreens = [
   ],
   [
     "content-draft-review",
-    "admin",
+    "a",
     readyDraft,
     referenceContent,
     undefined,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
   [
     "content-regenerate",
-    "admin",
+    "a",
     readyDraft,
     referenceContent,
     openRegenerate,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
   [
     "content-approval",
-    "admin",
+    "a",
     readyDraft,
     referenceContent,
     openApproval,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
   [
     "content-writing",
@@ -345,7 +341,7 @@ const contentScreens = [
     referenceContent,
     undefined,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
   [
     "content-failed",
@@ -354,7 +350,7 @@ const contentScreens = [
     referenceContent,
     undefined,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
   [
     "content-landing-page-review",
@@ -363,7 +359,7 @@ const contentScreens = [
     referenceContent,
     undefined,
     scenario("content"),
-    referenceOpenContent,
+    undefined,
   ],
 ];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
