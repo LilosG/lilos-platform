@@ -26,6 +26,7 @@ from sqlalchemy import ColumnElement, Text, and_, cast, exists, func, or_, selec
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
+from apps.api.app.execution.automations import automation_attention_counts
 from apps.api.app.execution.models import Schedule, WorkflowDefinition, WorkflowRun, WorkflowVersion
 from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.industries.models import Industry
@@ -188,6 +189,8 @@ class Facts:
     unresolved: dict[UUID, list[RunRead]] = field(default_factory=dict)
     activity: dict[UUID, list[RunRead]] = field(default_factory=dict)
     next_work: dict[UUID, tuple[str, datetime]] = field(default_factory=dict)
+    # Scheduled automations needing attention per client: the Automations screen's own rule.
+    automations_needing_attention: dict[UUID, int] = field(default_factory=dict)
 
 
 async def load_facts(
@@ -231,6 +234,9 @@ async def load_facts(
             facts.activity,
             facts.next_work,
         ) = await workflows(session, ids, allowed["workflows.read"], start)
+        facts.automations_needing_attention = await automation_attention_counts(
+            session, [i for i in ids if i in allowed["workflows.read"]]
+        )
     return facts
 
 

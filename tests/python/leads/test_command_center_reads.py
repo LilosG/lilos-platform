@@ -293,7 +293,9 @@ def test_only_unresolved_failures_count_as_attention(
     overview = client.get(OVERVIEW.format(org), headers=HEADERS).json()
     assert len(overview["attention"]) == len(items) == 2
     automations = next(s for s in overview["systems"] if s["key"] == "automations")
-    assert automations["status"] == "error"
+    # Automations health counts scheduled automations only (the Automations screen's rule);
+    # these on-demand failures stay in the attention list above but have no schedule.
+    assert automations["status"] == "healthy"
 
     async def resolve(session: AsyncSession) -> None:
         version = await session.scalar(
