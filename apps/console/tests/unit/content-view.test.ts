@@ -17,6 +17,7 @@ import {
   pathOf,
   publicationChip,
   review,
+  authorLabel,
   revisionChip,
   stageChip,
   typeLabel,
@@ -435,5 +436,13 @@ describe("addresses and markdown", () => {
     ]);
     expect(wordCount("Miss B's is a Packers-bar, in San Diego.")).toBe(8);
     expect(wordCount("")).toBe(0);
+  });
+});
+
+describe("who wrote a revision", () => {
+  it("credits the platform, never a model vendor", () => {
+    expect(authorLabel("ai")).toBe("Drafted by LILOs");
+    expect(authorLabel("user")).toBe("Edited by a person");
+    expect(authorLabel("ai")).not.toMatch(/claude|openai|gpt|deepseek/i);
   });
 });

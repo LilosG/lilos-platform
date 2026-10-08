@@ -4,6 +4,7 @@ import LandingPageDialog from "./LandingPageDialog.astro";
 import type { ContentView } from "../../adapters/website-content";
 import {
   approvalStage,
+  authorLabel,
   exactChange,
   failureFor,
   review as buildReview,
@@ -132,11 +133,7 @@ const failed = v.compose?.status === "failed" && !revision;
           <div>
             Revision
             <strong>{revision.revision_number}</strong>
-            <small>
-              {revision.created_by_type === "ai"
-                ? "Written by Claude"
-                : "Edited by a person"}
-            </small>
+            <small>{authorLabel(revision.created_by_type)}</small>
           </div>
         </div>
         {r.checks.length > 0 && (
