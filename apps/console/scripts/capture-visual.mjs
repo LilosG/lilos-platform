@@ -362,6 +362,100 @@ const contentScreens = [
     undefined,
   ],
 ];
+// Step 8: Automations. The reference's Automations screen (and its dialog) stand in for each
+// console screen; the console shows each in the simulator scenario that exercises it.
+const automationsScenario = (mode) => () =>
+  fetch(`${beta}/test/automations-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+const referenceAutomations = "/automations/";
+const referenceClientAutomations = "/clients/coco-maya/automations/";
+const referenceAllAutomations = async (page) => {
+  await page.getByRole("button", { name: "All automations" }).first().click();
+};
+const referenceInvestigate = async (page) => {
+  await page.getByRole("button", { name: "Investigate" }).first().click();
+  await page.locator("dialog[open]").waitFor();
+};
+const alphaAutomations = "/clients/synthetic-alpha/automations/";
+const gbpPerformance = "a0a0a0a0-0000-4000-8000-000000000002";
+const runNowBlocked = async (page) => {
+  await page.getByRole("button", { name: "Run now" }).click();
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Run did not start" })
+    .waitFor();
+};
+const automationScreens = [
+  [
+    "automations-overview",
+    "admin",
+    "/automations/",
+    referenceAutomations,
+    undefined,
+    automationsScenario("default"),
+  ],
+  [
+    "automations-attention",
+    "admin",
+    "/automations/?status=needs_attention",
+    referenceAutomations,
+    undefined,
+    automationsScenario("default"),
+  ],
+  [
+    "automations-filtered-list",
+    "admin",
+    "/automations/?view=all&status=needs_attention",
+    referenceAutomations,
+    undefined,
+    automationsScenario("default"),
+    referenceAllAutomations,
+  ],
+  [
+    "automations-run-dialog",
+    "admin",
+    `/automations/${gbpPerformance}/`,
+    referenceAutomations,
+    undefined,
+    automationsScenario("default"),
+    referenceInvestigate,
+  ],
+  [
+    "automations-run-failed",
+    "a",
+    `${alphaAutomations}${gbpPerformance}/`,
+    referenceAutomations,
+    runNowBlocked,
+    automationsScenario("busy"),
+    referenceInvestigate,
+  ],
+  [
+    "automations-client",
+    "a",
+    alphaAutomations,
+    referenceClientAutomations,
+    undefined,
+    automationsScenario("default"),
+  ],
+  [
+    "automations-empty",
+    "a",
+    alphaAutomations,
+    referenceClientAutomations,
+    undefined,
+    automationsScenario("empty"),
+  ],
+  [
+    "automations-error",
+    "a",
+    alphaAutomations,
+    referenceClientAutomations,
+    undefined,
+    automationsScenario("error"),
+  ],
+];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
 // states (trend, no previous period, not connected) are on screen.
 const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
@@ -427,11 +521,13 @@ const activeScreens =
         ? contentScreens
         : stepName === "step-5a"
           ? websiteScreens
-          : stepName === "step-6"
-            ? reviewScreens
-            : stepName === "special-hours-publish"
-              ? screens.filter(([name]) => name === "special-hours-list")
-              : screens;
+          : stepName === "step-8-automations"
+            ? automationScreens
+            : stepName === "step-6"
+              ? reviewScreens
+              : stepName === "special-hours-publish"
+                ? screens.filter(([name]) => name === "special-hours-list")
+                : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
