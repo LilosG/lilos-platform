@@ -132,11 +132,6 @@ const failed = v.compose?.status === "failed" && !revision;
           <div>
             Revision
             <strong>{revision.revision_number}</strong>
-            <small>
-              {revision.created_by_type === "ai"
-                ? "Written by Claude"
-                : "Edited by a person"}
-            </small>
           </div>
         </div>
         {r.checks.length > 0 && (
@@ -453,10 +448,7 @@ const failed = v.compose?.status === "failed" && !revision;
         </SectionHeading>
         {r.revisions.map((entry) => (
           <div class="listrow" data-revision>
-            <div>
-              {entry.label}
-              <small>{entry.author}</small>
-            </div>
+            <div>{entry.label}</div>
             <StatusBadge text={entry.chip.label} tone={entry.chip.tone} />
           </div>
         ))}

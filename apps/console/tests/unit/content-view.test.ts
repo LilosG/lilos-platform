@@ -354,13 +354,13 @@ describe("the draft review", () => {
       "Confirmed",
     ]);
   });
-  it("lists revisions with who wrote them", () => {
+  it("lists revisions without saying who wrote them", () => {
     const r = review(detail());
     expect(r.revisions[0]).toMatchObject({
       label: "Revision 1",
-      author: "Edited by a person",
       current: true,
     });
+    expect(r.revisions[0]).not.toHaveProperty("author");
   });
   it("has no floor, checks or links for a revision the writing service did not record", () => {
     const base = detail();

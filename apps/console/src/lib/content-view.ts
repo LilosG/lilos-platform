@@ -269,7 +269,6 @@ export interface ClaimRow {
 export interface RevisionRow {
   id: string;
   label: string;
-  author: string;
   chip: Chip;
   current: boolean;
 }
@@ -415,8 +414,6 @@ export function review(view: ContentView): Review {
     revisions: view.revisions.map((r, index) => ({
       id: r.id,
       label: `Revision ${r.revision_number}`,
-      author:
-        r.created_by_type === "ai" ? "Written by Claude" : "Edited by a person",
       chip: revisionChip(r.status),
       current: index === 0,
     })),
