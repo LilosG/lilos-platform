@@ -48,6 +48,11 @@ from apps.api.app.locations.models import Location
 CONSUMABLE_WORKFLOW_RUN_STATUSES = {"created", "queued"}
 # Resumable workflows that legitimately run longer than the default job budget.
 LONG_RUNNING = frozenset({"organization.remove"})
+# Per-workflow durable job budget, in seconds, where the 300s queue default is too
+# short. Content AI calls may run up to 180s (plan) + 240s (draft) + one 240s
+# quality repair; the budget must outlast that so the worker neither abandons nor
+# re-runs a slow draft. The worker renews the 60s lease by heartbeat throughout.
+WORKFLOW_JOB_TIMEOUT_SECONDS = {"content.compose": 900, "content.draft_revision": 900}
 
 
 class IdempotencyConflict(ValueError):
@@ -180,6 +185,7 @@ class ExecutionService:
         *,
         trigger_type: str = "api",
         enqueue_job: bool = True,
+        job_timeout_seconds: int | None = None,
     ) -> tuple[WorkflowRun, bool]:
         """Create (or idempotently return) a durable workflow run.
 
@@ -224,6 +230,11 @@ class ExecutionService:
                     status="queued",
                     idempotency_key=f"run:{run.id}",
                     payload={"run_id": str(run.id)},
+                    **(
+                        {}
+                        if job_timeout_seconds is None
+                        else {"timeout_seconds": job_timeout_seconds}
+                    ),
                 )
             )
             await session.flush()
@@ -410,6 +421,7 @@ class ExecutionService:
                 correlation_id,
                 trigger_type="api",
                 enqueue_job=enqueue_job,
+                job_timeout_seconds=WORKFLOW_JOB_TIMEOUT_SECONDS.get(workflow_key),
             )
         except IdempotencyConflict as error:
             raise WorkflowIdempotencyConflictError from error

@@ -54,6 +54,7 @@ from apps.api.app.products.content.service import (
 from apps.api.app.products.seo.models import SEOOpportunity, SEOWebsite
 
 PLAN_TASK_KEY = "content.compose_plan"
+PLAN_AI_LATENCY_MS = 180_000  # plan call; never the stored task value
 _SLUG = re.compile(r"[^a-z0-9]+")
 _SLUG_VALID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # Listicles, roundups and guides are articles; the rest are pages.
@@ -475,7 +476,7 @@ class ContentComposeService:
             input_references=(item.id,),
             approved_fact_revision_ids=fact_ids,
             maximum_cost_microunits=task.maximum_cost_microunits,
-            maximum_latency_ms=task.maximum_latency_ms,
+            maximum_latency_ms=PLAN_AI_LATENCY_MS,
         )
         output = await self.gateway.execute(request)
         plan = build_plan(
@@ -545,7 +546,7 @@ class ContentComposeService:
                 output_schema={"plan": "object"},
                 risk_level="low",
                 maximum_cost_microunits=0,
-                maximum_latency_ms=120_000,
+                maximum_latency_ms=PLAN_AI_LATENCY_MS,
                 requires_human_review=True,
                 retention_policy_key="content.ai_draft.default",
                 status="active",

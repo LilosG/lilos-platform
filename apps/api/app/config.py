@@ -177,7 +177,10 @@ class Settings(BaseSettings):
     # Exists because the two providers are not interchangeable: see
     # DIRECT_GENERATION_TASK_KEYS in apps.api.app.ai.factory.
     ai_task_provider_overrides: Annotated[str, Field(max_length=4_096)] = ""
+    # Default HTTP timeout, used only when a request carries no maximum_latency_ms.
     ai_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 60.0
+    # Ceiling on any per-request maximum_latency_ms.
+    ai_max_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 300.0
     ai_max_output_tokens: Annotated[int, Field(ge=1, le=32_768)] = 2_000
     ai_content_max_output_tokens: Annotated[int, Field(ge=2_000, le=32_768)] = 7_000
     ai_maximum_cost_microunits: Annotated[int, Field(ge=0, le=10_000_000)] = 200_000
