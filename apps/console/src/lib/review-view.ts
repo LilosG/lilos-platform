@@ -150,14 +150,6 @@ export function sourceView(source: ReviewsView["source"]): SourceView {
   };
 }
 
-/** Facts a response may draw on: a readable name and value, never a key or JSON. */
-export function factLabel(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean")
-    return String(value);
-  return "On file";
-}
-
 type Response = ReviewDetailView["responses"][number];
 const responseChips: Record<Response["status"], Chip> = {
   draft: { label: "Draft", tone: "neutral" },

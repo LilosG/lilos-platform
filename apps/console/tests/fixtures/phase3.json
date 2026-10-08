@@ -140,13 +140,7 @@
       "reviewer_photo_url": null,
       "response_text": null
     },
-    "facts": [
-      {
-        "id": "88888888-8888-4888-8888-888888888888",
-        "key": "business.name",
-        "value": "Synthetic business"
-      }
-    ],
+    "has_approved_facts": true,
     "can_draft": true,
     "can_ai_draft": true,
     "can_read_audit": true,

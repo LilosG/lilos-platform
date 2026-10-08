@@ -24,7 +24,11 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
-from apps.api.app.products.content.service import FactResolutionError, resolve_governed_facts
+from apps.api.app.products.content.service import (
+    FactResolutionError,
+    approved_governed_facts,
+    resolve_governed_facts,
+)
 from apps.api.app.products.reviews.errors import (
     GroundingRequiredError,
     InvalidReviewQueryError,
@@ -801,14 +805,13 @@ class ReviewService:
         review_revision_id: UUID,
         text: str,
         generated_by_type: str,
-        fact_ids: list[UUID],
+        fact_ids: list[UUID] | None,
         actor_id: UUID | None,
         correlation_id: str,
         ai_execution_id: UUID | None = None,
     ) -> ReviewResponseRevision:
         validate_draft(text)
-        if not fact_ids:
-            raise GroundingRequiredError
+        fact_ids = await self._grounding_fact_ids(session, organization_id, location_id, fact_ids)
         review = await session.scalar(
             select(Review).where(
                 Review.organization_id == organization_id,
@@ -871,6 +874,26 @@ class ReviewService:
         )
         return item
 
+    async def has_approved_facts(
+        self, session: AsyncSession, organization_id: UUID, location_id: UUID
+    ) -> bool:
+        return bool(await approved_governed_facts(session, organization_id, location_id, limit=1))
+
+    async def _grounding_fact_ids(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        fact_ids: list[UUID] | None,
+    ) -> list[UUID]:
+        """The fact revisions a response is grounded in: those given, else the current ones."""
+        if fact_ids:
+            return fact_ids
+        facts = await approved_governed_facts(session, organization_id, location_id)
+        if not facts:
+            raise GroundingRequiredError
+        return [UUID(fact["revision_id"]) for fact in facts]
+
     async def generate_ai_draft(
         self,
         session: AsyncSession,
@@ -879,7 +902,7 @@ class ReviewService:
         location_id: UUID,
         review_id: UUID,
         review_revision_id: UUID,
-        fact_ids: list[UUID],
+        fact_ids: list[UUID] | None,
         idempotency_key: str,
         actor_id: UUID | None,
         correlation_id: str,
@@ -890,8 +913,7 @@ class ReviewService:
         fixture in local/test). Always requires human approval before
         publication.
         """
-        if not fact_ids:
-            raise GroundingRequiredError
+        fact_ids = await self._grounding_fact_ids(session, organization_id, location_id, fact_ids)
         revision = await session.scalar(
             select(ReviewRevision)
             .join(Review, Review.id == ReviewRevision.review_id)

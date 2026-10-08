@@ -18,14 +18,13 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
-from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest
 from apps.api.app.ai.models import AITaskDefinition
 from apps.api.app.execution.models import WorkflowRun
@@ -49,7 +48,7 @@ from apps.api.app.products.content.models import (
 )
 from apps.api.app.products.content.service import (
     ContentService,
-    GovernedFact,
+    approved_governed_facts,
     record_operator_claim,
 )
 from apps.api.app.products.seo.models import SEOOpportunity, SEOWebsite
@@ -414,17 +413,11 @@ class ContentComposeService:
             if isinstance(row, dict)
         }
 
-        # The operator's prompt is itself a verified statement. Recording it first gives the
-        # gateway its required approved-fact grounding on a client with no other facts.
-        prompt_fact = await record_operator_claim(
-            session,
-            organization_id,
-            item.location_id,
-            f"Operator prompt: {prompt}",
-            user_id or item.organization_id,
-            source="operator_prompt",
-        )
-        facts = await self._approved_facts(session, organization_id, item.location_id)
+        # The prompt is an instruction, not a business fact: it stays on the brief as
+        # `source_prompt`. Only the claims it makes are recorded as facts, below.
+        facts = await approved_governed_facts(session, organization_id, item.location_id)
+        if not facts:
+            raise ComposeFailure(ComposeFailureCode.NO_APPROVED_FACTS)
         existing = list(
             await session.scalars(
                 select(ContentItem).where(
@@ -493,7 +486,7 @@ class ContentComposeService:
         )
 
         # What the prompt itself claims, recorded honestly as operator-verified facts.
-        claim_fact_ids = [prompt_fact.id]
+        claim_fact_ids: list[UUID] = []
         for claim in plan.prompt_claims:
             fact = await record_operator_claim(
                 session,
@@ -535,35 +528,6 @@ class ContentComposeService:
             correlation_id=correlation_id,
         )
         return brief
-
-    async def _approved_facts(
-        self, session: AsyncSession, organization_id: UUID, location_id: UUID | None
-    ) -> list[GovernedFact]:
-        rows = await session.scalars(
-            select(BusinessFactRevision)
-            .where(
-                BusinessFactRevision.organization_id == organization_id,
-                BusinessFactRevision.status.in_(("approved", "active")),
-                or_(
-                    BusinessFactRevision.location_id.is_(None),
-                    BusinessFactRevision.location_id == location_id,
-                ),
-            )
-            .order_by(BusinessFactRevision.created_at.desc())
-            .limit(80)
-        )
-        return [
-            cast(
-                GovernedFact,
-                {
-                    "fact_key": r.fact_key,
-                    "value": r.value,
-                    "authority": r.authority,
-                    "revision_id": str(r.id),
-                },
-            )
-            for r in rows
-        ]
 
     async def _plan_task(self, session: AsyncSession) -> AITaskDefinition:
         task = await session.scalar(

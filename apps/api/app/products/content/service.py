@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime
 from typing import TypedDict, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
@@ -211,6 +211,41 @@ async def resolve_governed_facts(
             }
         )
     return results
+
+
+APPROVED_FACT_LIMIT = 100
+
+
+async def approved_governed_facts(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID | None,
+    *,
+    limit: int = APPROVED_FACT_LIMIT,
+) -> list[GovernedFact]:
+    """The current approved facts for a location: org-wide plus that location, newest first."""
+    rows = await session.scalars(
+        select(BusinessFactRevision)
+        .where(
+            BusinessFactRevision.organization_id == organization_id,
+            BusinessFactRevision.status.in_(("approved", "active")),
+            or_(
+                BusinessFactRevision.location_id.is_(None),
+                BusinessFactRevision.location_id == location_id,
+            ),
+        )
+        .order_by(BusinessFactRevision.created_at.desc())
+        .limit(limit)
+    )
+    return [
+        {
+            "fact_key": r.fact_key,
+            "value": r.value,
+            "authority": r.authority,
+            "revision_id": str(r.id),
+        }
+        for r in rows
+    ]
 
 
 CONTENT_AI_LATENCY_MS = 120_000  # 2 minutes, realistic for content generation

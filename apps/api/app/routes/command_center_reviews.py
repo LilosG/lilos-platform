@@ -6,9 +6,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, JsonValue, TypeAdapter
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
-from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.execution.models import WorkflowRun
@@ -151,7 +150,7 @@ class ReviewDetail(BaseModel):
     location_id: UUID
     review: ReviewInventoryItem
     source: ReviewSource
-    facts: list[ReviewFact]
+    has_approved_facts: bool
     can_draft: bool
     can_ai_draft: bool
     responses: list[ResponseState]
@@ -331,21 +330,7 @@ async def detail(
     review, _ = await service.get(session, organization_id, review_id)
     if review.location_id != location_id:
         raise ReviewNotFoundError
-    facts = list(
-        await session.scalars(
-            select(BusinessFactRevision)
-            .where(
-                BusinessFactRevision.organization_id == organization_id,
-                BusinessFactRevision.status.in_(("approved", "active")),
-                or_(
-                    BusinessFactRevision.location_id.is_(None),
-                    BusinessFactRevision.location_id == location_id,
-                ),
-            )
-            .order_by(BusinessFactRevision.fact_key, BusinessFactRevision.id)
-            .limit(50)
-        )
-    )
+    has_facts = await service.has_approved_facts(session, organization_id, location_id)
     can_generate = await allowed(
         session,
         principal,
@@ -441,9 +426,9 @@ async def detail(
         location_id=location_id,
         review=view,
         source=await source_view(session, organization_id, location_id, True),
-        facts=[ReviewFact(id=fact.id, key=fact.fact_key, value=fact.value) for fact in facts],  # type: ignore[arg-type]
-        can_draft=can_generate and bool(facts) and view.revision_id is not None,
-        can_ai_draft=can_generate and bool(facts) and view.revision_id is not None,
+        has_approved_facts=has_facts,
+        can_draft=can_generate and has_facts and view.revision_id is not None,
+        can_ai_draft=can_generate and has_facts and view.revision_id is not None,
         responses=responses,
         can_read_audit=can_audit,
         history=await history(

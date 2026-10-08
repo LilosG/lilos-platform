@@ -44,7 +44,7 @@ from apps.api.app.products.content.models import (
     ContentRevision,
 )
 from apps.api.app.products.content.operator_service import ContentOperatorService
-from apps.api.app.products.content.service import ContentService
+from apps.api.app.products.content.service import ContentService, record_operator_claim
 from apps.api.app.products.seo.models import SEOPage, SEOWebsite
 
 from .draft_builder import build_draft
@@ -141,7 +141,11 @@ class World:
 
 
 async def seed_world(
-    session: AsyncSession, *, pages: list[str] | None = None, org_id: UUID | None = None
+    session: AsyncSession,
+    *,
+    pages: list[str] | None = None,
+    org_id: UUID | None = None,
+    with_facts: bool = True,
 ) -> World:
     world = World()
     if org_id:
@@ -191,6 +195,15 @@ async def seed_world(
     session.add(website)
     await session.flush()
     world.website = website.id
+    if with_facts:
+        await record_operator_claim(
+            session,
+            world.org,
+            world.location,
+            "Miss B's is a neighborhood sports bar.",
+            world.user,
+            source="organization_profile",
+        )
     for path in PAGES if pages is None else pages:
         session.add(
             SEOPage(
@@ -291,11 +304,9 @@ async def test_prompt_becomes_item_brief_and_draft_with_claims_as_operator_facts
                 )
             )
         )
-        claim = next(
-            f
-            for f in facts
-            if "Green Bay Packers bar" in str(f.value) and "Operator" not in str(f.value)
-        )
+        # An instruction is not a business fact: the raw prompt is never stored as one.
+        assert not any(PROMPT in str(f.value) or "Operator prompt" in str(f.value) for f in facts)
+        claim = next(f for f in facts if "Green Bay Packers bar" in str(f.value))
         assert claim.authority == "operator_verified"
         assert claim.status == "active"
         assert claim.proposed_by == world.user and claim.approved_by == world.user
@@ -483,6 +494,28 @@ async def test_draft_below_the_floor_is_repaired_once_then_fails_with_a_typed_co
         await session.refresh(item)
         assert item.status == "failed"
         assert len([r for r in always_thin.requests if r.task_key == "content.draft_revision"]) == 2
+
+
+@pytest.mark.anyio
+async def test_a_client_with_no_approved_facts_fails_typed_and_stores_no_prompt_fact(
+    content_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gateway = ScriptedGateway([draft_payload()])
+    use_gateway(monkeypatch, gateway)
+    async with content_session_factory() as session:
+        world = await seed_world(session, with_facts=False)
+        _, run_input, run = await start(session, world)
+        outcome = await run_compose(session, world, run_input, run.id)
+        assert outcome.safe_error == "CONTENT_NO_APPROVED_FACTS"
+        assert gateway.requests == []
+        stored = list(
+            await session.scalars(
+                select(BusinessFactRevision).where(
+                    BusinessFactRevision.organization_id == world.org
+                )
+            )
+        )
+        assert stored == []
 
 
 @pytest.mark.anyio

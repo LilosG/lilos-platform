@@ -108,6 +108,7 @@ describe("why a piece could not be written", () => {
   it("gives every typed code its own reason and never echoes the code", () => {
     for (const code of [
       "CONTENT_WEBSITE_NOT_CRAWLED",
+      "CONTENT_NO_APPROVED_FACTS",
       "CONTENT_BELOW_QUALITY_FLOOR",
       "CONTENT_PLAN_INVALID",
       "AI_PROVIDER_CONFIGURATION_ERROR",

@@ -2270,19 +2270,6 @@ button.statuschip .badge {
 .detailhead {
   margin: 4px 0 0;
 }
-.factpick {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-weight: 400;
-}
-.formgrid fieldset {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 0;
-}
 details.activity {
   margin-top: 18px;
 }
@@ -2300,15 +2287,6 @@ details.activity summary {
   .metrics.cols3 {
     grid-template-columns: 1fr;
   }
-}
-.formgrid .factpick {
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-start;
-}
-.formgrid .factpick input {
-  width: auto;
-  flex: none;
 }
 /* Website & Content */
 .sitelabel {
