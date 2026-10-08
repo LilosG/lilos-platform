@@ -423,13 +423,24 @@ def outcome_of(run: RunSnapshot) -> RunOutcome:
     }.get(status, RunOutcome.FAILED)
 
 
-def attention_of(run: RunSnapshot) -> Attention | None:
-    """The reason and recovery actions when this (latest) run needs a person, else None."""
-    if treatment_of(run) is not Treatment.ATTENTION:
+def run_reason(run: RunSnapshot) -> AutomationReason | None:
+    """Why a stopped run did not simply succeed, whether or not it needs a person."""
+    if (
+        run.status in (RunStatus.COMPLETED, RunStatus.CANCELLED)
+        or run.status in IN_PROGRESS_STATUSES
+    ):
         return None
     reason = reason_of(run.failure_code)
     if reason is AutomationReason.UNMAPPED and run.status in _STATUS_REASON:
-        reason = _STATUS_REASON[run.status]
+        return _STATUS_REASON[run.status]
+    return reason
+
+
+def attention_of(run: RunSnapshot) -> Attention | None:
+    """The reason and recovery actions when this (latest) run needs a person, else None."""
+    reason = run_reason(run)
+    if reason is None or treatment_of(run) is not Treatment.ATTENTION:
+        return None
     policy = FAILURE_POLICY.get(reason)
     return Attention(
         reason=reason,

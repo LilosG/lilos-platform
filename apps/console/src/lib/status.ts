@@ -172,3 +172,22 @@ export function reviewStateOf(
 }
 export const reviewChip = (status: string, response: string | null): Chip =>
   reviewChips[reviewStateOf(status, response)];
+
+/** An automation's state (and its latest run's outcome) as a chip; the label is ours, never the API's. */
+export const automationChips = {
+  needs_attention: { label: "Needs attention", tone: "error" },
+  running: { label: "Running", tone: "neutral" },
+  healthy: { label: "Healthy", tone: "" },
+  paused: { label: "Paused", tone: "neutral" },
+  not_run_yet: { label: "Not run yet", tone: "neutral" },
+} as const satisfies Record<string, Chip>;
+export const outcomeChips = {
+  succeeded: { label: "Completed", tone: "" },
+  partial: { label: "Partly completed", tone: "warn" },
+  failed: { label: "Failed", tone: "error" },
+  will_retry: { label: "Will retry", tone: "neutral" },
+  needs_decision: { label: "Needs a decision", tone: "error" },
+  cancelled: { label: "Cancelled", tone: "neutral" },
+  expired: { label: "Expired", tone: "warn" },
+  in_progress: { label: "Running", tone: "neutral" },
+} as const satisfies Record<string, Chip>;

@@ -303,3 +303,99 @@ export function reviewDate(iso: string, now: Date): string {
   if (days < 35) return `${Math.floor(days / 7)} weeks ago`;
   return dateText(iso);
 }
+
+const clockIn = (iso: string, timeZone: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(iso));
+/** "Today · 6:00 AM" or "Oct 5 · 7:00 AM" in the display zone. An ISO string is never shown. */
+export const runTime = (iso: string | null, now: Date): string =>
+  iso ? `${when(iso, now)} · ${clockIn(iso, DISPLAY_TIME_ZONE)}` : "";
+export function durationText(seconds: number | null): string {
+  if (seconds === null) return "";
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60
+    ? `${minutes} min`
+    : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+const WEEKDAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+const ordinal = (day: number) => {
+  const tail = day % 100;
+  const suffix =
+    tail >= 11 && tail <= 13
+      ? "th"
+      : ({ 1: "st", 2: "nd", 3: "rd" }[day % 10] ?? "th");
+  return `${day}${suffix}`;
+};
+export interface FrequencyLike {
+  kind:
+    | "interval_minutes"
+    | "hourly"
+    | "interval_hours"
+    | "daily"
+    | "weekly"
+    | "monthly"
+    | "custom";
+  interval: number | null;
+  hour: number | null;
+  minute: number | null;
+  weekday: number | null;
+  day_of_month: number | null;
+  timezone: string;
+}
+/**
+ * A schedule as words, in the schedule's own clock: "Daily · 6:00 AM", "Every 30 minutes".
+ * The zone is named only when it differs from the display zone.
+ */
+export function frequencyText(freq: FrequencyLike, now: Date): string {
+  const clock = () =>
+    freq.hour === null
+      ? ""
+      : clockText(`${freq.hour}:${String(freq.minute ?? 0).padStart(2, "0")}`) +
+        zone();
+  const zone = () => {
+    if (freq.timezone === DISPLAY_TIME_ZONE) return "";
+    try {
+      const name = new Intl.DateTimeFormat("en-US", {
+        timeZone: freq.timezone,
+        timeZoneName: "short",
+      })
+        .formatToParts(now)
+        .find((part) => part.type === "timeZoneName")?.value;
+      return name ? ` ${name}` : "";
+    } catch {
+      return "";
+    }
+  };
+  switch (freq.kind) {
+    case "interval_minutes":
+      return freq.interval === 1
+        ? "Every minute"
+        : `Every ${freq.interval} minutes`;
+    case "hourly":
+      return freq.minute
+        ? `Hourly · :${String(freq.minute).padStart(2, "0")}`
+        : "Hourly";
+    case "interval_hours":
+      return freq.interval === 1 ? "Hourly" : `Every ${freq.interval} hours`;
+    case "daily":
+      return `Daily · ${clock()}`;
+    case "weekly":
+      return `Weekly · ${WEEKDAYS[freq.weekday ?? 0]} · ${clock()}`;
+    case "monthly":
+      return `Monthly · ${ordinal(freq.day_of_month ?? 1)} · ${clock()}`;
+    case "custom":
+      return "Custom schedule";
+  }
+}

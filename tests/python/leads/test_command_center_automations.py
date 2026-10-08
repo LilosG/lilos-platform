@@ -209,6 +209,7 @@ def test_attention_rules_on_real_rows_and_tenant_isolation(
     assert items["seo.crawl_or_analysis"]["frequency"]["kind"] == "weekly"
     limited = items["insights.sync_analytics"]
     assert limited["status"] == "healthy" and limited["latest_run"]["outcome"] == "will_retry"
+    assert limited["latest_run"]["reason"] == "GBP_PERFORMANCE_RATE_LIMITED"
     assert items["gbp.generate_post"]["run_now_allowed"] is False
     assert items["reviews.ingest"]["run_now_allowed"] is True
     assert items["gbp.sync"]["run_now_allowed"] is False  # paused

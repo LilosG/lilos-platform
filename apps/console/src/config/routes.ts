@@ -64,7 +64,6 @@ export const clientRoute = (slug: string, area: ProductArea = "Overview") =>
   `/clients/${slug}/` + (area === "Overview" ? "" : `${slugify(area)}/`);
 /** Every area that has no screen yet resolves to one typed state, never to fake content. */
 export const clientAreaSlugs: Record<string, ProductArea> = {
-  automations: "Automations",
   reports: "Reports",
   settings: "Settings",
 };

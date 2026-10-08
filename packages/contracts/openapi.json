@@ -5057,6 +5057,16 @@
           "outcome": {
             "$ref": "#/components/schemas/RunOutcome"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomationReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "started_at": {
             "anyOf": [
               {
@@ -5076,6 +5086,7 @@
         "required": [
           "status",
           "outcome",
+          "reason",
           "started_at",
           "finished_at"
         ],

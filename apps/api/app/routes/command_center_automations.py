@@ -31,6 +31,7 @@ from apps.api.app.execution.automations import (
     load_automations,
     outcome_of,
     parse_frequency,
+    run_reason,
     source_of,
 )
 from apps.api.app.execution.service import ExecutionService
@@ -107,6 +108,8 @@ class Frequency(DTO):
 class LatestRun(DTO):
     status: RunStatus
     outcome: RunOutcome
+    # Why the run did not simply succeed, including causes that fix themselves.
+    reason: AutomationReason | None
     started_at: datetime | None
     finished_at: datetime | None
 
@@ -171,6 +174,7 @@ def latest_view(run: RunSnapshot) -> LatestRun:
     return LatestRun(
         status=run.status,
         outcome=outcome_of(run),
+        reason=run_reason(run),
         started_at=run.started_at,
         finished_at=run.finished_at,
     )
@@ -214,7 +218,6 @@ def item_of(record: AutomationRecord, organization: Organization) -> AutomationI
 
 
 def history_of(run: RunSnapshot) -> RunHistoryItem:
-    attention = attention_of(run)
     duration = (
         int((run.finished_at - run.started_at).total_seconds())
         if run.started_at and run.finished_at
@@ -224,7 +227,7 @@ def history_of(run: RunSnapshot) -> RunHistoryItem:
         id=run.id,
         status=run.status,
         outcome=outcome_of(run),
-        reason=attention.reason if attention else None,
+        reason=run_reason(run),
         started_at=run.started_at,
         finished_at=run.finished_at,
         duration_seconds=max(duration, 0) if duration is not None else None,

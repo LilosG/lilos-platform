@@ -7175,6 +7175,7 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
             outcome: components["schemas"]["RunOutcome"];
+            reason: components["schemas"]["AutomationReason"] | null;
             /** Started At */
             started_at: string | null;
             status: components["schemas"]["RunStatus"];
