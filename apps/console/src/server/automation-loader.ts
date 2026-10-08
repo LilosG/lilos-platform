@@ -4,11 +4,21 @@ import {
   type AutomationDetailView,
   type AutomationsView,
 } from "../adapters/automations";
-import { parseFilters, type Filters } from "../lib/automation-view";
+import {
+  multiLocationClients,
+  parseFilters,
+  type Filters,
+} from "../lib/automation-view";
 import { APIError, read } from "./bff";
 export type AutomationsPage =
   | { kind: "list"; view: AutomationsView; filters: Filters }
-  | { kind: "detail"; detail: AutomationDetailView; filters: Filters }
+  | {
+      kind: "detail";
+      detail: AutomationDetailView;
+      filters: Filters;
+      /** Clients whose automations span several locations, so the dialog names the location. */
+      multi: Set<string>;
+    }
   | { kind: "invalid" }
   | { kind: "notfound" }
   | { kind: "unauthenticated" }
@@ -31,18 +41,31 @@ export async function loadAutomationsPage(
   try {
     if (options.schedule) {
       if (!uuid.test(options.schedule)) return { kind: "notfound" };
-      return {
-        kind: "detail",
-        filters,
-        detail: adaptAutomationDetail(
-          await read(
-            locals,
-            `command-center/automations/${options.schedule}/?runs=10`,
-          ),
-          options.schedule,
-          options.client,
+      const detail = adaptAutomationDetail(
+        await read(
+          locals,
+          `command-center/automations/${options.schedule}/?runs=10`,
         ),
-      };
+        options.schedule,
+        options.client,
+      );
+      // The siblings tell whether this client needs its location named; if they cannot be
+      // read, name it rather than leave two look-alike automations indistinguishable.
+      let multi = new Set([detail.client.id]);
+      try {
+        multi = multiLocationClients(
+          adaptAutomations(
+            await read(
+              locals,
+              `command-center/automations/?organization_id=${detail.client.id}`,
+            ),
+            detail.client.id,
+          ).data,
+        );
+      } catch {
+        // keep the fail-open default
+      }
+      return { kind: "detail", filters, detail, multi };
     }
     const scope = options.client ? `?organization_id=${options.client}` : "";
     return {

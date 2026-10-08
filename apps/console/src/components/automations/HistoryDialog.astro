@@ -49,9 +49,10 @@ const { view } = Astro.props;
   const history = document.querySelector<HTMLDialogElement>(
     "#automation-history",
   );
-  document
-    .querySelectorAll("[data-open-history]")
-    .forEach((b) => b.addEventListener("click", () => history?.showModal()));
+  document.querySelectorAll("[data-open-history]").forEach((b) => {
+    b.removeAttribute("inert");
+    b.addEventListener("click", () => history?.showModal());
+  });
   history
     ?.querySelectorAll("[data-history-close]")
     .forEach((b) => b.addEventListener("click", () => history.close()));

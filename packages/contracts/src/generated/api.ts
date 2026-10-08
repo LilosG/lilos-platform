@@ -5676,6 +5676,7 @@ export interface components {
              */
             id: string;
             latest_run: components["schemas"]["LatestRun"] | null;
+            location: components["schemas"]["LocationRef"] | null;
             /** Next Run At */
             next_run_at: string | null;
             /** Run Now Allowed */
@@ -5697,6 +5698,7 @@ export interface components {
              */
             id: string;
             latest_run: components["schemas"]["LatestRun"] | null;
+            location: components["schemas"]["LocationRef"] | null;
             /** Next Run At */
             next_run_at: string | null;
             /** Run Now Allowed */
@@ -8239,6 +8241,16 @@ export interface components {
         LocationProfileResponse: {
             data: components["schemas"]["LocationProfileData"];
             meta: components["schemas"]["ResponseMeta"];
+        };
+        /** LocationRef */
+        LocationRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** LocationResponse */
         LocationResponse: {

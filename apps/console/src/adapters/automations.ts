@@ -188,6 +188,7 @@ const item = z
     id: z.uuid(),
     workflow_type: workflowType,
     client: z.object({ id: z.uuid(), name: z.string(), slug: z.string() }),
+    location: z.object({ id: z.uuid(), name: z.string() }).nullable(),
     frequency: z.object({
       kind: frequencyKind,
       interval: z.number().int().nullable(),

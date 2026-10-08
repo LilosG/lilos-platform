@@ -1,9 +1,9 @@
 ---
 import type { AutomationsView } from "../../adapters/automations";
 import {
+  multiLocationClients,
   applyFilters,
   filterQuery,
-  filtersActive,
   overviewView,
   rowView,
   type Filters,
@@ -23,8 +23,10 @@ interface Props {
 const { view, filters, now, client } = Astro.props;
 const base = client ? `/clients/${client.slug}/automations/` : "/automations/";
 const scoped = applyFilters(view.data, filters);
-const rows = scoped.map((i) => rowView(i, now));
-const overview = overviewView(scoped, now, client ? 3 : 5);
+// Judged on every automation, so filtering never changes whether a location is named.
+const multi = multiLocationClients(view.data);
+const rows = scoped.map((i) => rowView(i, now, multi));
+const overview = overviewView(scoped, now, client ? 3 : 5, multi);
 const detailHref = (id: string) => `${base}${id}/${filterQuery(filters)}`;
 const tabs = [
   ["Overview", "overview"],
@@ -124,7 +126,10 @@ const resetHref = base + filterQuery({ view: filters.view });
                   <h3>{r.name}</h3>
                   <p>
                     {client ? (
-                      r.outcome
+                      <Fragment>
+                        {r.locationName && `${r.locationName} · `}
+                        {r.outcome}
+                      </Fragment>
                     ) : (
                       <Fragment>
                         <a
@@ -132,8 +137,8 @@ const resetHref = base + filterQuery({ view: filters.view });
                           href={`/clients/${r.clientSlug}/`}
                         >
                           {r.clientName}
-                        </a>{" "}
-                        · {r.outcome}
+                        </a>
+                        {r.locationName && ` · ${r.locationName}`} · {r.outcome}
                       </Fragment>
                     )}
                   </p>
@@ -170,6 +175,7 @@ const resetHref = base + filterQuery({ view: filters.view });
                   <div>
                     <h3>{r.name}</h3>
                     <p>
+                      {client && r.locationName && `${r.locationName} · `}
                       {!client && (
                         <Fragment>
                           <a
@@ -177,8 +183,8 @@ const resetHref = base + filterQuery({ view: filters.view });
                             href={`/clients/${r.clientSlug}/`}
                           >
                             {r.clientName}
-                          </a>{" "}
-                          ·{" "}
+                          </a>
+                          {r.locationName && ` · ${r.locationName}`} ·{" "}
                         </Fragment>
                       )}
                       {r.next}
@@ -207,7 +213,13 @@ const resetHref = base + filterQuery({ view: filters.view });
                   <span class="activitydot">✓</span>
                   <div>
                     <h3>{r.name}</h3>
-                    {!client && <p>{r.clientName}</p>}
+                    {(!client || r.locationName) && (
+                      <p>
+                        {[!client && r.clientName, r.locationName]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
                     <small>
                       {r.done} · {r.last}
                     </small>
@@ -245,7 +257,7 @@ const resetHref = base + filterQuery({ view: filters.view });
           </section>
         </Fragment>
       )}
-      {filtersActive(filters) && rows.length > 0 && (
+      {rows.length > 0 && rows.length < view.data.length && (
         <p class="muted">
           Showing {rows.length} of {view.data.length} automations.
         </p>

@@ -10,7 +10,7 @@ const { view } = Astro.props;
 <div class="eyebrow">
   <a class="contextname" href={`/clients/${view.clientSlug}/`}
     >{view.clientName}</a
-  > · Automation
+  >{view.locationName && ` · ${view.locationName}`} · Automation
 </div>
 <h2 id="automation-detail-title">{view.name}</h2>
 <p><StatusBadge text={view.status.label} tone={view.status.tone} /></p>

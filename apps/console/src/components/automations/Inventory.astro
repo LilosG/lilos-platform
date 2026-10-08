@@ -42,7 +42,11 @@ const { rows, clientScoped, detailHref, resetHref } = Astro.props;
               <td>
                 <b>{r.name}</b>
                 <span class="sub">
-                  {clientScoped ? r.source : r.clientName}
+                  {clientScoped
+                    ? [r.locationName, r.source].filter(Boolean).join(" · ")
+                    : [r.clientName, r.locationName]
+                        .filter(Boolean)
+                        .join(" · ")}
                 </span>
               </td>
               <td>{r.frequency}</td>

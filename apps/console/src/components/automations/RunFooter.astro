@@ -7,7 +7,7 @@ interface Props {
 const { view, runUrl } = Astro.props;
 ---
 
-<button type="button" class="control" data-open-history> Details </button>
+<button type="button" class="control" inert data-open-history> Details </button>
 {
   view.actions.map((a) => (
     <a class="control" href={a.href} data-automation-recovery>

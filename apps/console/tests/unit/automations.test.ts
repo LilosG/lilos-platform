@@ -16,6 +16,7 @@ import {
   dialogView,
   failureCode,
   filterQuery,
+  multiLocationClients,
   overviewView,
   parseFilters,
   rowView,
@@ -36,6 +37,7 @@ function item(over: Partial<AutomationItem> & { n: number }): AutomationItem {
     id: id(n),
     workflow_type: "reviews.ingest",
     client: { id: CLIENT, name: "Park 101", slug: "park101" },
+    location: null,
     frequency: {
       kind: "daily",
       interval: null,
@@ -287,6 +289,47 @@ describe("presenters", () => {
     );
     expect(failureCode({ code: "CSRF_INVALID" }, 403)).toBe("CSRF_INVALID");
     expect(failureCode("nope", 502)).toBe("HTTP_502");
+  });
+});
+
+describe("location", () => {
+  const place = (n: number, name: string) => ({ id: id(900 + n), name });
+  const two = [
+    item({ n: 1, location: place(1, "Downtown") }),
+    item({ n: 2, location: place(2, "DONT USE") }),
+    item({ n: 3, location: null }),
+  ];
+  const other = "22222222-2222-4222-8222-222222222222";
+  const solo = item({
+    n: 4,
+    client: { id: other, name: "Solo", slug: "solo" },
+    location: place(3, "Only place"),
+  });
+  it("names the location only for a client with several locations", () => {
+    const multi = multiLocationClients([...two, solo]);
+    expect([...multi]).toEqual([CLIENT]);
+    const rows = [...two, solo].map((i) => rowView(i, now, multi));
+    expect(rows.map((r) => r.locationName)).toEqual([
+      "Downtown",
+      "DONT USE",
+      null,
+      null,
+    ]);
+    // Without the set (single-location, or unknown) nothing extra shows.
+    expect(rowView(two[0], now).locationName).toBeNull();
+  });
+  it("carries the location into the overview rows and the dialog", () => {
+    const multi = multiLocationClients(two);
+    const overview = overviewView(two, now, 5, multi);
+    expect(overview.upcoming.map((r) => r.locationName)).toContain("DONT USE");
+    const dialog = dialogView({ ...two[1], runs: [] }, now, multi);
+    expect(dialog.locationName).toBe("DONT USE");
+    expect(dialogView({ ...two[1], runs: [] }, now).locationName).toBeNull();
+  });
+  it("accepts a client-wide schedule and rejects a malformed location", () => {
+    expect(adaptAutomations(list(two)).data[2].location).toBeNull();
+    const bad = list([item({ n: 1, location: { id: "x", name: "y" } })]);
+    expect(() => adaptAutomations(bad)).toThrow();
   });
 });
 

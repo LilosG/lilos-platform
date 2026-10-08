@@ -39,10 +39,14 @@ function build(ids) {
   const alpha = { id: ids.a, name: "Synthetic Alpha", slug: "synthetic-alpha" };
   const beta = { id: ids.b, name: "Synthetic Beta", slug: "synthetic-beta" };
   const third = { id: gamma, name: "Synthetic Gamma", slug: "synthetic-gamma" };
+  const place = (id, name) => ({ id: `d0d0d0d0-0000-4000-8000-${id}`, name });
+  const carlsbad = place("000000000001", "Carlsbad");
+  const dontUse = place("000000000002", "DONT USE");
   const make = (n, client, type, source, extra) => ({
     id: sid(n),
     workflow_type: type,
     client,
+    location: null,
     frequency: daily(5),
     status: "healthy",
     latest_run: done(6),
@@ -63,9 +67,16 @@ function build(ids) {
   });
   return [
     make(1, alpha, "reviews.ingest", "reviews", {
+      location: carlsbad,
+      frequency: every("interval_hours", 6),
+    }),
+    // Alpha has a second location with the same schedule: the rows differ only by place.
+    make(10, alpha, "reviews.ingest", "reviews", {
+      location: dontUse,
       frequency: every("interval_hours", 6),
     }),
     make(2, alpha, "gbp.sync_performance", "google_business_profile", {
+      location: carlsbad,
       frequency: daily(6, 15),
       ...failedRun("GBP_PERFORMANCE_ACCESS_DENIED", [
         "reconnect_google_business_profile",
@@ -102,7 +113,9 @@ function build(ids) {
         timezone: "America/Los_Angeles",
       },
     }),
+    // Beta has one location: nothing extra is shown for it.
     make(6, beta, "reviews.ingest", "reviews", {
+      location: place("000000000003", "Encinitas"),
       frequency: every("interval_minutes", 30),
     }),
     make(7, beta, "seo.sync_search_console", "search_console", {

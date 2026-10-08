@@ -22,6 +22,7 @@ from apps.api.app.execution.automations import (
     outcome_of,
     parse_frequency,
     reason_of,
+    run_reason,
     source_of,
     status_of,
 )
@@ -219,3 +220,20 @@ def test_sources_by_workflow_type() -> None:
     assert source_of("seo.crawl_or_analysis").value == "website"
     assert source_of("insights.sync_analytics").value == "analytics"
     assert source_of("seo.sync_search_console").value == "search_console"
+
+
+def test_retry_scheduled_without_a_code_will_retry_and_with_a_code_follows_policy() -> None:
+    bare = run("retry_scheduled")
+    assert status_of("active", bare) is AutomationStatus.HEALTHY
+    assert attention_of(bare) is None
+    assert outcome_of(bare) is RunOutcome.WILL_RETRY
+    assert run_reason(bare) is None
+    # With a code the policy decides: attention for one that needs a person, retry for the rest.
+    needs = run("retry_scheduled", "ANALYTICS_SYNC_INCOMPLETE")
+    assert status_of("active", needs) is AutomationStatus.NEEDS_ATTENTION
+    limited = run("retry_scheduled", "GBP_PERFORMANCE_RATE_LIMITED")
+    assert status_of("active", limited) is AutomationStatus.HEALTHY
+    unknown = run("retry_scheduled", "SOMETHING_NEW")
+    assert status_of("active", unknown) is AutomationStatus.NEEDS_ATTENTION
+    # Only retry_scheduled gets this: a failed run with no code still needs a person.
+    assert status_of("active", run("failed")) is AutomationStatus.NEEDS_ATTENTION

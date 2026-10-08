@@ -436,15 +436,29 @@ const title =
         >
           <RunDialog
             slot="body"
-            view={dialogView(automationsPage.detail, new Date())}
+            view={dialogView(
+              automationsPage.detail,
+              new Date(),
+              automationsPage.multi,
+            )}
           />
           <RunFooter
             slot="footer"
-            view={dialogView(automationsPage.detail, new Date())}
+            view={dialogView(
+              automationsPage.detail,
+              new Date(),
+              automationsPage.multi,
+            )}
             runUrl={`/api/command-center/automations/${automationsPage.detail.id}/run/`}
           />
         </DialogFrame>
-        <HistoryDialog view={dialogView(automationsPage.detail, new Date())} />
+        <HistoryDialog
+          view={dialogView(
+            automationsPage.detail,
+            new Date(),
+            automationsPage.multi,
+          )}
+        />
       </Fragment>
     ) : notBuilt ? (
       <NotBuilt

@@ -92,6 +92,11 @@ class ClientRef(DTO):
     slug: str
 
 
+class LocationRef(DTO):
+    id: UUID
+    name: str
+
+
 class Frequency(DTO):
     """A schedule as a typed value; the console formats it in the schedule's timezone."""
 
@@ -124,6 +129,8 @@ class AutomationItem(DTO):
     id: UUID
     workflow_type: WorkflowTypeCode
     client: ClientRef
+    # The location this automation runs for; null when it covers the whole client.
+    location: LocationRef | None
     frequency: Frequency
     status: AutomationStatus
     latest_run: LatestRun | None
@@ -193,6 +200,9 @@ def item_of(record: AutomationRecord, organization: Organization) -> AutomationI
         id=schedule.id,
         workflow_type=WorkflowTypeCode(record.workflow_key),
         client=ClientRef(id=organization.id, name=organization.name, slug=organization.slug),
+        location=LocationRef(id=schedule.location_id, name=record.location_name)
+        if schedule.location_id and record.location_name
+        else None,
         frequency=Frequency(
             kind=frequency.kind,
             interval=frequency.interval,
@@ -262,7 +272,13 @@ async def list_automations(
     owners = {o.id: o for o in organizations}
     records = await load_automations(session, list(owners))
     items = [item_of(record, owners[record.schedule.organization_id]) for record in records]
-    items.sort(key=lambda item: (item.client.name.lower(), item.workflow_type.value))
+    items.sort(
+        key=lambda item: (
+            item.client.name.lower(),
+            item.workflow_type.value,
+            item.location.name.lower() if item.location else "",
+        )
+    )
 
     def count(wanted: AutomationStatus) -> int:
         return sum(1 for item in items if item.status is wanted)

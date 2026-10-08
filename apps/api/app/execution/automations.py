@@ -35,6 +35,7 @@ from apps.api.app.execution.models import (
     WorkflowVersion,
 )
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES, is_tenant_workflow_key
+from apps.api.app.locations.models import Location
 
 
 class AutomationStatus(StrEnum):
@@ -398,6 +399,9 @@ def treatment_of(run: RunSnapshot) -> Treatment | None:
     status = run.status
     if status in (RunStatus.COMPLETED, RunStatus.CANCELLED) or status in IN_PROGRESS_STATUSES:
         return None
+    if status is RunStatus.RETRY_SCHEDULED and not run.failure_code:
+        # The platform has already queued another attempt and nothing says it went wrong.
+        return Treatment.WILL_RETRY
     if status in (RunStatus.FAILED, RunStatus.RETRY_SCHEDULED, RunStatus.ESCALATED):
         policy = FAILURE_POLICY.get(reason_of(run.failure_code))
         if policy is not None:
@@ -429,6 +433,8 @@ def run_reason(run: RunSnapshot) -> AutomationReason | None:
         run.status in (RunStatus.COMPLETED, RunStatus.CANCELLED)
         or run.status in IN_PROGRESS_STATUSES
     ):
+        return None
+    if run.status is RunStatus.RETRY_SCHEDULED and not run.failure_code:
         return None
     reason = reason_of(run.failure_code)
     if reason is AutomationReason.UNMAPPED and run.status in _STATUS_REASON:
@@ -526,6 +532,8 @@ class AutomationRecord:
     schedule: Schedule
     workflow_key: str
     runs: list[RunSnapshot] = field(default_factory=list)
+    # The location this schedule is bound to; None for a client-wide schedule.
+    location_name: str | None = None
 
     @property
     def latest(self) -> RunSnapshot | None:
@@ -601,11 +609,26 @@ async def load_automations(
         .order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc())
     ):
         by_scope[(run.organization_id, definition_id, run.location_id)].append(snapshot(run))
+    location_ids = {schedule.location_id for schedule, *_ in rows if schedule.location_id}
+    names: dict[UUID, str] = {}
+    if location_ids:
+        names = {
+            location_id: name
+            for location_id, name in await session.execute(
+                select(Location.id, Location.name).where(
+                    Location.id.in_(location_ids),
+                    Location.organization_id.in_(
+                        {schedule.organization_id for schedule, *_ in rows}
+                    ),
+                )
+            )
+        }
     return [
         AutomationRecord(
             schedule=schedule,
             workflow_key=key,
             runs=by_scope.get((schedule.organization_id, definition_id, schedule.location_id), []),
+            location_name=names.get(schedule.location_id) if schedule.location_id else None,
         )
         for schedule, definition_id, key in rows
     ]

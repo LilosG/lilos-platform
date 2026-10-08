@@ -370,11 +370,29 @@ function outcomeText(item: AutomationItem): string {
   if (run.outcome === "in_progress") return "Running now";
   return outcomeChips[run.outcome].label;
 }
+/**
+ * Clients whose schedules cover more than one location. Only those need the location named
+ * to tell two otherwise identical rows apart; a single-location client shows nothing extra.
+ */
+export function multiLocationClients(items: AutomationItem[]): Set<string> {
+  const places = new Map<string, Set<string>>();
+  for (const i of items)
+    if (i.location) {
+      const seen = places.get(i.client.id) ?? new Set<string>();
+      seen.add(i.location.id);
+      places.set(i.client.id, seen);
+    }
+  return new Set(
+    [...places].filter(([, seen]) => seen.size > 1).map(([client]) => client),
+  );
+}
 export interface AutomationRow {
   id: string;
   name: string;
   clientName: string;
   clientSlug: string;
+  /** The location's name, only where the client has more than one location with schedules. */
+  locationName: string | null;
   source: string;
   status: AutomationStatus;
   statusChip: Chip;
@@ -385,13 +403,20 @@ export interface AutomationRow {
   next: string;
   action: string;
 }
-export function rowView(item: AutomationItem, now: Date): AutomationRow {
+export function rowView(
+  item: AutomationItem,
+  now: Date,
+  multi: ReadonlySet<string> = new Set(),
+): AutomationRow {
   const run = item.latest_run;
   return {
     id: item.id,
     name: WORKFLOW_NAMES[item.workflow_type],
     clientName: item.client.name,
     clientSlug: item.client.slug,
+    locationName: multi.has(item.client.id)
+      ? (item.location?.name ?? null)
+      : null,
     source: SOURCE_NAMES[item.source],
     status: item.status,
     statusChip: automationChips[item.status],
@@ -424,6 +449,7 @@ export function overviewView(
   items: AutomationItem[],
   now: Date,
   limit: number,
+  multi: ReadonlySet<string> = new Set(),
 ): OverviewView {
   const count = (s: AutomationStatus) =>
     items.filter((i) => i.status === s).length;
@@ -435,13 +461,13 @@ export function overviewView(
           at(b.attention?.occurred_at ?? null) -
           at(a.attention?.occurred_at ?? null),
       )
-      .map((i) => rowView(i, now)),
+      .map((i) => rowView(i, now, multi)),
     upcoming: items
       .filter((i) => i.next_run_at !== null && i.status !== "paused")
       .sort((a, b) => at(a.next_run_at) - at(b.next_run_at))
       .slice(0, limit)
       .map((i) => ({
-        ...rowView(i, now),
+        ...rowView(i, now, multi),
         note:
           i.status === "needs_attention"
             ? "Resolve the cause before this run"
@@ -455,7 +481,10 @@ export function overviewView(
           at(a.latest_run?.finished_at ?? null),
       )
       .slice(0, limit)
-      .map((i) => ({ ...rowView(i, now), done: doneText(i.workflow_type) })),
+      .map((i) => ({
+        ...rowView(i, now, multi),
+        done: doneText(i.workflow_type),
+      })),
     health: [
       { label: "Active automations", count: items.length - count("paused") },
       { label: "Require attention", count: count("needs_attention") },
@@ -476,6 +505,7 @@ export interface DialogView {
   name: string;
   clientName: string;
   clientSlug: string;
+  locationName: string | null;
   status: Chip;
   latest: string;
   next: string;
@@ -489,8 +519,12 @@ export interface DialogView {
   running: boolean;
   history: RunRow[];
 }
-export function dialogView(d: AutomationDetailView, now: Date): DialogView {
-  const row = rowView(d, now);
+export function dialogView(
+  d: AutomationDetailView,
+  now: Date,
+  multi: ReadonlySet<string> = new Set(),
+): DialogView {
+  const row = rowView(d, now, multi);
   const needs = d.status === "needs_attention" && d.attention !== null;
   const latest = d.latest_run;
   const copy = d.attention
@@ -502,6 +536,7 @@ export function dialogView(d: AutomationDetailView, now: Date): DialogView {
     name: row.name,
     clientName: row.clientName,
     clientSlug: row.clientSlug,
+    locationName: row.locationName,
     status: row.statusChip,
     latest: row.last,
     next: row.next,

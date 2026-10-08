@@ -17,6 +17,8 @@ from apps.api.app.execution.models import (
     WorkflowRun,
     WorkflowVersion,
 )
+from apps.api.app.locations.enums import LocationStatus, LocationType
+from apps.api.app.locations.models import Location
 from leads import test_leads_api as canonical
 
 HEADERS = canonical.HEADERS
@@ -360,3 +362,49 @@ def test_run_now_refuses_anything_that_publishes_and_paused_and_other_tenants(
         )
 
     assert run_db(postgresql_test_url, started) == 0
+
+
+def test_two_location_client_shows_which_location_each_automation_is_for(
+    canonical_leads_client: tuple[TestClient, dict[str, UUID]],
+    postgresql_test_url: str,
+) -> None:
+    client, ids = canonical_leads_client
+    org, first = ids["organization"], ids["location"]
+    made: dict[str, UUID] = {}
+
+    async def seed(session: AsyncSession) -> None:
+        second = Location(
+            organization_id=org,
+            name="DONT USE",
+            slug="dont-use",
+            location_type=LocationType.VIRTUAL,
+            status=LocationStatus.ACTIVE,
+            timezone="UTC",
+            country_code="US",
+            website_url="https://example.invalid/second",
+            is_primary=False,
+            version=1,
+        )
+        session.add(second)
+        await session.flush()
+        made["first"] = await schedule(session, org, "reviews.ingest", location=first)
+        made["second"] = await schedule(session, org, "reviews.ingest", location=second.id)
+        made["wide"] = await schedule(session, org, "gbp.sync")
+        # Each location's latest run is its own: only the second one is failing.
+        await run(session, org, "reviews.ingest", "completed", 3, location=first)
+        await run(
+            session, org, "reviews.ingest", "failed", 2, "REVIEWS_INGEST_FAILED", location=second.id
+        )
+        await session.commit()
+
+    run_db(postgresql_test_url, seed)
+    body = client.get(AUTOMATIONS, headers=HEADERS).json()
+    rows = {row["id"]: row for row in body["data"]}
+    assert rows[str(made["first"])]["location"] == {"id": str(first), "name": "Downtown"}
+    assert rows[str(made["second"])]["location"]["name"] == "DONT USE"
+    assert rows[str(made["wide"])]["location"] is None
+    assert rows[str(made["first"])]["status"] == "healthy"
+    assert rows[str(made["second"])]["status"] == "needs_attention"
+    detail = client.get(f"{AUTOMATIONS}/{made['second']}", headers=HEADERS).json()
+    assert detail["location"]["name"] == "DONT USE"
+    assert [r["outcome"] for r in detail["runs"]] == ["failed"]

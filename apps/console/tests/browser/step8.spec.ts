@@ -56,7 +56,7 @@ test("filters by status, client and type; only real types are offered", async ({
   page,
 }) => {
   await login(page, "admin", "/automations/?view=all");
-  await expect(page.locator("[data-automation-id]")).toHaveCount(9);
+  await expect(page.locator("[data-automation-id]")).toHaveCount(10);
   const types = await page
     .getByLabel("Filter automation type")
     .locator("option")
@@ -85,7 +85,7 @@ test("filters by status, client and type; only real types are offered", async ({
     page.getByRole("heading", { name: "No automations match these filters" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Reset filters" }).last().click();
-  await expect(page.locator("[data-automation-id]")).toHaveCount(9);
+  await expect(page.locator("[data-automation-id]")).toHaveCount(10);
   await noSystemText(page);
 });
 test("the dashboard health link lands on the filtered view with the same count", async ({
@@ -192,7 +192,7 @@ test("client view is scoped to one client and has no client filter", async ({
   page,
 }) => {
   await login(page, "a", "/clients/synthetic-alpha/automations/?view=all");
-  await expect(page.locator("[data-automation-id]")).toHaveCount(5);
+  await expect(page.locator("[data-automation-id]")).toHaveCount(6);
   await expect(page.locator("main")).not.toContainText("Synthetic Beta");
   await expect(page.getByLabel("Filter automations by client")).toHaveCount(0);
   await expect(page.locator("main")).toContainText("Not run yet");
@@ -236,4 +236,35 @@ test("unknown filters and schedules are refused", async ({ page }) => {
   await login(page, "admin", "/");
   expect((await page.goto("/automations/?status=bogus"))?.status()).toBe(400);
   expect((await page.goto("/automations/not-a-schedule/"))?.status()).toBe(404);
+});
+
+test("a two-location client shows the location; a single-location client does not", async ({
+  page,
+}) => {
+  await login(page, "admin", "/automations/?view=all");
+  const alpha = page
+    .locator("tr", { hasText: "Review monitoring" })
+    .filter({ hasText: "Synthetic Alpha" });
+  await expect(alpha).toHaveCount(2);
+  await expect(alpha.nth(0)).toContainText("Synthetic Alpha · Carlsbad");
+  await expect(alpha.nth(1)).toContainText("Synthetic Alpha · DONT USE");
+  const beta = page.locator("tr", { hasText: "Synthetic Beta" }).first();
+  await expect(beta).not.toContainText("Encinitas");
+  // Requires attention and the dialog name the place too.
+  await page.goto("/automations/");
+  await expect(
+    page.locator(".attentionstrip .listrow", { hasText: "GBP performance" }),
+  ).toContainText("Synthetic Alpha · Carlsbad");
+  await expect(page.locator("main")).not.toContainText("Encinitas");
+  await page
+    .locator(".attentionstrip .listrow", { hasText: "GBP performance" })
+    .getByRole("link", { name: "Investigate" })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Synthetic Alpha · Carlsbad · Automation",
+  );
+  // The client's own screen names the place too.
+  await page.goto("/clients/synthetic-alpha/automations/?view=all");
+  await expect(page.locator("tr", { hasText: "DONT USE" })).toHaveCount(1);
+  await noSystemText(page);
 });

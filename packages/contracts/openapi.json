@@ -735,6 +735,16 @@
               }
             ]
           },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "next_run_at": {
             "anyOf": [
               {
@@ -772,6 +782,7 @@
           "id",
           "workflow_type",
           "client",
+          "location",
           "frequency",
           "status",
           "latest_run",
@@ -818,6 +829,16 @@
               }
             ]
           },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "next_run_at": {
             "anyOf": [
               {
@@ -848,6 +869,7 @@
           "id",
           "workflow_type",
           "client",
+          "location",
           "frequency",
           "status",
           "latest_run",
@@ -8622,6 +8644,26 @@
           "meta"
         ],
         "title": "LocationProfileResponse",
+        "type": "object"
+      },
+      "LocationRef": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LocationRef",
         "type": "object"
       },
       "LocationResponse": {
