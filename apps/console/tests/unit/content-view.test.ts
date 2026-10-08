@@ -17,7 +17,6 @@ import {
   pathOf,
   publicationChip,
   review,
-  authorLabel,
   revisionChip,
   stageChip,
   typeLabel,
@@ -355,13 +354,13 @@ describe("the draft review", () => {
       "Confirmed",
     ]);
   });
-  it("lists revisions with who wrote them", () => {
+  it("lists revisions without saying who wrote them", () => {
     const r = review(detail());
     expect(r.revisions[0]).toMatchObject({
       label: "Revision 1",
-      author: "Edited by a person",
       current: true,
     });
+    expect(r.revisions[0]).not.toHaveProperty("author");
   });
   it("has no floor, checks or links for a revision the writing service did not record", () => {
     const base = detail();
@@ -436,13 +435,5 @@ describe("addresses and markdown", () => {
     ]);
     expect(wordCount("Miss B's is a Packers-bar, in San Diego.")).toBe(8);
     expect(wordCount("")).toBe(0);
-  });
-});
-
-describe("who wrote a revision", () => {
-  it("credits the platform, never a model vendor", () => {
-    expect(authorLabel("ai")).toBe("Drafted by LILOs");
-    expect(authorLabel("user")).toBe("Edited by a person");
-    expect(authorLabel("ai")).not.toMatch(/claude|openai|gpt|deepseek/i);
   });
 });

@@ -75,10 +75,6 @@ const revisionChips: Record<string, Chip> = {
   superseded: { label: "Replaced", tone: "neutral" },
   published: { label: "Published", tone: "" },
 };
-/** Who produced a revision. The platform drafts it; never name a model vendor here. */
-export const authorLabel = (createdByType: string): string =>
-  createdByType === "ai" ? "Drafted by LILOs" : "Edited by a person";
-
 export const revisionChip = (status: string): Chip =>
   revisionChips[status] ?? { label: "Draft", tone: "neutral" };
 const publicationChips: Record<string, Chip> = {
@@ -273,7 +269,6 @@ export interface ClaimRow {
 export interface RevisionRow {
   id: string;
   label: string;
-  author: string;
   chip: Chip;
   current: boolean;
 }
@@ -419,7 +414,6 @@ export function review(view: ContentView): Review {
     revisions: view.revisions.map((r, index) => ({
       id: r.id,
       label: `Revision ${r.revision_number}`,
-      author: authorLabel(r.created_by_type),
       chip: revisionChip(r.status),
       current: index === 0,
     })),
