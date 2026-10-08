@@ -9,6 +9,7 @@ import DialogFrame from "../components/ui/DialogFrame.astro";
 import Automations from "../components/automations/Automations.astro";
 import RunDialog from "../components/automations/RunDialog.astro";
 import RunFooter from "../components/automations/RunFooter.astro";
+import HistoryDialog from "../components/automations/HistoryDialog.astro";
 import {
   loadAutomationsPage,
   type AutomationsPage,
@@ -156,21 +157,24 @@ const title =
         now={new Date(automationsPage.view.generated_at)}
       />
     ) : automationsPage?.kind === "detail" ? (
-      <DialogFrame
-        id="automation-detail"
-        returnLabel="All automations"
-        returnTo={`/automations/${filterQuery(automationsPage.filters)}`}
-      >
-        <RunDialog
-          slot="body"
-          view={dialogView(automationsPage.detail, new Date())}
-        />
-        <RunFooter
-          slot="footer"
-          view={dialogView(automationsPage.detail, new Date())}
-          runUrl={`/api/command-center/automations/${automationsPage.detail.id}/run/`}
-        />
-      </DialogFrame>
+      <Fragment>
+        <DialogFrame
+          id="automation-detail"
+          returnLabel="All automations"
+          returnTo={`/automations/${filterQuery(automationsPage.filters)}`}
+        >
+          <RunDialog
+            slot="body"
+            view={dialogView(automationsPage.detail, new Date())}
+          />
+          <RunFooter
+            slot="footer"
+            view={dialogView(automationsPage.detail, new Date())}
+            runUrl={`/api/command-center/automations/${automationsPage.detail.id}/run/`}
+          />
+        </DialogFrame>
+        <HistoryDialog view={dialogView(automationsPage.detail, new Date())} />
+      </Fragment>
     ) : failed ? (
       <Fragment>
         <PageHeader

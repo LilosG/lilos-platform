@@ -1,0 +1,58 @@
+---
+import type { DialogView } from "../../lib/automation-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  view: DialogView;
+}
+const { view } = Astro.props;
+---
+
+<dialog id="automation-history" aria-labelledby="automation-history-title">
+  <div class="panelhead">
+    <span class="muted">{view.name}</span>
+    <button
+      type="button"
+      class="close"
+      aria-label="Close details"
+      data-history-close
+    >
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <h2 id="automation-history-title">Recent runs</h2>
+    {
+      view.history.length ? (
+        view.history.map((run) => (
+          <div class="listrow">
+            <div>
+              {run.started}
+              <small>
+                {[run.duration, run.note].filter(Boolean).join(" · ") ||
+                  "No further detail"}
+              </small>
+            </div>
+            <StatusBadge text={run.chip.label} tone={run.chip.tone} />
+          </div>
+        ))
+      ) : (
+        <p class="muted">This automation has not run yet.</p>
+      )
+    }
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-history-close>Close</button>
+  </div>
+</dialog>
+<script>
+  // A second modal opened over the first; it never closes the automation dialog beneath it.
+  const history = document.querySelector<HTMLDialogElement>(
+    "#automation-history",
+  );
+  document
+    .querySelectorAll("[data-open-history]")
+    .forEach((b) => b.addEventListener("click", () => history?.showModal()));
+  history
+    ?.querySelectorAll("[data-history-close]")
+    .forEach((b) => b.addEventListener("click", () => history.close()));
+</script>

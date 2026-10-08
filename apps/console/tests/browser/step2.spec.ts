@@ -102,13 +102,11 @@ test("Unbuilt screens share one typed state and show no content", async ({
   await login(page);
   for (const path of [
     "/reports/",
-    "/automations/",
     "/integrations/",
     "/administration/",
     "/administration/users/",
     "/activity/",
     "/attention/",
-    "/clients/synthetic-alpha/automations/",
     "/clients/synthetic-alpha/reports/",
     "/clients/synthetic-alpha/settings/",
   ]) {

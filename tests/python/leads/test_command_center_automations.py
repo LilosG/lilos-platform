@@ -1,8 +1,10 @@
 """Automations API: the attention rule on real rows, run now, tenant isolation and audit."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
+from httpx import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
@@ -109,7 +111,7 @@ async def run(
     return row.id
 
 
-def by_type(body: dict[str, object]) -> dict[str, dict[str, object]]:
+def by_type(body: dict[str, Any]) -> dict[str, dict[str, Any]]:
     data = body["data"]
     assert isinstance(data, list)
     return {item["workflow_type"]: item for item in data}
@@ -282,11 +284,12 @@ def test_detail_has_history_and_hides_other_tenants(
     assert client.get(f"{AUTOMATIONS}/{uuid4()}", headers=HEADERS).status_code == 404
 
 
-def run_now(client: TestClient, schedule_id: UUID, key: str | None = "key-one-12345"):
+def run_now(client: TestClient, schedule_id: UUID, key: str | None = "key-one-12345") -> Response:
     headers = dict(HEADERS)
     if key is not None:
         headers["Idempotency-Key"] = key
-    return client.post(f"{AUTOMATIONS}/{schedule_id}/run", headers=headers)
+    response: Response = client.post(f"{AUTOMATIONS}/{schedule_id}/run", headers=headers)
+    return response
 
 
 def test_run_now_is_idempotent_audited_and_one_at_a_time(
