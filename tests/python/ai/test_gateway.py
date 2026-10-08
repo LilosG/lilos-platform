@@ -301,6 +301,27 @@ def test_build_ai_gateway_routes_task_models(monkeypatch: pytest.MonkeyPatch) ->
     assert gateway._resolve_model("reviews.draft_response") is None
 
 
+@pytest.mark.anyio
+async def test_content_tasks_get_headroom_for_reasoning_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reasoning model spends part of max_tokens thinking; the plan and the article
+    both need room for the whole JSON answer, and short tasks keep the small ceiling."""
+    monkeypatch.setenv("LILOS_AI_PROVIDER", "deterministic")
+    monkeypatch.setenv("LILOS_ENV", "test")
+    gateway = build_ai_gateway(Settings())
+    provider = FakeProvider({"draft": "x"})
+    gateway._provider = provider
+    for task_key, expected in (
+        ("content.compose_plan", 8_000),
+        ("content.draft_revision", 16_000),
+        ("reviews.response_draft", 2_000),
+    ):
+        provider.calls.clear()
+        await gateway.execute(_request(task_key=task_key))
+        assert provider.calls[0][2] == expected, task_key
+
+
 # ---------------------------------------------------------------------------
 # Per-task provider routing
 # ---------------------------------------------------------------------------

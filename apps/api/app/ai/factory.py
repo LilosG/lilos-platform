@@ -138,7 +138,9 @@ def resolve_ai_provider(
             timeout_seconds=settings.ai_timeout_seconds,
             max_timeout_seconds=settings.ai_max_timeout_seconds,
             max_output_tokens=max(
-                settings.ai_max_output_tokens, settings.ai_content_max_output_tokens
+                settings.ai_max_output_tokens,
+                settings.ai_content_max_output_tokens,
+                settings.ai_plan_max_output_tokens,
             ),
             default_model=model,
         )
@@ -183,7 +185,7 @@ def build_ai_gateway(settings: Settings | None = None) -> AIGateway:
         task_model_overrides=settings.ai_task_model_map(),
         task_max_output_tokens={
             "content.draft_revision": settings.ai_content_max_output_tokens,
-            "content.compose_plan": 2_500,
+            "content.compose_plan": settings.ai_plan_max_output_tokens,
         },
         default_model=settings.ai_default_model,
         global_max_output_tokens=settings.ai_max_output_tokens,

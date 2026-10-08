@@ -182,7 +182,11 @@ class Settings(BaseSettings):
     # Ceiling on any per-request maximum_latency_ms.
     ai_max_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 300.0
     ai_max_output_tokens: Annotated[int, Field(ge=1, le=32_768)] = 2_000
-    ai_content_max_output_tokens: Annotated[int, Field(ge=2_000, le=32_768)] = 7_000
+    # The configured content model reasons before it answers, and reasoning counts
+    # against max_tokens. A budget too small cuts the JSON off mid-object. These leave
+    # headroom for the thinking plus the full answer (a 1,400+ word article as JSON).
+    ai_content_max_output_tokens: Annotated[int, Field(ge=2_000, le=32_768)] = 16_000
+    ai_plan_max_output_tokens: Annotated[int, Field(ge=2_000, le=32_768)] = 8_000
     ai_maximum_cost_microunits: Annotated[int, Field(ge=0, le=10_000_000)] = 200_000
     service_name: ClassVar[str] = "lilos-api"
 
