@@ -445,6 +445,7 @@ class OpenRouterProvider:
         *,
         base_url: str = "https://openrouter.ai/api/v1",
         timeout_seconds: float = 60.0,
+        max_timeout_seconds: float = 300.0,
         max_output_tokens: int = 2_000,
         default_model: str | None = None,
     ) -> None:
@@ -455,6 +456,7 @@ class OpenRouterProvider:
         self._api_key = api_key.strip()
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout_seconds
+        self._max_timeout = max_timeout_seconds
         self._max_output_tokens = max_output_tokens
         self._default_model = default_model or "openrouter/auto"
 
@@ -487,8 +489,10 @@ class OpenRouterProvider:
         prompt = _build_prompt(task_key, input_document)
         max_tokens = min(maximum_tokens, self._max_output_tokens)
 
+        # A per-request limit is authoritative, bounded only by the ceiling;
+        # the default timeout applies when the request gives none.
         if maximum_latency_ms is not None and maximum_latency_ms > 0:
-            timeout_seconds = min(self._timeout, maximum_latency_ms / 1000)
+            timeout_seconds = min(self._max_timeout, maximum_latency_ms / 1000)
         else:
             timeout_seconds = self._timeout
 

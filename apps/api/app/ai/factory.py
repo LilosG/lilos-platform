@@ -136,6 +136,7 @@ def resolve_ai_provider(
             api_key=api_key,
             base_url=settings.ai_openrouter_base_url,
             timeout_seconds=settings.ai_timeout_seconds,
+            max_timeout_seconds=settings.ai_max_timeout_seconds,
             max_output_tokens=max(
                 settings.ai_max_output_tokens, settings.ai_content_max_output_tokens
             ),
@@ -155,6 +156,7 @@ def resolve_ai_provider(
             api_key=api_key,
             base_url=base_url,
             timeout_seconds=settings.ai_hermes_timeout_seconds,
+            max_timeout_seconds=settings.ai_max_timeout_seconds,
             max_output_tokens=settings.ai_max_output_tokens,
             model=settings.ai_hermes_model,
         )

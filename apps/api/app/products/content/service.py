@@ -248,7 +248,9 @@ async def approved_governed_facts(
     ]
 
 
-CONTENT_AI_LATENCY_MS = 120_000  # 2 minutes, realistic for content generation
+CONTENT_AI_LATENCY_MS = (
+    240_000  # 4 minutes; long-form drafts. Never use the task row's stored value.
+)
 
 
 META_DESCRIPTION_MAXIMUM = 155
@@ -1484,7 +1486,7 @@ class ContentService:
             input_references=(brief.id,),
             approved_fact_revision_ids=tuple(fact_ids),
             maximum_cost_microunits=task.maximum_cost_microunits,
-            maximum_latency_ms=task.maximum_latency_ms,
+            maximum_latency_ms=CONTENT_AI_LATENCY_MS,
         )
         try:
             output = await self.ai_gateway.execute(request)
@@ -1999,7 +2001,7 @@ class ContentService:
                 input_references=(brief.id,),
                 approved_fact_revision_ids=tuple(fact_ids),
                 maximum_cost_microunits=task.maximum_cost_microunits,
-                maximum_latency_ms=task.maximum_latency_ms,
+                maximum_latency_ms=CONTENT_AI_LATENCY_MS,
             )
             output = await self.ai_gateway.execute(request)
             usage = output.get("usage", {}) or {}

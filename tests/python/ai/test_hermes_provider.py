@@ -254,3 +254,32 @@ def test_factory_fails_closed_when_production_hermes_config_is_missing() -> None
 
     with pytest.raises(AIProviderConfigurationError):
         resolve_ai_provider(settings)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("latency_ms", "expected"),
+    [(5_000, 5.0), (240_000, 240.0), (900_000, 300.0), (None, 120.0)],
+)
+async def test_hermes_request_latency_is_authoritative(
+    monkeypatch: pytest.MonkeyPatch, latency_ms: int | None, expected: float
+) -> None:
+    seen: list[float] = []
+
+    def recording_client(*args: Any, **kwargs: Any) -> FakeClient:
+        seen.append(kwargs["timeout"])
+        return FakeClient(FakeResponse({"choices": [{"message": {"content": '{"draft": "ok"}'}}]}))
+
+    monkeypatch.setattr("apps.api.app.ai.hermes.httpx.AsyncClient", recording_client)
+    provider = HermesAgentProvider(api_key="hermes-secret-key", base_url="lilos-hermes:8642")
+
+    await provider.generate(
+        organization_id=uuid4(),
+        location_id=None,
+        task_key="content.draft_revision",
+        input_document={},
+        maximum_tokens=100,
+        maximum_latency_ms=latency_ms,
+    )
+
+    assert seen == [expected]

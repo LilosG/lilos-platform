@@ -35,6 +35,7 @@ class HermesAgentProvider:
         *,
         base_url: str,
         timeout_seconds: float = 120.0,
+        max_timeout_seconds: float = 300.0,
         max_output_tokens: int = 2_000,
         model: str = "hermes-agent",
     ) -> None:
@@ -50,6 +51,7 @@ class HermesAgentProvider:
         self._api_key = api_key.strip()
         self._base_url = normalized_base_url
         self._timeout = timeout_seconds
+        self._max_timeout = max_timeout_seconds
         self._max_output_tokens = max_output_tokens
         self._model = model.strip() or "hermes-agent"
 
@@ -66,8 +68,10 @@ class HermesAgentProvider:
         """Execute a governed LILOs task through the Hermes agent gateway."""
         prompt = _build_prompt(task_key, input_document)
         max_tokens = min(maximum_tokens, self._max_output_tokens)
+        # A per-request limit is authoritative, bounded only by the ceiling;
+        # the default timeout applies when the request gives none.
         if maximum_latency_ms is not None and maximum_latency_ms > 0:
-            timeout_seconds = min(self._timeout, maximum_latency_ms / 1000)
+            timeout_seconds = min(self._max_timeout, maximum_latency_ms / 1000)
         else:
             timeout_seconds = self._timeout
 

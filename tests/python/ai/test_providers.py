@@ -375,11 +375,9 @@ async def test_openrouter_provider_ignores_ambiguous_top_level_cost(
     assert output["cost_microunits"] is None
 
 
-@pytest.mark.anyio
-async def test_openrouter_provider_latency_bound_caps_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A task latency bound caps the HTTP client timeout below the configured ceiling."""
+async def _captured_timeout(
+    monkeypatch: pytest.MonkeyPatch, provider: OpenRouterProvider, latency_ms: int | None
+) -> float:
     import httpx as httpx_module
 
     built_clients: list[tuple[Any, ...]] = []
@@ -399,13 +397,36 @@ async def test_openrouter_provider_latency_bound_caps_timeout(
         )
 
     monkeypatch.setattr(httpx_module, "AsyncClient", recording_client)
-
-    await _provider(timeout_seconds=60.0).generate(
+    await provider.generate(
         task_key="content.draft_revision",
         input_document={},
         maximum_tokens=100,
-        maximum_latency_ms=3_000,
+        maximum_latency_ms=latency_ms,
     )
+    return float(built_clients[0][1]["timeout"])
 
-    kwargs = built_clients[0][1]
-    assert kwargs["timeout"] == 3.0  # 3000ms → 3s, capped below 60s ceiling
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("latency_ms", "expected"),
+    [
+        (5_000, 5.0),  # short tasks such as reviews.response_draft keep their short limit
+        (120_000, 120.0),  # honored above the 60s default
+        (240_000, 240.0),
+        (900_000, 300.0),  # clamped to ai_max_timeout_seconds
+        (None, 60.0),  # no per-request limit: default applies
+    ],
+)
+async def test_openrouter_provider_request_latency_is_authoritative(
+    monkeypatch: pytest.MonkeyPatch, latency_ms: int | None, expected: float
+) -> None:
+    provider = _provider(timeout_seconds=60.0, max_timeout_seconds=300.0)
+    assert await _captured_timeout(monkeypatch, provider, latency_ms) == expected
+
+
+@pytest.mark.anyio
+async def test_openrouter_provider_ceiling_is_configurable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _provider(timeout_seconds=60.0, max_timeout_seconds=90.0)
+    assert await _captured_timeout(monkeypatch, provider, 120_000) == 90.0

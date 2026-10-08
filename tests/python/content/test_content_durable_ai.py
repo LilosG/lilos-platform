@@ -392,6 +392,8 @@ async def test_durable_ai_draft_execution_start_returns_workflow_run(
         assert job is not None
         assert job.job_type == "workflow.execute"
         assert job.status == "queued"
+        # A slow draft (240s AI call plus a repair) must outlast the 300s queue default.
+        assert job.timeout_seconds == 900
 
 
 @pytest.mark.integration

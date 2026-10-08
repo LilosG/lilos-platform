@@ -12,13 +12,13 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
 from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.ai.errors import AIProviderError
-from apps.api.app.ai.models import AIExecution
+from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.ai.providers import _find_existing_topic_overlap, _validate_article_payload
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.enums import UserStatus
@@ -29,7 +29,7 @@ from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content import service as service_module
-from apps.api.app.products.content.compose import ContentComposeService
+from apps.api.app.products.content.compose import PLAN_AI_LATENCY_MS, ContentComposeService
 from apps.api.app.products.content.contracts import AIDraftCreate, ApprovalDecision, ComposeCreate
 from apps.api.app.products.content.enums import ComposeContentType
 from apps.api.app.products.content.errors import (
@@ -44,7 +44,11 @@ from apps.api.app.products.content.models import (
     ContentRevision,
 )
 from apps.api.app.products.content.operator_service import ContentOperatorService
-from apps.api.app.products.content.service import ContentService, record_operator_claim
+from apps.api.app.products.content.service import (
+    CONTENT_AI_LATENCY_MS,
+    ContentService,
+    record_operator_claim,
+)
 from apps.api.app.products.seo.models import SEOPage, SEOWebsite
 
 from .draft_builder import build_draft
@@ -653,6 +657,37 @@ async def test_regenerate_instruction_is_audited_and_still_held_to_the_floors(
 
     with pytest.raises(Exception):  # noqa: B017 - contract rejects > 2000 characters
         AIDraftCreate(brief_id=uuid4(), idempotency_key="regenerate-0002", instructions="x" * 2_001)
+
+
+@pytest.mark.anyio
+async def test_content_ai_calls_use_the_code_latency_constants_not_the_task_row(
+    content_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gateway = ScriptedGateway([draft_payload(), draft_payload(words=1_600)])
+    use_gateway(monkeypatch, gateway)
+    async with content_session_factory() as session:
+        world = await seed_world(session)
+        item, run_input, run = await start(session, world)
+        await run_compose(session, world, run_input, run.id)
+        brief = await session.scalar(
+            select(ContentBrief).where(ContentBrief.content_item_id == item.id)
+        )
+        assert brief is not None
+        # Production's seeded draft_revision row carries 5_000; it must not be used.
+        await session.execute(update(AITaskDefinition).values(maximum_latency_ms=5_000))
+        await ContentService().execute_ai_draft_workflow(
+            session,
+            organization_id=world.org,
+            item_id=item.id,
+            brief_id=brief.id,
+            idempotency_key="regenerate-latency",
+            user_id=world.user,
+            correlation_id="c",
+            instructions="longer",
+        )
+    by_task = {r.task_key: r.maximum_latency_ms for r in gateway.requests}
+    assert by_task["content.compose_plan"] == PLAN_AI_LATENCY_MS == 180_000
+    assert by_task["content.draft_revision"] == CONTENT_AI_LATENCY_MS == 240_000
 
 
 @pytest.mark.anyio
