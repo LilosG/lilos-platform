@@ -311,7 +311,7 @@ async def test_content_tasks_get_headroom_for_reasoning_models(
     monkeypatch.setenv("LILOS_ENV", "test")
     gateway = build_ai_gateway(Settings())
     provider = FakeProvider({"draft": "x"})
-    gateway._provider = provider  # type: ignore[attr-defined]
+    gateway._provider = provider
     for task_key, expected in (
         ("content.compose_plan", 8_000),
         ("content.draft_revision", 16_000),
