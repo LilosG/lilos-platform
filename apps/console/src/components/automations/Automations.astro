@@ -1,0 +1,267 @@
+---
+import type { AutomationsView } from "../../adapters/automations";
+import {
+  multiLocationClients,
+  applyFilters,
+  filterQuery,
+  overviewView,
+  rowView,
+  type Filters,
+} from "../../lib/automation-view";
+import EmptyState from "../ui/EmptyState.astro";
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import AutomationFilters from "./Filters.astro";
+import Inventory from "./Inventory.astro";
+interface Props {
+  view: AutomationsView;
+  filters: Filters;
+  now: Date;
+  /** Set on a client's own screen; absent on the portfolio screen. */
+  client?: { slug: string; name: string };
+}
+const { view, filters, now, client } = Astro.props;
+const base = client ? `/clients/${client.slug}/automations/` : "/automations/";
+const scoped = applyFilters(view.data, filters);
+// Judged on every automation, so filtering never changes whether a location is named.
+const multi = multiLocationClients(view.data);
+const rows = scoped.map((i) => rowView(i, now, multi));
+const overview = overviewView(scoped, now, client ? 3 : 5, multi);
+const detailHref = (id: string) => `${base}${id}/${filterQuery(filters)}`;
+const tabs = [
+  ["Overview", "overview"],
+  ["All automations", "all"],
+] as const;
+const resetHref = base + filterQuery({ view: filters.view });
+---
+
+<PageHeader
+  title="Automations"
+  subtitle={client
+    ? `${client.name} · Scheduled work and its latest outcomes.`
+    : "Exceptions, scheduled work, and meaningful outcomes across the portfolio."}
+  client={Boolean(client)}
+/>
+{
+  view.data.length === 0 ? (
+    <section class="panel">
+      <EmptyState
+        title={
+          client
+            ? `Nothing is scheduled for ${client.name}`
+            : "No automations are scheduled yet"
+        }
+      >
+        {client
+          ? "Scheduled syncs and checks appear here once this client's Google accounts and website are connected."
+          : "Scheduled syncs and checks appear here once clients have connected their Google accounts and websites."}
+        <a
+          slot="action"
+          class="control primary"
+          href={
+            client ? `/clients/${client.slug}/integrations/` : "/integrations/"
+          }
+        >
+          Open Integrations
+        </a>
+      </EmptyState>
+    </section>
+  ) : (
+    <Fragment>
+      <nav class="sectiontabs" aria-label="Automation views">
+        {tabs.map(([label, key]) => (
+          <a
+            href={base + filterQuery({ ...filters, view: key })}
+            class:list={{ active: filters.view === key }}
+            aria-current={filters.view === key ? "page" : undefined}
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+      <AutomationFilters
+        items={view.data}
+        filters={filters}
+        base={base}
+        clientScoped={Boolean(client)}
+      />
+      {rows.length === 0 ? (
+        <section class="panel">
+          <EmptyState title="No automations match these filters">
+            Try a different status{client ? "" : ", client"} or type.
+            <a slot="action" class="control" href={resetHref}>
+              Reset filters
+            </a>
+          </EmptyState>
+        </section>
+      ) : filters.view === "all" ? (
+        <Inventory
+          rows={rows}
+          clientScoped={Boolean(client)}
+          detailHref={detailHref}
+          resetHref={resetHref}
+        />
+      ) : (
+        <Fragment>
+          <section class="panel attentionstrip" data-automation-overview>
+            <SectionHeading>
+              <Fragment slot="title">
+                Requires attention{" "}
+                <span class="count" data-automation-attention-count>
+                  {overview.attention.length}
+                </span>
+              </Fragment>
+              <Fragment slot="actions">
+                <span class="muted">Human actions first</span>
+              </Fragment>
+            </SectionHeading>
+            {overview.attention.map((r) => (
+              <div
+                class="listrow"
+                data-automation-id={r.id}
+                data-automation-group="attention"
+              >
+                <span class="severity">!</span>
+                <div class="grow">
+                  <h3>{r.name}</h3>
+                  <p>
+                    {client ? (
+                      <Fragment>
+                        {r.locationName && `${r.locationName} · `}
+                        {r.outcome}
+                      </Fragment>
+                    ) : (
+                      <Fragment>
+                        <a
+                          class="contextname"
+                          href={`/clients/${r.clientSlug}/`}
+                        >
+                          {r.clientName}
+                        </a>
+                        {r.locationName && ` · ${r.locationName}`} · {r.outcome}
+                      </Fragment>
+                    )}
+                  </p>
+                </div>
+                <a class="control primary" href={detailHref(r.id)}>
+                  Investigate
+                </a>
+              </div>
+            ))}
+            {overview.attention.length === 0 && (
+              <div class="clearstate" data-automation-empty="attention">
+                <span class="severity low">✓</span>
+                <div>
+                  <h3>No automation exceptions in this view</h3>
+                  <p>
+                    The selected {client ? "client's" : "clients'"} automations
+                    are operating normally.
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+          <div class="grid" data-automation-overview>
+            <section class="panel">
+              <SectionHeading>
+                <Fragment slot="title">Upcoming runs</Fragment>
+              </SectionHeading>
+              {overview.upcoming.map((r) => (
+                <div
+                  class="listrow"
+                  data-automation-id={r.id}
+                  data-automation-group="upcoming"
+                >
+                  <div>
+                    <h3>{r.name}</h3>
+                    <p>
+                      {client && r.locationName && `${r.locationName} · `}
+                      {!client && (
+                        <Fragment>
+                          <a
+                            class="contextname"
+                            href={`/clients/${r.clientSlug}/`}
+                          >
+                            {r.clientName}
+                          </a>
+                          {r.locationName && ` · ${r.locationName}`} ·{" "}
+                        </Fragment>
+                      )}
+                      {r.next}
+                    </p>
+                    <small>{r.note}</small>
+                  </div>
+                  <a class="link" href={detailHref(r.id)}>
+                    View schedule
+                  </a>
+                </div>
+              ))}
+              {overview.upcoming.length === 0 && (
+                <EmptyState>No scheduled runs match these filters.</EmptyState>
+              )}
+            </section>
+            <section class="panel">
+              <SectionHeading>
+                <Fragment slot="title">Recent outcomes</Fragment>
+              </SectionHeading>
+              {overview.recent.map((r) => (
+                <div
+                  class="listrow feed"
+                  data-automation-id={r.id}
+                  data-automation-group="recent"
+                >
+                  <span class="activitydot">✓</span>
+                  <div>
+                    <h3>{r.name}</h3>
+                    {(!client || r.locationName) && (
+                      <p>
+                        {[!client && r.clientName, r.locationName]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
+                    <small>
+                      {r.done} · {r.last}
+                    </small>
+                  </div>
+                  <a class="link" href={detailHref(r.id)}>
+                    Details
+                  </a>
+                </div>
+              ))}
+              {overview.recent.length === 0 && (
+                <EmptyState>No completed runs match these filters.</EmptyState>
+              )}
+            </section>
+          </div>
+          <section class="panel" data-automation-overview>
+            <SectionHeading>
+              <Fragment slot="title">Operational health</Fragment>
+              <Fragment slot="actions">
+                <a
+                  class="link"
+                  href={base + filterQuery({ ...filters, view: "all" })}
+                >
+                  All automations
+                </a>
+              </Fragment>
+            </SectionHeading>
+            <div class="operationalstrip">
+              {overview.health.map((h) => (
+                <div>
+                  <strong>{h.count}</strong>
+                  <span>{h.label}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </Fragment>
+      )}
+      {rows.length > 0 && rows.length < view.data.length && (
+        <p class="muted">
+          Showing {rows.length} of {view.data.length} automations.
+        </p>
+      )}
+    </Fragment>
+  )
+}

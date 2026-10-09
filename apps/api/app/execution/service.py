@@ -16,6 +16,11 @@ from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.automations import (
+    BLOCKING_STATUSES,
+    RETIRED_LOCATIONS,
+    RUN_NOW_WORKFLOWS,
+)
 from apps.api.app.execution.contracts import (
     JobOutcome,
     ScheduleCreate,
@@ -23,6 +28,10 @@ from apps.api.app.execution.contracts import (
     WorkflowSubmit,
 )
 from apps.api.app.execution.errors import (
+    AutomationLocationRetiredError,
+    AutomationPausedError,
+    AutomationRunInProgressError,
+    AutomationRunNotAllowedError,
     WorkflowIdempotencyConflictError,
     WorkflowKeyUnknownError,
     WorkflowLocationScopeError,
@@ -44,6 +53,8 @@ from apps.api.app.execution.workflow_catalog import (
     is_tenant_workflow_key,
 )
 from apps.api.app.locations.models import Location
+from apps.api.app.organizations.enums import OrganizationStatus
+from apps.api.app.organizations.models import Organization
 
 CONSUMABLE_WORKFLOW_RUN_STATUSES = {"created", "queued"}
 # Resumable workflows that legitimately run longer than the default job budget.
@@ -290,11 +301,26 @@ class ExecutionService:
     ) -> WorkflowRun | None:
         """Atomically advance and dispatch one due durable schedule."""
         now = datetime.now(UTC)
+        # A schedule whose location is archived or closed for good, or whose client is archived
+        # or removed, is never selected, so it can neither run nor sit at the head of the queue
+        # ahead of schedules that can. Its row is left exactly as it is.
         schedule = await session.scalar(
             select(Schedule)
-            .where(Schedule.status == "active", Schedule.next_run_at <= now)
+            .join(Organization, Organization.id == Schedule.organization_id)
+            .outerjoin(
+                Location,
+                (Location.organization_id == Schedule.organization_id)
+                & (Location.id == Schedule.location_id),
+            )
+            .where(
+                Schedule.status == "active",
+                Schedule.next_run_at <= now,
+                Organization.status != OrganizationStatus.ARCHIVED,
+                Organization.removed_at.is_(None),
+                or_(Schedule.location_id.is_(None), Location.status.notin_(RETIRED_LOCATIONS)),
+            )
             .order_by(Schedule.next_run_at, Schedule.created_at)
-            .with_for_update(skip_locked=True)
+            .with_for_update(skip_locked=True, of=Schedule)
             .limit(1)
         )
         if schedule is None:
@@ -371,6 +397,93 @@ class ExecutionService:
             session.add(version)
             await session.flush()
         return version
+
+    async def run_schedule_now(
+        self,
+        session: AsyncSession,
+        schedule_id: UUID,
+        organization_id: UUID,
+        idempotency_key: str,
+        *,
+        correlation_id: str,
+        actor_id: UUID | None,
+    ) -> tuple[WorkflowRun, bool]:
+        """Run one scheduled, read-only workflow now, through the canonical run path.
+
+        Only the explicit ``RUN_NOW_WORKFLOWS`` allowlist may run, and only while the schedule
+        is active. The same key from the same schedule returns the same run (``False``), so a
+        double submit starts one run. A second key while the schedule already has a queued or
+        running run is refused. Returns ``(run, created)``.
+        """
+        schedule = await session.scalar(
+            select(Schedule)
+            .where(Schedule.organization_id == organization_id, Schedule.id == schedule_id)
+            .with_for_update()
+        )
+        if schedule is None:
+            raise WorkflowRunNotFoundError
+        version = await session.get(WorkflowVersion, schedule.workflow_version_id)
+        definition = (
+            await session.get(WorkflowDefinition, version.definition_id) if version else None
+        )
+        if definition is None or definition.key not in RUN_NOW_WORKFLOWS:
+            raise AutomationRunNotAllowedError
+        if schedule.location_id is not None:
+            status = await session.scalar(
+                select(Location.status).where(
+                    Location.organization_id == organization_id,
+                    Location.id == schedule.location_id,
+                )
+            )
+            if status in RETIRED_LOCATIONS:
+                raise AutomationLocationRetiredError
+        if schedule.status != "active":
+            raise AutomationPausedError
+        run_key = f"run-now:{schedule.id}:{idempotency_key}"
+        replay = await session.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.idempotency_key == run_key,
+            )
+        )
+        if replay is not None:
+            return replay, False
+        busy = await session.scalar(
+            select(WorkflowRun.id)
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowVersion.definition_id == definition.id,
+                WorkflowRun.location_id.is_not_distinct_from(schedule.location_id),
+                WorkflowRun.status.in_(BLOCKING_STATUSES),
+            )
+            .limit(1)
+        )
+        if busy is not None:
+            raise AutomationRunInProgressError
+        run = await self.start_named(
+            session,
+            organization_id,
+            definition.key,
+            run_key,
+            location_id=schedule.location_id,
+            input_document={"schedule_id": str(schedule.id), "trigger": "run_now"},
+            correlation_id=correlation_id,
+            actor_id=actor_id,
+        )
+        await self._audit(
+            session,
+            event="automation.run_now.requested",
+            organization_id=organization_id,
+            location_id=schedule.location_id,
+            actor_id=actor_id,
+            resource_type="workflow_schedule",
+            resource_id=schedule.id,
+            correlation_id=correlation_id,
+            summary=f"Automation run requested: {definition.key}.",
+            metadata={"workflow_key": definition.key, "workflow_run_id": str(run.id)},
+        )
+        return run, True
 
     async def start_named(
         self,

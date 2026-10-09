@@ -31,6 +31,11 @@ import {
 } from "./website-sim.mjs";
 import { commandCenter, liveChange, unified } from "./command-center-sim.mjs";
 import {
+  automations,
+  reset as resetAutomations,
+  state as automationState,
+} from "./automation-sim.mjs";
+import {
   handle as beta,
   notConnected,
   reset as resetBeta,
@@ -178,6 +183,12 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/test/content-requests")
     return reply({ requests: contentSim.requests });
+  if (url.pathname === "/test/automations-scenario") {
+    resetAutomations(parsed.mode);
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/automations-runs")
+    return reply({ runs: automationState.runs });
   if (url.pathname === "/test/gbp-reset") {
     resetBeta();
     return reply({ ok: true });
@@ -295,6 +306,8 @@ createServer(async (req, res) => {
     factorsByUser.delete(claims.sub);
     return reply({ id: ids.factor });
   }
+  const automation = automations(req, url, claims, ids);
+  if (automation) return reply(automation.body, automation.status);
   const feed = commandCenter(url, claims, ids);
   if (feed) return reply(feed.body, feed.status ?? 200);
   if (url.pathname === "/api/v1/me/organizations")

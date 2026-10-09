@@ -2,6 +2,7 @@ import { z } from "zod";
 import { leadRoutes } from "./lead-routes";
 import { websiteRoutes } from "./website-routes";
 import { reviewRoutes } from "./review-routes";
+import { automationRoutes, idempotencyKey } from "./automation-routes";
 import { searchRoutes } from "./search-routes";
 import {
   assertMutation,
@@ -41,6 +42,7 @@ export const routes = [
   ...leadRoutes,
   ...websiteRoutes,
   ...reviewRoutes,
+  ...automationRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },
   {
     pattern: /^command-center\/(portfolio|clients)\/$/,
@@ -206,6 +208,12 @@ export async function forward(
   }
   let body: string | Uint8Array<ArrayBuffer> | undefined;
   let contentType = "application/json";
+  const idempotency =
+    "idempotency" in route && route.idempotency
+      ? (request.headers.get("idempotency-key") ?? "")
+      : null;
+  if (idempotency !== null && !idempotencyKey.test(idempotency))
+    return response("BODY_INVALID", 400);
   if (request.method === "POST" || request.method === "DELETE") {
     try {
       assertMutation(
@@ -278,6 +286,7 @@ export async function forward(
           Authorization: `Bearer ${locals.token}`,
           "Content-Type": contentType,
           "X-Correlation-ID": locals.correlationId,
+          ...(idempotency ? { "Idempotency-Key": idempotency } : {}),
         },
       },
     );

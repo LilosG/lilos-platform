@@ -1,6 +1,6 @@
 """Safe workflow-execution errors exposed through the standard API envelope."""
 
-from apps.api.app.errors import ConflictError, NotFoundError
+from apps.api.app.errors import AuthorizationError, ConflictError, NotFoundError
 
 
 class WorkflowKeyUnknownError(NotFoundError):
@@ -45,3 +45,31 @@ class WorkflowRunNotAvailableError(ConflictError):
     public_message = (
         "The referenced workflow run has already been used, completed, or is otherwise unavailable."
     )
+
+
+class AutomationRunNotAllowedError(AuthorizationError):
+    """Only read-only sync, ingest and crawl automations can be run on demand."""
+
+    code = "AUTOMATION_RUN_NOT_ALLOWED"
+    public_message = "This automation cannot be run on demand."
+
+
+class AutomationPausedError(ConflictError):
+    """A paused automation is not run until it is resumed."""
+
+    code = "AUTOMATION_PAUSED"
+    public_message = "This automation is paused."
+
+
+class AutomationRunInProgressError(ConflictError):
+    """The schedule already has a queued or running run."""
+
+    code = "AUTOMATION_RUN_IN_PROGRESS"
+    public_message = "This automation is already running."
+
+
+class AutomationLocationRetiredError(ConflictError):
+    """The automation belongs to a location that is archived or closed for good."""
+
+    code = "AUTOMATION_LOCATION_RETIRED"
+    public_message = "This automation belongs to a location that is no longer in use."

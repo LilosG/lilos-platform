@@ -1,0 +1,88 @@
+---
+import type { AutomationItem } from "../../adapters/automations";
+import {
+  STATUS_FILTER_LABELS,
+  clientOptions,
+  filterQuery,
+  filtersActive,
+  typeOptions,
+  type Filters,
+} from "../../lib/automation-view";
+import { STATUSES } from "../../adapters/automations";
+import FilterBar from "../ui/FilterBar.astro";
+interface Props {
+  /** Every automation in scope, so the lists only offer what exists. */
+  items: AutomationItem[];
+  filters: Filters;
+  /** The path of this screen; the form submits back to it. */
+  base: string;
+  /** A client-scoped screen has no client filter. */
+  clientScoped: boolean;
+}
+const { items, filters, base, clientScoped } = Astro.props;
+const types = typeOptions(items);
+const clients = clientOptions(items);
+---
+
+<form method="get" action={base} data-automation-filters>
+  {filters.view === "all" && <input type="hidden" name="view" value="all" />}
+  <FilterBar class="toolbar oppfilters">
+    <select aria-label="Filter automations by status" name="status">
+      {
+        (["all", ...STATUSES] as const).map((value) => (
+          <option value={value} selected={filters.status === value}>
+            {STATUS_FILTER_LABELS[value]}
+          </option>
+        ))
+      }
+    </select>
+    {
+      !clientScoped && (
+        <select
+          aria-label="Filter automations by client"
+          name="organization_id"
+        >
+          <option value="all">All clients</option>
+          {clients.map((c) => (
+            <option value={c.value} selected={filters.client === c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      )
+    }
+    <select aria-label="Filter automation type" name="type">
+      <option value="all">All types</option>
+      {
+        types.map((t) => (
+          <option value={t.value} selected={filters.type === t.value}>
+            {t.label}
+          </option>
+        ))
+      }
+    </select>
+    <noscript><button class="control" type="submit">Apply</button></noscript>
+    {
+      filtersActive(filters) && (
+        <a
+          class="link"
+          href={base + filterQuery({ view: filters.view })}
+          data-reset-filters
+        >
+          Reset filters
+        </a>
+      )
+    }
+  </FilterBar>
+</form>
+<script>
+  document
+    .querySelectorAll<HTMLFormElement>("[data-automation-filters]")
+    .forEach((form) => {
+      form
+        .querySelectorAll("select")
+        .forEach((select) =>
+          select.addEventListener("change", () => form.requestSubmit()),
+        );
+    });
+</script>

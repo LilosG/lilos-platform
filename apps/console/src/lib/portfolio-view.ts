@@ -338,22 +338,23 @@ export interface HealthRow {
 }
 export function clientHealthRows(overview: ClientOverview): HealthRow[] {
   const slug = overview.client.slug;
-  const runs = overview.insights.workflow_runs;
-  const completed = runs.completed;
-  const failed = (runs.failed ?? 0) + (runs.escalated ?? 0);
+  const completed = overview.insights.workflow_runs.completed;
   return overview.systems.map((system) => ({
     label: systemLabel[system.key],
     status: systemStatusText[system.status],
+    // Whether automations need attention is the status chip's job (the Automations
+    // screen's own rule); this note only counts finished work.
     note:
       system.key === "automations" &&
       overview.insights.availability === "available" &&
       completed !== undefined
-        ? `${fmt(completed)} completed${failed ? ` · ${fmt(failed)} need attention` : ""}`
+        ? `${fmt(completed)} completed`
         : "",
-    href: clientRoute(
-      slug,
-      system.key === "automations" ? "Automations" : "Integrations",
-    ),
+    href:
+      system.key === "automations"
+        ? clientRoute(slug, "Automations") +
+          (system.status === "needs_attention" ? "?status=needs_attention" : "")
+        : clientRoute(slug, "Integrations"),
   }));
 }
 export function portfolioHealthRows(overview: PortfolioOverview) {
@@ -365,7 +366,11 @@ export function portfolioHealthRows(overview: PortfolioOverview) {
   const text = {
     google: ["All connected", "needs reconnection", "need reconnection"],
     analytics: ["All connected", "is not connected", "are not connected"],
-    automations: ["Running normally", "has failing work", "have failing work"],
+    automations: [
+      "Running normally",
+      "has automations needing attention",
+      "have automations needing attention",
+    ],
   } as const;
   return overview.systems.map((system) => {
     const [ok, one, many] = text[system.key];
@@ -377,7 +382,12 @@ export function portfolioHealthRows(overview: PortfolioOverview) {
         count === 0
           ? ok
           : `${count} ${count === 1 ? `client ${one}` : `clients ${many}`}`,
-      href: system.key === "automations" ? "/automations/" : "/integrations/",
+      href:
+        system.key === "automations"
+          ? count > 0
+            ? "/automations/?status=needs_attention"
+            : "/automations/"
+          : "/integrations/",
     };
   });
 }

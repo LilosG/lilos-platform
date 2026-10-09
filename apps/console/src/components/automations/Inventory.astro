@@ -1,0 +1,80 @@
+---
+import type { AutomationRow } from "../../lib/automation-view";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  rows: AutomationRow[];
+  clientScoped: boolean;
+  /** Where one row's dialog lives, with the current filters carried along. */
+  detailHref: (id: string) => string;
+  /** Link that clears the filters, shown when nothing matches. */
+  resetHref: string;
+}
+const { rows, clientScoped, detailHref, resetHref } = Astro.props;
+---
+
+<section class="panel tablewrap" data-automation-inventory>
+  <SectionHeading>
+    <Fragment slot="title">
+      All automations <span class="count">{rows.length}</span>
+    </Fragment>
+  </SectionHeading>
+  {
+    rows.length ? (
+      <DataTable>
+        <thead>
+          <tr>
+            <th>Automation{clientScoped ? "" : " / client"}</th>
+            <th>Schedule</th>
+            <th>Latest run</th>
+            <th>Outcome</th>
+            <th>Next scheduled run</th>
+            <th>
+              <span class="visually-hidden">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr data-automation-id={r.id} data-status={r.status}>
+              <td>
+                <b>{r.name}</b>
+                <span class="sub">
+                  {clientScoped
+                    ? [r.locationName, r.source].filter(Boolean).join(" · ")
+                    : [r.clientName, r.locationName]
+                        .filter(Boolean)
+                        .join(" · ")}
+                </span>
+              </td>
+              <td>{r.frequency}</td>
+              <td>{r.last}</td>
+              <td>
+                <StatusBadge
+                  text={(r.outcomeChip ?? r.statusChip).label}
+                  tone={(r.outcomeChip ?? r.statusChip).tone}
+                />
+                <span class="sub">{r.outcome}</span>
+              </td>
+              <td>{r.next}</td>
+              <td>
+                <a class="control" href={detailHref(r.id)}>
+                  {r.action}
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    ) : (
+      <EmptyState title="No automations match these filters">
+        Try a different status, client or type.
+        <a slot="action" class="control" href={resetHref}>
+          Reset filters
+        </a>
+      </EmptyState>
+    )
+  }
+</section>

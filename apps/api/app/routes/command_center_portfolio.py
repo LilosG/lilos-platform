@@ -465,7 +465,10 @@ def assemble(org: Organization, facts: Facts, allowed: dict[str, set[UUID]]) -> 
         ),
         ClientSystem(key="analytics", status=status_of(sessions)),
         ClientSystem(key="search_console", status=status_of(search_clicks)),
-        ClientSystem(key="automations", status="error" if failures else "healthy"),
+        ClientSystem(
+            key="automations",
+            status="needs_attention" if facts.automations_needing_attention.get(oid) else "healthy",
+        ),
     ]
     row = ClientRow(
         organization_id=oid,
@@ -662,7 +665,7 @@ async def portfolio_overview(
     upcoming.sort(key=lambda u: u.next_run_at)
     google_issue = sum(1 for c in clients if "GOOGLE_RECONNECT_REQUIRED" in c.health_reasons)
     analytics_issue = sum(1 for c in clients if "GA4_NOT_CONNECTED" in c.health_reasons)
-    automation_issue = len({a.organization_id for a in attention if a.code.startswith("WORKFLOW_")})
+    automation_issue = len(facts.automations_needing_attention)
     return PortfolioOverview(
         generated_at=now,
         days=days,
@@ -698,7 +701,7 @@ async def portfolio_overview(
             ),
             SystemHealth(
                 key="automations",
-                status="error" if automation_issue else "healthy",
+                status="needs_attention" if automation_issue else "healthy",
                 affected_clients=automation_issue,
             ),
         ],

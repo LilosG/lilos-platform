@@ -49,6 +49,15 @@ import Opportunities from "../../../components/opportunities/Opportunities.astro
 import OpportunityDetail from "../../../components/opportunities/OpportunityDetail.astro";
 import Overview from "../../../components/client/Overview.astro";
 import NotBuilt from "../../../components/ui/NotBuilt.astro";
+import Automations from "../../../components/automations/Automations.astro";
+import RunDialog from "../../../components/automations/RunDialog.astro";
+import RunFooter from "../../../components/automations/RunFooter.astro";
+import HistoryDialog from "../../../components/automations/HistoryDialog.astro";
+import {
+  loadAutomationsPage,
+  type AutomationsPage,
+} from "../../../server/automation-loader";
+import { dialogView, filterQuery } from "../../../lib/automation-view";
 import { clientAreaSlugs } from "../../../config/routes";
 import {
   loadOverview,
@@ -111,6 +120,7 @@ const builtSections = [
   "local-search",
   "opportunities",
   "attention",
+  "automations",
 ];
 const notBuilt = section in clientAreaSlugs;
 if (section !== "" && !notBuilt && !builtSections.includes(section))
@@ -118,6 +128,7 @@ if (section !== "" && !notBuilt && !builtSections.includes(section))
 if (notBuilt && segments.length > 1)
   return new Response("Page not found", { status: 404 });
 let overview: ClientOverview | undefined;
+let automationsPage: AutomationsPage | undefined;
 const websiteId = Astro.url.searchParams.get("website_id") ?? undefined;
 if (
   section === "local-search" &&
@@ -342,6 +353,21 @@ try {
         null,
       );
     }
+  } else if (section === "automations") {
+    if (segments.length > 2)
+      return new Response("Page not found", { status: 404 });
+    automationsPage = await loadAutomationsPage(
+      Astro.locals,
+      Astro.url.searchParams,
+      { client: client.organization_id, schedule: sourceId },
+    );
+    if (automationsPage.kind === "invalid")
+      return new Response("Invalid filter", { status: 400 });
+    if (automationsPage.kind === "notfound")
+      return new Response("Page not found", { status: 404 });
+    if (automationsPage.kind === "unauthenticated")
+      return Astro.redirect("/login/", 303);
+    if (automationsPage.kind === "error") error = "AUTOMATIONS_UNAVAILABLE";
   } else if (section === "attention") {
     const payload = await read<{ data: unknown[]; next_offset: number | null }>(
       Astro.locals,
@@ -357,28 +383,31 @@ try {
     "This source is temporarily unavailable. No sample data is substituted.";
 }
 const title =
-  section === "website-content"
-    ? "Website & Content"
-    : section === "leads"
-      ? "Leads"
-      : section === "reviews"
-        ? "Reviews"
-        : section === "local-search"
-          ? "Local Search"
-          : section === "integrations"
-            ? "Integrations"
-            : section === "opportunities"
-              ? "Opportunities"
-              : section === "attention"
-                ? "Requires attention"
-                : section
-                  ? section.replaceAll("-", " ")
-                  : client.organization_name;
+  section === "automations"
+    ? "Automations"
+    : section === "website-content"
+      ? "Website & Content"
+      : section === "leads"
+        ? "Leads"
+        : section === "reviews"
+          ? "Reviews"
+          : section === "local-search"
+            ? "Local Search"
+            : section === "integrations"
+              ? "Integrations"
+              : section === "opportunities"
+                ? "Opportunities"
+                : section === "attention"
+                  ? "Requires attention"
+                  : section
+                    ? section.replaceAll("-", " ")
+                    : client.organization_name;
 ---
 
 <AppLayout
   reference={overview !== undefined ||
     notBuilt ||
+    (section === "automations" && error === undefined) ||
     (section === "opportunities" && error === undefined) ||
     (localSearch !== undefined && error === undefined)}
   title={title}
@@ -398,6 +427,39 @@ const title =
   {
     overview ? (
       <Overview overview={overview} />
+    ) : automationsPage?.kind === "detail" ? (
+      <Fragment>
+        <DialogFrame
+          id="automation-detail"
+          returnLabel="All automations"
+          returnTo={`/clients/${client.organization_slug}/automations/${filterQuery(automationsPage.filters)}`}
+        >
+          <RunDialog
+            slot="body"
+            view={dialogView(
+              automationsPage.detail,
+              new Date(),
+              automationsPage.multi,
+            )}
+          />
+          <RunFooter
+            slot="footer"
+            view={dialogView(
+              automationsPage.detail,
+              new Date(),
+              automationsPage.multi,
+            )}
+            runUrl={`/api/command-center/automations/${automationsPage.detail.id}/run/`}
+          />
+        </DialogFrame>
+        <HistoryDialog
+          view={dialogView(
+            automationsPage.detail,
+            new Date(),
+            automationsPage.multi,
+          )}
+        />
+      </Fragment>
     ) : notBuilt ? (
       <NotBuilt
         target={{
@@ -490,16 +552,20 @@ const title =
       </DialogFrame>
     ) : (
       <Fragment>
-        {!opportunities && !localSearch && !reviews && !website && (
-          <div class="pagehead">
-            <div>
-              <>
-                <h1>{title}</h1>
-                <p>{client.organization_name}</p>
-              </>
+        {!opportunities &&
+          !localSearch &&
+          !reviews &&
+          !website &&
+          !automationsPage && (
+            <div class="pagehead">
+              <div>
+                <>
+                  <h1>{title}</h1>
+                  <p>{client.organization_name}</p>
+                </>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         {error && section === "website-content" ? (
           <Fragment>
             <PageHeader
@@ -510,6 +576,25 @@ const title =
             <ErrorState title="Website data could not be loaded">
               We could not read this website's data, so nothing is shown rather
               than a guess.
+              <a
+                slot="action"
+                class="control primary"
+                href={Astro.url.pathname + Astro.url.search}
+              >
+                Try again
+              </a>
+            </ErrorState>
+          </Fragment>
+        ) : error === "AUTOMATIONS_UNAVAILABLE" ? (
+          <Fragment>
+            <PageHeader
+              title="Automations"
+              subtitle={client.organization_name}
+              client
+            />
+            <ErrorState title="Automations are temporarily unavailable">
+              We could not read this client's schedule, so nothing is shown
+              rather than a guess.
               <a
                 slot="action"
                 class="control primary"
@@ -532,6 +617,16 @@ const title =
               All reviews
             </a>
           </ErrorState>
+        ) : automationsPage?.kind === "list" ? (
+          <Automations
+            view={automationsPage.view}
+            filters={automationsPage.filters}
+            now={new Date(automationsPage.view.generated_at)}
+            client={{
+              slug: client.organization_slug,
+              name: client.organization_name,
+            }}
+          />
         ) : leads ? (
           <Leads view={leads} slug={client.organization_slug} tab={tab} />
         ) : website ? (

@@ -83,7 +83,7 @@ function overview(client: ClientRow): ClientOverview {
     upcoming: [],
     systems: [
       { key: "google", status: "healthy" },
-      { key: "automations", status: "error" },
+      { key: "automations", status: "needs_attention" },
     ],
     insights: {
       availability: "available",
@@ -294,8 +294,11 @@ describe("typed codes, not sentences", () => {
   });
   it("folds the insights summary into operational health", () => {
     const rows = clientHealthRows(overview(row()));
-    expect(rows.find((r) => r.label === "Automations")?.note).toBe(
-      "12 completed · 1 need attention",
+    const automations = rows.find((r) => r.label === "Automations");
+    expect(automations?.note).toBe("12 completed");
+    expect(automations?.status).toBe("Needs attention");
+    expect(automations?.href).toBe(
+      "/clients/park101-carlsbad/automations/?status=needs_attention",
     );
   });
   it("formats days in the display zone", () => {

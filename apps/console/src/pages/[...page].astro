@@ -5,6 +5,16 @@ import ClientTable from "../components/portfolio/ClientTable.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import ErrorState from "../components/ui/ErrorState.astro";
 import NotBuilt from "../components/ui/NotBuilt.astro";
+import DialogFrame from "../components/ui/DialogFrame.astro";
+import Automations from "../components/automations/Automations.astro";
+import RunDialog from "../components/automations/RunDialog.astro";
+import RunFooter from "../components/automations/RunFooter.astro";
+import HistoryDialog from "../components/automations/HistoryDialog.astro";
+import {
+  loadAutomationsPage,
+  type AutomationsPage,
+} from "../server/automation-loader";
+import { dialogView, filterQuery } from "../lib/automation-view";
 import Opportunities from "../components/opportunities/Opportunities.astro";
 import {
   adaptOpportunityList,
@@ -26,7 +36,10 @@ const administration =
   (sub === undefined || ["onboarding", "users", "platform"].includes(sub));
 const builtArea =
   Object.hasOwn(AREAS, area) && (area !== "administration" || administration);
-if (page.split("/").length > (area === "administration" ? 2 : 1))
+if (
+  page.split("/").length >
+  (area === "administration" || area === "automations" ? 2 : 1)
+)
   return new Response("Page not found", { status: 404 });
 if (page !== "" && page !== "clients" && !builtArea)
   return new Response("Page not found", { status: 404 });
@@ -37,6 +50,20 @@ if (page === "integrations" && Astro.url.searchParams.has("org")) {
   );
   if (!org) return new Response("Client not found", { status: 404 });
   return Astro.redirect(`/clients/${org.organization_slug}/integrations/`);
+}
+let automationsPage: AutomationsPage | undefined;
+if (area === "automations") {
+  automationsPage = await loadAutomationsPage(
+    Astro.locals,
+    Astro.url.searchParams,
+    { schedule: sub },
+  );
+  if (automationsPage.kind === "invalid")
+    return new Response("Invalid filter", { status: 400 });
+  if (automationsPage.kind === "notfound")
+    return new Response("Page not found", { status: 404 });
+  if (automationsPage.kind === "unauthenticated")
+    return Astro.redirect("/login/", 303);
 }
 const days = reportingDays(Astro.url.searchParams.get("days"));
 if (days === null) return new Response("Invalid period", { status: 400 });
@@ -105,7 +132,64 @@ const title =
   updatedAt={overview?.generated_at}
 >
   {
-    failed ? (
+    automationsPage?.kind === "error" ? (
+      <Fragment>
+        <PageHeader
+          title="Automations"
+          subtitle="Exceptions, scheduled work, and meaningful outcomes across the portfolio."
+        />
+        <ErrorState title="Automations are temporarily unavailable">
+          We could not read the schedule, so nothing is shown rather than a
+          guess.
+          <a
+            slot="action"
+            class="control primary"
+            href={Astro.url.pathname + Astro.url.search}
+          >
+            Try again
+          </a>
+        </ErrorState>
+      </Fragment>
+    ) : automationsPage?.kind === "list" ? (
+      <Automations
+        view={automationsPage.view}
+        filters={automationsPage.filters}
+        now={new Date(automationsPage.view.generated_at)}
+      />
+    ) : automationsPage?.kind === "detail" ? (
+      <Fragment>
+        <DialogFrame
+          id="automation-detail"
+          returnLabel="All automations"
+          returnTo={`/automations/${filterQuery(automationsPage.filters)}`}
+        >
+          <RunDialog
+            slot="body"
+            view={dialogView(
+              automationsPage.detail,
+              new Date(),
+              automationsPage.multi,
+            )}
+          />
+          <RunFooter
+            slot="footer"
+            view={dialogView(
+              automationsPage.detail,
+              new Date(),
+              automationsPage.multi,
+            )}
+            runUrl={`/api/command-center/automations/${automationsPage.detail.id}/run/`}
+          />
+        </DialogFrame>
+        <HistoryDialog
+          view={dialogView(
+            automationsPage.detail,
+            new Date(),
+            automationsPage.multi,
+          )}
+        />
+      </Fragment>
+    ) : failed ? (
       <Fragment>
         <PageHeader
           title={

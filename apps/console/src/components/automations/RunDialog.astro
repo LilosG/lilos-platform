@@ -1,0 +1,32 @@
+---
+import type { DialogView } from "../../lib/automation-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  view: DialogView;
+}
+const { view } = Astro.props;
+---
+
+<div class="eyebrow">
+  <a class="contextname" href={`/clients/${view.clientSlug}/`}
+    >{view.clientName}</a
+  >{view.locationName && ` · ${view.locationName}`} · Automation
+</div>
+<h2 id="automation-detail-title">{view.name}</h2>
+<p><StatusBadge text={view.status.label} tone={view.status.tone} /></p>
+<div class="listrow">Latest run <b>{view.latest}</b></div>
+<div class="listrow">Next run <b>{view.next}</b></div>
+<div class="listrow">Schedule <b>{view.frequency}</b></div>
+<div class="listrow">Source <b>{view.source}</b></div>
+<h3 class="spaced-heading" data-automation-heading>{view.heading}</h3>
+<p data-automation-outcome>{view.body}</p>
+{view.advice && <p data-automation-advice>{view.advice}</p>}
+<div class="banner" role="alert" tabindex="-1" hidden data-run-error>
+  <span class="severity" aria-hidden="true">!</span>
+  <div>
+    <h3 class="body-title">Run did not start</h3>
+    <p data-run-error-text></p>
+  </div>
+  <a class="control" href="">Refresh status</a>
+</div>
+<p class="formstatus" role="status" aria-live="polite" data-run-status></p>

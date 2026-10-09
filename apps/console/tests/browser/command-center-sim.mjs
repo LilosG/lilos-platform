@@ -393,7 +393,11 @@ export function commandCenter(url, claims, ids) {
         systems: [
           { key: "google", status: "needs_attention", affected_clients: 1 },
           { key: "analytics", status: "healthy", affected_clients: 0 },
-          { key: "automations", status: "error", affected_clients: 1 },
+          {
+            key: "automations",
+            status: "needs_attention",
+            affected_clients: 3,
+          },
         ],
       },
     };
@@ -430,7 +434,7 @@ export function commandCenter(url, claims, ids) {
           },
           { key: "analytics", status: "healthy" },
           { key: "search_console", status: "not_connected" },
-          { key: "automations", status: "error" },
+          { key: "automations", status: "needs_attention" },
         ],
         insights: {
           availability: "available",

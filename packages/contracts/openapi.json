@@ -386,6 +386,40 @@
         "title": "AssuranceLevel",
         "type": "string"
       },
+      "Attention": {
+        "additionalProperties": false,
+        "properties": {
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/AutomationReason"
+          },
+          "recovery_actions": {
+            "items": {
+              "$ref": "#/components/schemas/RecoveryAction"
+            },
+            "title": "Recovery Actions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reason",
+          "recovery_actions",
+          "occurred_at"
+        ],
+        "title": "Attention",
+        "type": "object"
+      },
       "AttentionItem": {
         "additionalProperties": false,
         "properties": {
@@ -627,6 +661,355 @@
         ],
         "title": "AuthenticatedPrincipalResponse",
         "type": "object"
+      },
+      "AutomationCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "healthy": {
+            "title": "Healthy",
+            "type": "integer"
+          },
+          "needs_attention": {
+            "title": "Needs Attention",
+            "type": "integer"
+          },
+          "not_run_yet": {
+            "title": "Not Run Yet",
+            "type": "integer"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "healthy",
+          "needs_attention",
+          "running",
+          "paused",
+          "not_run_yet"
+        ],
+        "title": "AutomationCounts",
+        "type": "object"
+      },
+      "AutomationDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "attention": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Attention"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientRef"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/Frequency"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "run_now_allowed": {
+            "title": "Run Now Allowed",
+            "type": "boolean"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunHistoryItem"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AutomationSource"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AutomationStatus"
+          },
+          "workflow_type": {
+            "$ref": "#/components/schemas/WorkflowTypeCode"
+          }
+        },
+        "required": [
+          "id",
+          "workflow_type",
+          "client",
+          "location",
+          "frequency",
+          "status",
+          "latest_run",
+          "next_run_at",
+          "source",
+          "attention",
+          "run_now_allowed",
+          "runs"
+        ],
+        "title": "AutomationDetail",
+        "type": "object"
+      },
+      "AutomationItem": {
+        "additionalProperties": false,
+        "properties": {
+          "attention": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Attention"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientRef"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/Frequency"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocationRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "run_now_allowed": {
+            "title": "Run Now Allowed",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AutomationSource"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AutomationStatus"
+          },
+          "workflow_type": {
+            "$ref": "#/components/schemas/WorkflowTypeCode"
+          }
+        },
+        "required": [
+          "id",
+          "workflow_type",
+          "client",
+          "location",
+          "frequency",
+          "status",
+          "latest_run",
+          "next_run_at",
+          "source",
+          "attention",
+          "run_now_allowed"
+        ],
+        "title": "AutomationItem",
+        "type": "object"
+      },
+      "AutomationList": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/AutomationCounts"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationItem"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "counts",
+          "data"
+        ],
+        "title": "AutomationList",
+        "type": "object"
+      },
+      "AutomationReason": {
+        "description": "Why the latest run did not finish well: every failure code the scheduled workflows set.\n\nThe member value is the stored ``failure_code``. ``UNMAPPED`` is the designed fallback for\na code this list does not know; it is never a reason to hide the run.",
+        "enum": [
+          "GBP_PERFORMANCE_ACCESS_DENIED",
+          "INTEGRATION_RECONNECT_REQUIRED",
+          "GBP_SCOPE_REQUIRED",
+          "GBP_INTEGRATION_NOT_FOUND",
+          "NO_CONNECTED_INTEGRATION",
+          "TOKEN_REFRESH_FAILED",
+          "SECRET_RESOLUTION_FAILED",
+          "TOKEN_RESOLUTION_FAILED",
+          "GBP_LOCATION_NOT_FOUND",
+          "GBP_LOCATION_AMBIGUOUS",
+          "GBP_LOCATION_NO_PLATFORM_LINK",
+          "LOCATION_ID_INVALID",
+          "LOCATION_ID_MISSING",
+          "GBP_PERFORMANCE_REQUEST_REJECTED",
+          "GBP_PERFORMANCE_RATE_LIMITED",
+          "GBP_PERFORMANCE_PROVIDER_UNAVAILABLE",
+          "GBP_PERFORMANCE_RESPONSE_INVALID",
+          "GBP_PERFORMANCE_KEYWORDS_UNAVAILABLE",
+          "GBP_PERFORMANCE_SYNC_FAILED",
+          "GBP_SYNC_FAILED",
+          "REVIEWS_INGEST_FAILED",
+          "SEARCH_CONSOLE_SCOPE_REQUIRED",
+          "SEARCH_PROPERTY_NOT_FOUND",
+          "SEARCH_PROPERTY_NOT_CONFIGURED",
+          "SEARCH_PROPERTY_ID_INVALID",
+          "SEARCH_CONSOLE_SYNC_INCOMPLETE",
+          "SEARCH_CONSOLE_SYNC_FAILED",
+          "ANALYTICS_SCOPE_REQUIRED",
+          "ANALYTICS_PROPERTY_NOT_FOUND",
+          "ANALYTICS_NOT_CONFIGURED",
+          "ANALYTICS_PROPERTY_ID_INVALID",
+          "ANALYTICS_SYNC_INCOMPLETE",
+          "ANALYTICS_SYNC_FAILED",
+          "SEO_ACTIVE_WEBSITE_MISSING",
+          "SEO_WEBSITE_NOT_FOUND",
+          "SEO_WEBSITE_NOT_ACTIVE",
+          "SEO_WEBSITE_SCOPE_MISMATCH",
+          "SEO_CRAWL_EMPTY",
+          "SEO_ANALYSIS_FAILED",
+          "SEO_CRAWL_FAILED",
+          "SEO_CRAWL_NOT_TERMINAL",
+          "SEO_CRAWL_RUN_NOT_FOUND",
+          "MISSING_CRAWL_RUN_ID",
+          "INVALID_CRAWL_RUN_ID",
+          "GBP_POST_GROUNDING_REQUIRED",
+          "GBP_POST_GENERATION_FAILED",
+          "GBP_POST_DELIVERY_BINDING_MISSING",
+          "GBP_REVIEW_SOURCE_INVALID",
+          "GBP_ORGANIZATION_UNAVAILABLE",
+          "GBP_POST_REVISION_UNAVAILABLE",
+          "GBP_WEBSITE_TARGET_UNAVAILABLE",
+          "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE",
+          "GBP_DRIVE_MEDIA_NOT_CONFIGURED",
+          "GBP_DRIVE_NO_ELIGIBLE_IMAGE",
+          "GBP_DRIVE_MEDIA_UNAVAILABLE",
+          "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE",
+          "GBP_DRIVE_UNREACHABLE",
+          "GBP_DRIVE_TEMPORARILY_UNAVAILABLE",
+          "HERMES_SCOPED_SESSION_BUSY",
+          "VERIFICATION_CONTENT_PENDING",
+          "VERIFICATION_REREAD_FAILED",
+          "WORKFLOW_VERSION_NOT_EXECUTABLE",
+          "WORKFLOW_HANDLER_NOT_REGISTERED",
+          "WORKFLOW_RUN_MISSING",
+          "WORKFLOW_CANCELLED",
+          "HANDLER_EXCEPTION",
+          "DATABASE_DETERMINISTIC_ERROR",
+          "RUN_ESCALATED",
+          "RUN_WAITING_APPROVAL",
+          "RUN_PARTIALLY_COMPLETED",
+          "RUN_EXPIRED",
+          "UNMAPPED"
+        ],
+        "title": "AutomationReason",
+        "type": "string"
+      },
+      "AutomationSource": {
+        "enum": [
+          "google_business_profile",
+          "reviews",
+          "website",
+          "analytics",
+          "search_console",
+          "leads",
+          "platform"
+        ],
+        "title": "AutomationSource",
+        "type": "string"
+      },
+      "AutomationStatus": {
+        "enum": [
+          "healthy",
+          "needs_attention",
+          "running",
+          "paused",
+          "not_run_yet"
+        ],
+        "title": "AutomationStatus",
+        "type": "string"
       },
       "BlockerResolution": {
         "additionalProperties": false,
@@ -1258,6 +1641,31 @@
           "insights"
         ],
         "title": "ClientOverview",
+        "type": "object"
+      },
+      "ClientRef": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ],
+        "title": "ClientRef",
         "type": "object"
       },
       "ClientRow": {
@@ -3197,6 +3605,98 @@
         "title": "FeatureFlagCreate",
         "type": "object"
       },
+      "Frequency": {
+        "additionalProperties": false,
+        "description": "A schedule as a typed value; the console formats it in the schedule's timezone.",
+        "properties": {
+          "day_of_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "hour": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hour"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FrequencyKind"
+          },
+          "minute": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minute"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weekday": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekday"
+          }
+        },
+        "required": [
+          "kind",
+          "interval",
+          "hour",
+          "minute",
+          "weekday",
+          "day_of_month",
+          "timezone"
+        ],
+        "title": "Frequency",
+        "type": "object"
+      },
+      "FrequencyKind": {
+        "enum": [
+          "interval_minutes",
+          "hourly",
+          "interval_hours",
+          "daily",
+          "weekly",
+          "monthly",
+          "custom"
+        ],
+        "title": "FrequencyKind",
+        "type": "string"
+      },
       "Freshness": {
         "properties": {
           "last_synced_at": {
@@ -4561,6 +5061,60 @@
         "type": "object"
       },
       "JsonValue": {},
+      "LatestRun": {
+        "additionalProperties": false,
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/RunOutcome"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomationReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "status",
+          "outcome",
+          "reason",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "LatestRun",
+        "type": "object"
+      },
       "LeadAssignment": {
         "additionalProperties": false,
         "properties": {
@@ -8090,6 +8644,26 @@
           "meta"
         ],
         "title": "LocationProfileResponse",
+        "type": "object"
+      },
+      "LocationRef": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LocationRef",
         "type": "object"
       },
       "LocationResponse": {
@@ -13569,6 +14143,17 @@
         "title": "RecommendationView",
         "type": "object"
       },
+      "RecoveryAction": {
+        "enum": [
+          "reconnect_google_business_profile",
+          "check_analytics_connection",
+          "check_search_console_connection",
+          "connect_website",
+          "check_location_mapping"
+        ],
+        "title": "RecoveryAction",
+        "type": "string"
+      },
       "ReportingRange": {
         "properties": {
           "days": {
@@ -14545,6 +15130,141 @@
           "active"
         ],
         "title": "RoleStatus",
+        "type": "string"
+      },
+      "RunHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/RunOutcome"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutomationReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "outcome",
+          "reason",
+          "started_at",
+          "finished_at",
+          "duration_seconds"
+        ],
+        "title": "RunHistoryItem",
+        "type": "object"
+      },
+      "RunNowResult": {
+        "additionalProperties": false,
+        "properties": {
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "schedule_id": {
+            "format": "uuid",
+            "title": "Schedule Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schedule_id",
+          "run_id",
+          "run_status",
+          "replayed"
+        ],
+        "title": "RunNowResult",
+        "type": "object"
+      },
+      "RunOutcome": {
+        "enum": [
+          "succeeded",
+          "partial",
+          "failed",
+          "will_retry",
+          "needs_decision",
+          "cancelled",
+          "expired",
+          "in_progress"
+        ],
+        "title": "RunOutcome",
+        "type": "string"
+      },
+      "RunStatus": {
+        "description": "Every ``workflow_runs.status`` value.",
+        "enum": [
+          "created",
+          "queued",
+          "running",
+          "waiting",
+          "waiting_approval",
+          "retry_scheduled",
+          "completed",
+          "partially_completed",
+          "cancelled",
+          "expired",
+          "failed",
+          "escalated"
+        ],
+        "title": "RunStatus",
         "type": "string"
       },
       "RunView": {
@@ -16914,6 +17634,38 @@
         "title": "WorkflowRunStart",
         "type": "object"
       },
+      "WorkflowTypeCode": {
+        "description": "Every tenant workflow type that can be scheduled.",
+        "enum": [
+          "content.publish",
+          "content.draft_revision",
+          "content.compose",
+          "seo.crawl_or_analysis",
+          "seo.analyze",
+          "seo.sync_search_console",
+          "insights.sync_analytics",
+          "seo.apply_site_change",
+          "gbp.generate_post",
+          "gbp.publish_change",
+          "gbp.publish_post",
+          "gbp.upload_media",
+          "gbp.publish_special_hours",
+          "reviews.publish_response",
+          "leads.send_communication",
+          "gbp.sync",
+          "gbp.sync_performance",
+          "reviews.ingest",
+          "agent.gbp",
+          "agent.seo",
+          "agent.content",
+          "agent.reviews",
+          "agent.leads",
+          "agent.insights",
+          "agent.growth"
+        ],
+        "title": "WorkflowTypeCode",
+        "type": "string"
+      },
       "apps__api__app__products__content__contracts__AIDraftCreate": {
         "additionalProperties": false,
         "properties": {
@@ -17229,6 +17981,167 @@
         "summary": "Get client-visible onboarding state",
         "tags": [
           "client-onboarding"
+        ]
+      }
+    },
+    "/api/v1/command-center/automations": {
+      "get": {
+        "description": "Every scheduled workflow of the clients the caller may open, newest outcome included.",
+        "operationId": "list_automations_api_v1_command_center_automations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Automations",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/automations/{schedule_id}": {
+      "get": {
+        "operationId": "automation_detail_api_v1_command_center_automations__schedule_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runs",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Runs",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Automation Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/automations/{schedule_id}/run": {
+      "post": {
+        "description": "Run a read-only scheduled workflow now. Nothing that publishes can be run from here.",
+        "operationId": "run_automation_now_api_v1_command_center_automations__schedule_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunNowResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Automation Now",
+        "tags": [
+          "command-center"
         ]
       }
     },

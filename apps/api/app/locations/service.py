@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ from apps.api.app.organizations.errors import OrganizationNotFoundError
 from apps.api.app.organizations.models import Organization
 from apps.api.app.organizations.repository import OrganizationRepository
 
+RETIRING = frozenset({LocationStatus.CLOSED_PERMANENTLY, LocationStatus.ARCHIVED})
 TRANSITIONS: dict[LocationStatus, frozenset[LocationStatus]] = {
     LocationStatus.SETUP_REQUIRED: frozenset({LocationStatus.ACTIVE, LocationStatus.ARCHIVED}),
     LocationStatus.ACTIVE: frozenset(
@@ -317,6 +319,43 @@ class LocationService:
             )
         return False
 
+    @staticmethod
+    async def _pause_schedules(
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        *,
+        correlation_id: str,
+    ) -> int:
+        """Pause the location's active schedules in this transaction, through the one pause path.
+
+        A retired location does no work. `ExecutionService.update_schedule` is the existing
+        pause mechanism and records its own audit entry per schedule.
+        """
+        from apps.api.app.execution.contracts import ScheduleUpdate
+        from apps.api.app.execution.models import Schedule
+        from apps.api.app.execution.service import ExecutionService
+
+        execution = ExecutionService()
+        ids = list(
+            await session.scalars(
+                select(Schedule.id).where(
+                    Schedule.organization_id == organization_id,
+                    Schedule.location_id == location_id,
+                    Schedule.status == "active",
+                )
+            )
+        )
+        for schedule_id in ids:
+            await execution.update_schedule(
+                session,
+                organization_id,
+                schedule_id,
+                ScheduleUpdate(status="paused"),
+                correlation_id=correlation_id,
+            )
+        return len(ids)
+
     async def transition(
         self,
         session: AsyncSession,
@@ -349,6 +388,11 @@ class LocationService:
         )
         if updated is None:
             raise LocationVersionConflictError
+        paused = 0
+        if target in RETIRING:
+            paused = await self._pause_schedules(
+                session, organization_id, updated.id, correlation_id=correlation_id
+            )
         await self.audit_service.record(
             session,
             AuditEventCreate(
@@ -366,6 +410,7 @@ class LocationService:
                     "from_status": previous.value,
                     "to_status": updated.status.value,
                     "version": updated.version,
+                    "paused_schedules": paused,
                 },
             ),
         )

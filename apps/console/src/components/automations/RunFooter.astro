@@ -1,0 +1,33 @@
+---
+import type { DialogView } from "../../lib/automation-view";
+interface Props {
+  view: DialogView;
+  runUrl: string;
+}
+const { view, runUrl } = Astro.props;
+---
+
+<button type="button" class="control" inert data-open-history> Details </button>
+{
+  view.actions.map((a) => (
+    <a class="control" href={a.href} data-automation-recovery>
+      {a.label}
+    </a>
+  ))
+}
+{
+  (view.canRun || view.running) && (
+    <button
+      type="button"
+      class="control primary"
+      inert
+      disabled={!view.canRun}
+      data-automation-run={runUrl}
+    >
+      {view.running ? "Running…" : "Run now"}
+    </button>
+  )
+}
+<script>
+  import "../../lib/automation-actions";
+</script>

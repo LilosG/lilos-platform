@@ -90,7 +90,7 @@ test("Clients and client Overview", async ({ page }) => {
     snapshot.locator("a", { hasText: "Google rating" }),
   ).toContainText("4.6 ★");
   await expect(page.getByText("What the numbers mean")).toBeVisible();
-  await expect(page.getByText("12 completed · 1 need attention")).toBeVisible();
+  await expect(page.getByText("12 completed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Client attention items" }).click();
   await expect(page.getByRole("dialog")).toContainText("Requires attention");
   await page.keyboard.press("Escape");
@@ -102,13 +102,11 @@ test("Unbuilt screens share one typed state and show no content", async ({
   await login(page);
   for (const path of [
     "/reports/",
-    "/automations/",
     "/integrations/",
     "/administration/",
     "/administration/users/",
     "/activity/",
     "/attention/",
-    "/clients/synthetic-alpha/automations/",
     "/clients/synthetic-alpha/reports/",
     "/clients/synthetic-alpha/settings/",
   ]) {
@@ -238,6 +236,8 @@ test("A verified factor forces MFA before any page or BFF call, then elevates", 
 
 const BUILT = [
   "/opportunities/",
+  "/automations/",
+  "/clients/synthetic-alpha/automations/",
   "/clients/synthetic-alpha/local-search/",
   "/clients/synthetic-alpha/reviews/",
   "/clients/synthetic-alpha/website-content/",

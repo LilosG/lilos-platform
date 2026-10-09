@@ -76,6 +76,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/command-center/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Automations
+         * @description Every scheduled workflow of the clients the caller may open, newest outcome included.
+         */
+        get: operations["list_automations_api_v1_command_center_automations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/command-center/automations/{schedule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Automation Detail */
+        get: operations["automation_detail_api_v1_command_center_automations__schedule_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/command-center/automations/{schedule_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Automation Now
+         * @description Run a read-only scheduled workflow now. Nothing that publishes can be run from here.
+         */
+        post: operations["run_automation_now_api_v1_command_center_automations__schedule_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/command-center/clients": {
         parameters: {
             query?: never;
@@ -5495,6 +5552,14 @@ export interface components {
          * @enum {string}
          */
         AssuranceLevel: "aal1" | "aal2";
+        /** Attention */
+        Attention: {
+            /** Occurred At */
+            occurred_at: string | null;
+            reason: components["schemas"]["AutomationReason"];
+            /** Recovery Actions */
+            recovery_actions: components["schemas"]["RecoveryAction"][];
+        };
         /** AttentionItem */
         AttentionItem: {
             /** Code */
@@ -5585,6 +5650,93 @@ export interface components {
             data: components["schemas"]["AuthenticatedPrincipal"];
             meta: components["schemas"]["ResponseMeta"];
         };
+        /** AutomationCounts */
+        AutomationCounts: {
+            /** Healthy */
+            healthy: number;
+            /** Needs Attention */
+            needs_attention: number;
+            /** Not Run Yet */
+            not_run_yet: number;
+            /** Paused */
+            paused: number;
+            /** Running */
+            running: number;
+            /** Total */
+            total: number;
+        };
+        /** AutomationDetail */
+        AutomationDetail: {
+            attention: components["schemas"]["Attention"] | null;
+            client: components["schemas"]["ClientRef"];
+            frequency: components["schemas"]["Frequency"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            latest_run: components["schemas"]["LatestRun"] | null;
+            location: components["schemas"]["LocationRef"] | null;
+            /** Next Run At */
+            next_run_at: string | null;
+            /** Run Now Allowed */
+            run_now_allowed: boolean;
+            /** Runs */
+            runs: components["schemas"]["RunHistoryItem"][];
+            source: components["schemas"]["AutomationSource"];
+            status: components["schemas"]["AutomationStatus"];
+            workflow_type: components["schemas"]["WorkflowTypeCode"];
+        };
+        /** AutomationItem */
+        AutomationItem: {
+            attention: components["schemas"]["Attention"] | null;
+            client: components["schemas"]["ClientRef"];
+            frequency: components["schemas"]["Frequency"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            latest_run: components["schemas"]["LatestRun"] | null;
+            location: components["schemas"]["LocationRef"] | null;
+            /** Next Run At */
+            next_run_at: string | null;
+            /** Run Now Allowed */
+            run_now_allowed: boolean;
+            source: components["schemas"]["AutomationSource"];
+            status: components["schemas"]["AutomationStatus"];
+            workflow_type: components["schemas"]["WorkflowTypeCode"];
+        };
+        /** AutomationList */
+        AutomationList: {
+            counts: components["schemas"]["AutomationCounts"];
+            /** Data */
+            data: components["schemas"]["AutomationItem"][];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+        };
+        /**
+         * AutomationReason
+         * @description Why the latest run did not finish well: every failure code the scheduled workflows set.
+         *
+         *     The member value is the stored ``failure_code``. ``UNMAPPED`` is the designed fallback for
+         *     a code this list does not know; it is never a reason to hide the run.
+         * @enum {string}
+         */
+        AutomationReason: "GBP_PERFORMANCE_ACCESS_DENIED" | "INTEGRATION_RECONNECT_REQUIRED" | "GBP_SCOPE_REQUIRED" | "GBP_INTEGRATION_NOT_FOUND" | "NO_CONNECTED_INTEGRATION" | "TOKEN_REFRESH_FAILED" | "SECRET_RESOLUTION_FAILED" | "TOKEN_RESOLUTION_FAILED" | "GBP_LOCATION_NOT_FOUND" | "GBP_LOCATION_AMBIGUOUS" | "GBP_LOCATION_NO_PLATFORM_LINK" | "LOCATION_ID_INVALID" | "LOCATION_ID_MISSING" | "GBP_PERFORMANCE_REQUEST_REJECTED" | "GBP_PERFORMANCE_RATE_LIMITED" | "GBP_PERFORMANCE_PROVIDER_UNAVAILABLE" | "GBP_PERFORMANCE_RESPONSE_INVALID" | "GBP_PERFORMANCE_KEYWORDS_UNAVAILABLE" | "GBP_PERFORMANCE_SYNC_FAILED" | "GBP_SYNC_FAILED" | "REVIEWS_INGEST_FAILED" | "SEARCH_CONSOLE_SCOPE_REQUIRED" | "SEARCH_PROPERTY_NOT_FOUND" | "SEARCH_PROPERTY_NOT_CONFIGURED" | "SEARCH_PROPERTY_ID_INVALID" | "SEARCH_CONSOLE_SYNC_INCOMPLETE" | "SEARCH_CONSOLE_SYNC_FAILED" | "ANALYTICS_SCOPE_REQUIRED" | "ANALYTICS_PROPERTY_NOT_FOUND" | "ANALYTICS_NOT_CONFIGURED" | "ANALYTICS_PROPERTY_ID_INVALID" | "ANALYTICS_SYNC_INCOMPLETE" | "ANALYTICS_SYNC_FAILED" | "SEO_ACTIVE_WEBSITE_MISSING" | "SEO_WEBSITE_NOT_FOUND" | "SEO_WEBSITE_NOT_ACTIVE" | "SEO_WEBSITE_SCOPE_MISMATCH" | "SEO_CRAWL_EMPTY" | "SEO_ANALYSIS_FAILED" | "SEO_CRAWL_FAILED" | "SEO_CRAWL_NOT_TERMINAL" | "SEO_CRAWL_RUN_NOT_FOUND" | "MISSING_CRAWL_RUN_ID" | "INVALID_CRAWL_RUN_ID" | "GBP_POST_GROUNDING_REQUIRED" | "GBP_POST_GENERATION_FAILED" | "GBP_POST_DELIVERY_BINDING_MISSING" | "GBP_REVIEW_SOURCE_INVALID" | "GBP_ORGANIZATION_UNAVAILABLE" | "GBP_POST_REVISION_UNAVAILABLE" | "GBP_WEBSITE_TARGET_UNAVAILABLE" | "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE" | "GBP_DRIVE_MEDIA_NOT_CONFIGURED" | "GBP_DRIVE_NO_ELIGIBLE_IMAGE" | "GBP_DRIVE_MEDIA_UNAVAILABLE" | "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE" | "GBP_DRIVE_UNREACHABLE" | "GBP_DRIVE_TEMPORARILY_UNAVAILABLE" | "HERMES_SCOPED_SESSION_BUSY" | "VERIFICATION_CONTENT_PENDING" | "VERIFICATION_REREAD_FAILED" | "WORKFLOW_VERSION_NOT_EXECUTABLE" | "WORKFLOW_HANDLER_NOT_REGISTERED" | "WORKFLOW_RUN_MISSING" | "WORKFLOW_CANCELLED" | "HANDLER_EXCEPTION" | "DATABASE_DETERMINISTIC_ERROR" | "RUN_ESCALATED" | "RUN_WAITING_APPROVAL" | "RUN_PARTIALLY_COMPLETED" | "RUN_EXPIRED" | "UNMAPPED";
+        /**
+         * AutomationSource
+         * @enum {string}
+         */
+        AutomationSource: "google_business_profile" | "reviews" | "website" | "analytics" | "search_console" | "leads" | "platform";
+        /**
+         * AutomationStatus
+         * @enum {string}
+         */
+        AutomationStatus: "healthy" | "needs_attention" | "running" | "paused" | "not_run_yet";
         /**
          * BlockerResolution
          * @description Where a blocker is resolved, and by whom.
@@ -5797,6 +5949,18 @@ export interface components {
             systems: components["schemas"]["ClientSystem"][];
             /** Upcoming */
             upcoming: components["schemas"]["UpcomingItem"][];
+        };
+        /** ClientRef */
+        ClientRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
         };
         /** ClientRow */
         ClientRow: {
@@ -6483,6 +6647,30 @@ export interface components {
              */
             scope_type: "organization" | "location";
         };
+        /**
+         * Frequency
+         * @description A schedule as a typed value; the console formats it in the schedule's timezone.
+         */
+        Frequency: {
+            /** Day Of Month */
+            day_of_month: number | null;
+            /** Hour */
+            hour: number | null;
+            /** Interval */
+            interval: number | null;
+            kind: components["schemas"]["FrequencyKind"];
+            /** Minute */
+            minute: number | null;
+            /** Timezone */
+            timezone: string;
+            /** Weekday */
+            weekday: number | null;
+        };
+        /**
+         * FrequencyKind
+         * @enum {string}
+         */
+        FrequencyKind: "interval_minutes" | "hourly" | "interval_hours" | "daily" | "weekly" | "monthly" | "custom";
         /** Freshness */
         Freshness: {
             /** Last Synced At */
@@ -6984,6 +7172,16 @@ export interface components {
             title: string;
         };
         JsonValue: unknown;
+        /** LatestRun */
+        LatestRun: {
+            /** Finished At */
+            finished_at: string | null;
+            outcome: components["schemas"]["RunOutcome"];
+            reason: components["schemas"]["AutomationReason"] | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["RunStatus"];
+        };
         /** LeadAssignment */
         LeadAssignment: {
             /**
@@ -8043,6 +8241,16 @@ export interface components {
         LocationProfileResponse: {
             data: components["schemas"]["LocationProfileData"];
             meta: components["schemas"]["ResponseMeta"];
+        };
+        /** LocationRef */
+        LocationRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** LocationResponse */
         LocationResponse: {
@@ -9794,6 +10002,11 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * RecoveryAction
+         * @enum {string}
+         */
+        RecoveryAction: "reconnect_google_business_profile" | "check_analytics_connection" | "check_search_console_connection" | "connect_website" | "check_location_mapping";
         /** ReportingRange */
         ReportingRange: {
             /** Days */
@@ -10152,6 +10365,50 @@ export interface components {
          * @enum {string}
          */
         RoleStatus: "active";
+        /** RunHistoryItem */
+        RunHistoryItem: {
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            outcome: components["schemas"]["RunOutcome"];
+            reason: components["schemas"]["AutomationReason"] | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["RunStatus"];
+        };
+        /** RunNowResult */
+        RunNowResult: {
+            /** Replayed */
+            replayed: boolean;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            run_status: components["schemas"]["RunStatus"];
+            /**
+             * Schedule Id
+             * Format: uuid
+             */
+            schedule_id: string;
+        };
+        /**
+         * RunOutcome
+         * @enum {string}
+         */
+        RunOutcome: "succeeded" | "partial" | "failed" | "will_retry" | "needs_decision" | "cancelled" | "expired" | "in_progress";
+        /**
+         * RunStatus
+         * @description Every ``workflow_runs.status`` value.
+         * @enum {string}
+         */
+        RunStatus: "created" | "queued" | "running" | "waiting" | "waiting_approval" | "retry_scheduled" | "completed" | "partially_completed" | "cancelled" | "expired" | "failed" | "escalated";
         /** RunView */
         RunView: {
             /** Correlation Id */
@@ -10971,6 +11228,12 @@ export interface components {
             /** Location Id */
             location_id?: string | null;
         };
+        /**
+         * WorkflowTypeCode
+         * @description Every tenant workflow type that can be scheduled.
+         * @enum {string}
+         */
+        WorkflowTypeCode: "content.publish" | "content.draft_revision" | "content.compose" | "seo.crawl_or_analysis" | "seo.analyze" | "seo.sync_search_console" | "insights.sync_analytics" | "seo.apply_site_change" | "gbp.generate_post" | "gbp.publish_change" | "gbp.publish_post" | "gbp.upload_media" | "gbp.publish_special_hours" | "reviews.publish_response" | "leads.send_communication" | "gbp.sync" | "gbp.sync_performance" | "reviews.ingest" | "agent.gbp" | "agent.seo" | "agent.content" | "agent.reviews" | "agent.leads" | "agent.insights" | "agent.growth";
         /** AIDraftCreate */
         apps__api__app__products__content__contracts__AIDraftCreate: {
             /**
@@ -11196,6 +11459,103 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_automations_api_v1_command_center_automations_get: {
+        parameters: {
+            query?: {
+                organization_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    automation_detail_api_v1_command_center_automations__schedule_id__get: {
+        parameters: {
+            query?: {
+                runs?: number;
+            };
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_automation_now_api_v1_command_center_automations__schedule_id__run_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunNowResult"];
+                };
             };
             /** @description Validation Error */
             422: {
