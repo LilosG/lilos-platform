@@ -766,6 +766,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/command-center/integrations/publishing/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Publishing Repositories */
+        get: operations["publishing_repositories_api_v1_organizations__organization_id__command_center_integrations_publishing_repositories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/integrations/publishing/target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link Publishing Target
+         * @description Link the client's publishing repository. One key creates one target, however often sent.
+         */
+        post: operations["link_publishing_target_api_v1_organizations__organization_id__command_center_integrations_publishing_target_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/command-center/leads": {
         parameters: {
             query?: never;
@@ -7048,12 +7085,6 @@ export interface components {
             can_manage_analytics: boolean;
             /** Can Manage Search */
             can_manage_search: boolean;
-            /**
-             * Github Limitation
-             * @default publishing_configuration_remains_in_existing_control_plane
-             * @constant
-             */
-            github_limitation: "publishing_configuration_remains_in_existing_control_plane";
             /** Github Status */
             github_status: string | null;
             google: components["schemas"]["GoogleState"];
@@ -7064,6 +7095,7 @@ export interface components {
              * Format: uuid
              */
             organization_id: string;
+            publishing: components["schemas"]["PublishingSetup"] | null;
             /** Search Properties */
             search_properties: components["schemas"]["SearchMapping"][];
             /** Syncs */
@@ -7767,6 +7799,20 @@ export interface components {
             recorded_conversions: number | null;
             /** Sources */
             sources: components["schemas"]["LeadSourceEvidence"][];
+        };
+        /** LinkPublishingTarget */
+        LinkPublishingTarget: {
+            /** Repository Id */
+            repository_id: string;
+        };
+        /** LinkedPublishingTarget */
+        LinkedPublishingTarget: {
+            /** Branch */
+            branch: string;
+            /** Replayed */
+            replayed: boolean;
+            /** Repository */
+            repository: string;
         };
         /** LiveCheck */
         LiveCheck: {
@@ -9875,6 +9921,41 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
         };
+        /** PublishingRepositories */
+        PublishingRepositories: {
+            /** Repositories */
+            repositories: components["schemas"]["PublishingRepository"][];
+        };
+        /** PublishingRepository */
+        PublishingRepository: {
+            /** Default Branch */
+            default_branch: string;
+            /** Format Verified */
+            format_verified: boolean;
+            /** Name */
+            name: string;
+            /** Private */
+            private: boolean;
+            /** Repository Id */
+            repository_id: string;
+            /** Suggested */
+            suggested: boolean;
+        };
+        /** PublishingSetup */
+        PublishingSetup: {
+            /** Branch */
+            branch: string | null;
+            /** Can Manage */
+            can_manage: boolean;
+            /** Repository */
+            repository: string | null;
+            state: components["schemas"]["PublishingSetupState"];
+        };
+        /**
+         * PublishingSetupState
+         * @enum {string}
+         */
+        PublishingSetupState: "linked" | "not_linked" | "github_not_connected" | "format_unverified";
         /**
          * QualityCode
          * @enum {string}
@@ -12650,6 +12731,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publishing_repositories_api_v1_organizations__organization_id__command_center_integrations_publishing_repositories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishingRepositories"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_publishing_target_api_v1_organizations__organization_id__command_center_integrations_publishing_target_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkPublishingTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkedPublishingTarget"];
                 };
             };
             /** @description Validation Error */

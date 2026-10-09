@@ -25,6 +25,9 @@ from apps.api.app.routes.command_center_gbp_performance import (
 )
 from apps.api.app.routes.command_center_leads import router as command_center_leads_router
 from apps.api.app.routes.command_center_portfolio import router as command_center_portfolio_router
+from apps.api.app.routes.command_center_publishing import (
+    router as command_center_publishing_router,
+)
 from apps.api.app.routes.command_center_reviews import router as command_center_reviews_router
 from apps.api.app.routes.command_center_search import router as command_center_search_router
 from apps.api.app.routes.command_center_website import router as command_center_website_router
@@ -100,6 +103,7 @@ def create_app(
     application.add_middleware(CorrelationIdMiddleware)
     register_exception_handlers(application)
     application.include_router(command_center_search_router)
+    application.include_router(command_center_publishing_router)
     application.include_router(command_center_reviews_router)
     application.include_router(command_center_leads_router)
     application.include_router(command_center_gbp_performance_router)
