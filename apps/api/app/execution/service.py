@@ -16,7 +16,11 @@ from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
-from apps.api.app.execution.automations import BLOCKING_STATUSES, RUN_NOW_WORKFLOWS
+from apps.api.app.execution.automations import (
+    BLOCKING_STATUSES,
+    RETIRED_LOCATIONS,
+    RUN_NOW_WORKFLOWS,
+)
 from apps.api.app.execution.contracts import (
     JobOutcome,
     ScheduleCreate,
@@ -24,6 +28,7 @@ from apps.api.app.execution.contracts import (
     WorkflowSubmit,
 )
 from apps.api.app.execution.errors import (
+    AutomationLocationRetiredError,
     AutomationPausedError,
     AutomationRunInProgressError,
     AutomationRunNotAllowedError,
@@ -48,6 +53,8 @@ from apps.api.app.execution.workflow_catalog import (
     is_tenant_workflow_key,
 )
 from apps.api.app.locations.models import Location
+from apps.api.app.organizations.enums import OrganizationStatus
+from apps.api.app.organizations.models import Organization
 
 CONSUMABLE_WORKFLOW_RUN_STATUSES = {"created", "queued"}
 # Resumable workflows that legitimately run longer than the default job budget.
@@ -294,11 +301,26 @@ class ExecutionService:
     ) -> WorkflowRun | None:
         """Atomically advance and dispatch one due durable schedule."""
         now = datetime.now(UTC)
+        # A schedule whose location is archived or closed for good, or whose client is archived
+        # or removed, is never selected, so it can neither run nor sit at the head of the queue
+        # ahead of schedules that can. Its row is left exactly as it is.
         schedule = await session.scalar(
             select(Schedule)
-            .where(Schedule.status == "active", Schedule.next_run_at <= now)
+            .join(Organization, Organization.id == Schedule.organization_id)
+            .outerjoin(
+                Location,
+                (Location.organization_id == Schedule.organization_id)
+                & (Location.id == Schedule.location_id),
+            )
+            .where(
+                Schedule.status == "active",
+                Schedule.next_run_at <= now,
+                Organization.status != OrganizationStatus.ARCHIVED,
+                Organization.removed_at.is_(None),
+                or_(Schedule.location_id.is_(None), Location.status.notin_(RETIRED_LOCATIONS)),
+            )
             .order_by(Schedule.next_run_at, Schedule.created_at)
-            .with_for_update(skip_locked=True)
+            .with_for_update(skip_locked=True, of=Schedule)
             .limit(1)
         )
         if schedule is None:
@@ -406,6 +428,15 @@ class ExecutionService:
         )
         if definition is None or definition.key not in RUN_NOW_WORKFLOWS:
             raise AutomationRunNotAllowedError
+        if schedule.location_id is not None:
+            status = await session.scalar(
+                select(Location.status).where(
+                    Location.organization_id == organization_id,
+                    Location.id == schedule.location_id,
+                )
+            )
+            if status in RETIRED_LOCATIONS:
+                raise AutomationLocationRetiredError
         if schedule.status != "active":
             raise AutomationPausedError
         run_key = f"run-now:{schedule.id}:{idempotency_key}"

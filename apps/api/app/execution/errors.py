@@ -66,3 +66,10 @@ class AutomationRunInProgressError(ConflictError):
 
     code = "AUTOMATION_RUN_IN_PROGRESS"
     public_message = "This automation is already running."
+
+
+class AutomationLocationRetiredError(ConflictError):
+    """The automation belongs to a location that is archived or closed for good."""
+
+    code = "AUTOMATION_LOCATION_RETIRED"
+    public_message = "This automation belongs to a location that is no longer in use."

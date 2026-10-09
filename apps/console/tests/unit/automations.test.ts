@@ -283,6 +283,9 @@ describe("presenters", () => {
       /already running/,
     );
     expect(runFailureText("AUTOMATION_RUN_NOT_ALLOWED")).toMatch(/schedule/);
+    expect(runFailureText("AUTOMATION_LOCATION_RETIRED")).toMatch(
+      /no longer in use/,
+    );
     expect(runFailureText("SOMETHING_ELSE")).toMatch(/did not start/);
     expect(failureCode({ error: { code: "AUTOMATION_PAUSED" } }, 409)).toBe(
       "AUTOMATION_PAUSED",

@@ -25,7 +25,7 @@ from enum import StrEnum
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.models import (
@@ -35,6 +35,7 @@ from apps.api.app.execution.models import (
     WorkflowVersion,
 )
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES, is_tenant_workflow_key
+from apps.api.app.locations.enums import LocationStatus
 from apps.api.app.locations.models import Location
 
 
@@ -301,6 +302,8 @@ FAILURE_POLICY: Final[dict[AutomationReason, Policy]] = {
 IN_PROGRESS_STATUSES: Final = frozenset(
     {RunStatus.CREATED, RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING}
 )
+# Locations that no longer do any work: their schedules never run and are not automations.
+RETIRED_LOCATIONS: Final = (LocationStatus.CLOSED_PERMANENTLY, LocationStatus.ARCHIVED)
 # Statuses that block starting another run of the same schedule.
 BLOCKING_STATUSES: Final = tuple(sorted(s.value for s in IN_PROGRESS_STATUSES))
 
@@ -554,6 +557,7 @@ async def load_automations(
     *,
     schedule_id: UUID | None = None,
     history: int = 1,
+    include_retired_locations: bool = False,
 ) -> list[AutomationRecord]:
     """Every scheduled workflow of ``organization_ids`` with its newest ``history`` runs.
 
@@ -570,6 +574,14 @@ async def load_automations(
         .where(Schedule.organization_id.in_(organization_ids))
         .order_by(WorkflowDefinition.key, Schedule.created_at, Schedule.id)
     )
+    if not include_retired_locations:
+        # An archived or permanently closed location is not an automation, so it is also not
+        # counted by the dashboard's automations health, which shares this loader.
+        statement = statement.outerjoin(
+            Location,
+            (Location.organization_id == Schedule.organization_id)
+            & (Location.id == Schedule.location_id),
+        ).where(or_(Schedule.location_id.is_(None), Location.status.notin_(RETIRED_LOCATIONS)))
     if schedule_id is not None:
         statement = statement.where(Schedule.id == schedule_id)
     rows = [

@@ -565,6 +565,8 @@ export const RUN_FAILURE_TEXT: Record<string, string> = {
   AUTOMATION_RUN_IN_PROGRESS:
     "This automation is already running. Wait for it to finish, then check the result.",
   AUTOMATION_PAUSED: "This automation is paused, so it cannot be run now.",
+  AUTOMATION_LOCATION_RETIRED:
+    "This location is no longer in use, so its automations do not run.",
   AUTOMATION_RUN_NOT_ALLOWED: "This automation can only run on its schedule.",
   PERMISSION_DENIED: "You do not have permission to run this automation.",
   AAL2_REQUIRED: "Verify your authenticator, then try again.",

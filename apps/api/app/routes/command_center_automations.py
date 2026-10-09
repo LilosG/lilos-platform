@@ -298,12 +298,22 @@ async def list_automations(
 
 
 async def find_record(
-    request: Request, session: Session, principal: Authenticated, schedule_id: UUID, history: int
+    request: Request,
+    session: Session,
+    principal: Authenticated,
+    schedule_id: UUID,
+    history: int,
+    *,
+    include_retired_locations: bool = False,
 ) -> tuple[AutomationRecord, Organization]:
     _, organizations = await readable_organizations(request, session, principal)
     owners = {o.id: o for o in organizations}
     records = await load_automations(
-        session, list(owners), schedule_id=schedule_id, history=history
+        session,
+        list(owners),
+        schedule_id=schedule_id,
+        history=history,
+        include_retired_locations=include_retired_locations,
     )
     if not records:
         raise NotFoundError
@@ -339,7 +349,10 @@ async def run_automation_now(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=64)],
 ) -> RunNowResult:
     """Run a read-only scheduled workflow now. Nothing that publishes can be run from here."""
-    record, organization = await find_record(request, session, principal, schedule_id, 1)
+    # Found even when its location is retired, so Run now can say why it is refused.
+    _, organization = await find_record(
+        request, session, principal, schedule_id, 1, include_retired_locations=True
+    )
     if not await allowed(session, principal, organization.id, request, "workflows.execute"):
         raise AuthorizationError
     run, created = await service.run_schedule_now(
