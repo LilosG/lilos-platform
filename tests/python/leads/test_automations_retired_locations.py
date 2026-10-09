@@ -231,3 +231,43 @@ def test_retired_location_is_not_an_automation_and_cannot_run(
         return len(list(rows))
 
     assert run_db(postgresql_test_url, none_started) == 0
+
+
+def test_next_automation_ignores_schedules_of_retired_locations(
+    canonical_leads_client: tuple[TestClient, dict[str, UUID]],
+    postgresql_test_url: str,
+) -> None:
+    client, ids = canonical_leads_client
+    org, active = ids["organization"], ids["location"]
+    overview_url = f"/api/v1/command-center/clients/{org}/overview"
+    soon = datetime.now(UTC) + timedelta(hours=1)
+    later = soon + timedelta(days=2)
+    seeded: dict[str, UUID] = {}
+
+    async def seed_retired(session: AsyncSession) -> None:
+        retired = await second_location(session, org, LocationStatus.ARCHIVED)
+        seeded["retired"] = await automations.schedule(
+            session, org, "reviews.ingest", location=retired
+        )
+        await due(session, seeded["retired"], soon)
+        await session.commit()
+
+    run_db(postgresql_test_url, seed_retired)
+    # Only a retired schedule exists: nothing is upcoming, for the client or the portfolio.
+    assert client.get(overview_url, headers=HEADERS).json()["upcoming"] == []
+    portfolio = client.get(PORTFOLIO, headers=HEADERS).json()
+    assert [u for u in portfolio["upcoming"] if u["organization_id"] == str(org)] == []
+
+    async def seed_normal(session: AsyncSession) -> None:
+        seeded["normal"] = await automations.schedule(
+            session, org, "gbp.sync_performance", location=active
+        )
+        await due(session, seeded["normal"], later)
+        await session.commit()
+
+    run_db(postgresql_test_url, seed_normal)
+    upcoming = client.get(overview_url, headers=HEADERS).json()["upcoming"]
+    assert [u["workflow_key"] for u in upcoming] == ["gbp.sync_performance"]
+    portfolio = client.get(PORTFOLIO, headers=HEADERS).json()
+    mine = [u for u in portfolio["upcoming"] if u["organization_id"] == str(org)]
+    assert [u["workflow_key"] for u in mine] == ["gbp.sync_performance"]

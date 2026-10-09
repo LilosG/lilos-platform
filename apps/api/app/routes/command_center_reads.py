@@ -26,7 +26,7 @@ from sqlalchemy import ColumnElement, Text, and_, cast, exists, func, or_, selec
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, aliased
 
-from apps.api.app.execution.automations import automation_attention_counts
+from apps.api.app.execution.automations import RETIRED_LOCATIONS, automation_attention_counts
 from apps.api.app.execution.models import Schedule, WorkflowDefinition, WorkflowRun, WorkflowVersion
 from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.industries.models import Industry
@@ -784,7 +784,16 @@ async def workflows(
         select(Schedule.organization_id, WorkflowDefinition.key, Schedule.next_run_at)
         .join(WorkflowVersion, WorkflowVersion.id == Schedule.workflow_version_id)
         .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
-        .where(Schedule.organization_id.in_(readable), Schedule.status == "active")
+        .outerjoin(
+            Location,
+            (Location.organization_id == Schedule.organization_id)
+            & (Location.id == Schedule.location_id),
+        )
+        .where(
+            Schedule.organization_id.in_(readable),
+            Schedule.status == "active",
+            or_(Schedule.location_id.is_(None), Location.status.notin_(RETIRED_LOCATIONS)),
+        )
         .order_by(Schedule.organization_id, Schedule.next_run_at)
         .distinct(Schedule.organization_id)
     ):
