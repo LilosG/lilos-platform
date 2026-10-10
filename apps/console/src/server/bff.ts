@@ -4,6 +4,7 @@ import { websiteRoutes } from "./website-routes";
 import { reviewRoutes } from "./review-routes";
 import { automationRoutes, idempotencyKey } from "./automation-routes";
 import { searchRoutes } from "./search-routes";
+import { adminRoutes } from "./admin-routes";
 import {
   assertMutation,
   boundedBody,
@@ -43,6 +44,7 @@ export const routes = [
   ...websiteRoutes,
   ...reviewRoutes,
   ...automationRoutes,
+  ...adminRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },
   {
     pattern: /^command-center\/(portfolio|clients)\/$/,

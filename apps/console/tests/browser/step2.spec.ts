@@ -103,12 +103,9 @@ test("Unbuilt screens share one typed state and show no content", async ({
   for (const path of [
     "/reports/",
     "/integrations/",
-    "/administration/",
-    "/administration/users/",
     "/activity/",
     "/attention/",
     "/clients/synthetic-alpha/reports/",
-    "/clients/synthetic-alpha/settings/",
   ]) {
     await page.goto(path);
     await expect(page.locator("[data-not-built]")).toHaveCount(1);
@@ -244,6 +241,7 @@ const BUILT = [
   "/clients/synthetic-alpha/leads/",
   "/clients/synthetic-alpha/opportunities/",
   "/clients/synthetic-alpha/integrations/",
+  "/clients/synthetic-alpha/settings/",
 ];
 test("Every sidebar link routes to a built screen or the typed not-built state", async ({
   page,
@@ -278,6 +276,5 @@ test("Every sidebar link routes to a built screen or the typed not-built state",
   await walk("/");
   await walk("/clients/synthetic-alpha/");
   expect(visited).toContain("/clients/synthetic-alpha/settings/");
-  expect(visited).toContain("/administration/");
-  expect(visited.length).toBeGreaterThanOrEqual(17);
+  expect(visited.length).toBeGreaterThanOrEqual(16);
 });

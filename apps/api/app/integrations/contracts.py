@@ -10,6 +10,12 @@ class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
 
+class GitHubInstallRequest(Contract):
+    """Begin the GitHub App installation, and say which app the browser returns to."""
+
+    return_app: Literal["web", "console"] = "web"
+
+
 class GoogleConnectRequest(Contract):
     """Begin (or re-consent) a Google connection for the given products.
 

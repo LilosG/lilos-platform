@@ -90,7 +90,11 @@ export const searchRoutes = [
     [],
     true,
   ),
-  route(`${org}/integrations/github/install`, "POST", empty),
+  route(
+    `${org}/integrations/github/install`,
+    "POST",
+    z.object({ return_app: z.literal("console") }).strict(),
+  ),
   route(`${org}/command-center/gbp/performance`, "GET", undefined, [
     "period",
     "month",
