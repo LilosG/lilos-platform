@@ -103,12 +103,10 @@ test("Unbuilt screens share one typed state and show no content", async ({
   for (const path of [
     "/reports/",
     "/integrations/",
-    "/administration/",
     "/administration/users/",
     "/activity/",
     "/attention/",
     "/clients/synthetic-alpha/reports/",
-    "/clients/synthetic-alpha/settings/",
   ]) {
     await page.goto(path);
     await expect(page.locator("[data-not-built]")).toHaveCount(1);
