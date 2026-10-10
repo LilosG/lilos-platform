@@ -36,6 +36,13 @@ import {
   state as automationState,
 } from "./automation-sim.mjs";
 import {
+  handle as publishingHandle,
+  modes as publishingModes,
+  publishing as publishingSetup,
+  reset as resetPublishing,
+  state as publishingState,
+} from "./publishing-sim.mjs";
+import {
   handle as beta,
   notConnected,
   reset as resetBeta,
@@ -181,12 +188,29 @@ createServer(async (req, res) => {
     contentSim.advanced = true;
     return reply({ ok: true });
   }
+  if (url.pathname === "/test/content-images") {
+    contentSim.images = parsed.images ?? "list";
+    contentSim.requiresImage = parsed.requiresImage ?? true;
+    contentSim.revisionStatus = "approved";
+    contentSim.assetRequests = [];
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/content-asset-requests")
+    return reply({ requests: contentSim.assetRequests });
   if (url.pathname === "/test/content-requests")
     return reply({ requests: contentSim.requests });
   if (url.pathname === "/test/automations-scenario") {
     resetAutomations(parsed.mode);
     return reply({ ok: true });
   }
+  if (url.pathname === "/test/publishing-scenario") {
+    if (!publishingModes.includes(parsed.mode))
+      return reply({ ok: false }, 400);
+    resetPublishing(parsed.mode);
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/publishing-requests")
+    return reply({ requests: publishingState.requests });
   if (url.pathname === "/test/automations-runs")
     return reply({ runs: automationState.runs });
   if (url.pathname === "/test/gbp-reset") {
@@ -601,10 +625,20 @@ createServer(async (req, res) => {
   if (
     path.includes("content-operations/") &&
     path.endsWith("/publishing-assets")
-  )
+  ) {
+    contentSim.assetRequests.push(url.searchParams.get("target_id"));
+    if (contentSim.images === "fail")
+      return reply({ error: { code: "UPSTREAM_UNAVAILABLE" } }, 502);
+    if (contentSim.images === "empty") return reply({ data: [] });
     return reply({
-      data: [{ path: "/synthetic.webp", name: "synthetic.webp" }],
+      data: [
+        { path: "/synthetic.webp", name: "synthetic.webp" },
+        { path: "/images/blog/wings.jpg", name: "wings.jpg" },
+        { path: "/images/blog/packers-sunday.png", name: "packers-sunday.png" },
+        { path: "/images/team/staff.jpg", name: "staff.jpg" },
+      ],
     });
+  }
   if (path.startsWith("content/") && req.method === "POST")
     return reply({ data: { id: ids.next, status: "awaiting_editorial" } }, 201);
   if (path === "command-center/reviews") {
@@ -700,8 +734,21 @@ createServer(async (req, res) => {
   };
   if (path === "command-center/gbp/performance")
     return reply(notConnected(claims.sub, url.searchParams));
-  if (path === "command-center/integrations")
-    return reply(phase2Payload("integration"));
+  const publishingResult = publishingHandle(
+    path,
+    req.method,
+    req.headers,
+    parsed,
+    claims,
+  );
+  if (publishingResult)
+    return reply(publishingResult.body, publishingResult.status);
+  if (path === "command-center/integrations") {
+    const data = phase2Payload("integration");
+    data.publishing = publishingSetup();
+    if (data.publishing) data.publishing.can_manage = claims.aal === "aal2";
+    return reply(data);
+  }
   if (path === "command-center/local-search")
     return reply(phase2Payload("search"));
   if (path.startsWith("command-center/local-search/websites/"))

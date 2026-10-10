@@ -1,199 +1,308 @@
 ---
 import type { IntegrationsView } from "../../adapters/local-search";
+import {
+  googleRow,
+  propertyRows,
+  publishingRow,
+  resourceRows,
+} from "../../lib/integrations-view";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import DetailsDialog from "./DetailsDialog.astro";
+import RepositoryDialog from "./RepositoryDialog.astro";
 interface Props {
   view: IntegrationsView;
   slug: string;
+  clientName: string;
+  now: Date;
 }
-const { view: v, slug } = Astro.props;
+const { view: v, slug, clientName, now } = Astro.props;
 const api = `/api/organizations/${v.organization_id}/`;
-const g = api + "integrations/google/";
+const google = googleRow(v, now);
+const publishing = publishingRow(v);
+const resources = resourceRows(v, api, now);
+const properties = propertyRows(v, api, now);
+const mfa = `/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`;
+const canMap = v.locations.some((l) => l.can_map);
+const sources = [
+  { key: "search_console", name: "Search Console", can: v.can_manage_search },
+  { key: "analytics", name: "Analytics", can: v.can_manage_analytics },
+] as const;
+const noData = !resources.length && !properties.length;
 ---
 
+<PageHeader title="Integrations" subtitle={clientName} client>
+  <Fragment slot="actions">
+    <a class="control" href={`/clients/${slug}/local-search/`}
+      >Open Local Search</a
+    >
+  </Fragment>
+</PageHeader>
+<div hidden data-integration-error>
+  <ErrorState title="That did not go through">
+    <span data-error-text></span>
+    <Fragment slot="action">
+      <button type="button" class="control" data-error-retry hidden>
+        Try again
+      </button>
+      <a class="control" data-error-verify href={mfa} hidden
+        >Verify authenticator</a
+      >
+      <a class="control" data-error-refresh href="" hidden>Refresh</a>
+    </Fragment>
+  </ErrorState>
+</div>
 <section class="panel tablewrap">
-  <h2>Current external connections</h2><table>
-    <caption>Canonical provider authorization and capabilities</caption><thead
-      ><tr
-        ><th scope="col">Connection / capabilities</th><th scope="col"
-          >Status</th
-        ><th scope="col">Authorization</th><th scope="col">Action</th></tr
-      ></thead
-    ><tbody>
-      <tr
-        ><td
-          >Google<span class="sub"
-            >{
-              v.google.capabilities
-                .map(
-                  (c) => `${c.label}: ${c.enabled ? "Granted" : "Not granted"}`,
-                )
-                .join(" · ")
-            }</span
-          ></td
-        ><td>{v.google.connection_status}</td><td
-          >Verified: {v.google.last_verified_at ?? "Unavailable"}<span
-            class="sub"
-            >Access token expiry: {
-              v.google.token_expires_at ?? "Unavailable"
-            }</span
-          ></td
-        ><td
-          ><button
-            inert
-            disabled={!v.can_connect}
-            data-action={g + "connect/"}
-            data-body={JSON.stringify({
-              products: ["gbp", "search_console", "analytics"],
-              return_app: "console",
-            })}
-            data-oauth>Connect / reconnect Google</button
-          ><button
-            inert
-            disabled={!v.can_connect || !v.google.connection_id}
-            data-action={g + "disconnect/"}
-            data-body="{}"
-            data-confirm="Disconnect Google access for this organization?"
-            >Disconnect</button
-          ></td
-        ></tr
-      >
-      <tr
-        ><td>GitHub</td><td>{v.github_status ?? "Permission required"}</td><td
-          >Publishing configuration remains in the existing control plane.</td
-        ><td>Publishing setup unavailable in this workspace.</td></tr
-      >
-    </tbody>
-  </table>
-</section>
-<section class="panel">
-  <h2>Confirmed resources and freshness</h2>
-  {
-    v.google.mapped_resources.map((m) => (
-      <div class="listrow">
-        <div>
-          <>
-            <h3>{m.display_name ?? m.external_resource_id}</h3>
-            <p>
-              {m.resource_type} · {m.status} · Mapping:{" "}
-              {m.mapping_status ?? "Unavailable"} · Freshness:{" "}
-              {m.sync_freshness} · Last sync:{" "}
-              {m.last_synced_at ?? "Never synced"}
-            </p>
-            <p>Platform resource: {m.platform_resource_id ?? "Unmapped"}</p>
-          </>
-        </div>
-        {m.gbp_location_id && (
+  <SectionHeading>
+    <Fragment slot="title">Connections</Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th scope="col">Connection</th>
+        <th scope="col">Status</th>
+        <th scope="col">Last check</th>
+        <th scope="col"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr data-integration="google">
+        <td>
+          <b>Google</b>
+          <span class="sub">{google.capabilities}</span>
+        </td>
+        <td>
           <button
-            inert
-            data-action={g + `locations/${m.gbp_location_id}/sync/`}
-            data-body="{}"
-            disabled={!v.can_connect}
+            type="button"
+            class="statuschip"
+            data-dialog="google-details"
+            aria-label={`Google: ${google.chip.label}. Open details`}
           >
-            Sync profile
+            <StatusBadge text={google.chip.label} tone={google.chip.tone} />
           </button>
-        )}
-        {m.gbp_location_id && m.platform_resource_id && (
+        </td>
+        <td>{google.verified}</td>
+        <td
+          ><div class="rowactions">
+            <button
+              type="button"
+              class="control primary"
+              inert
+              disabled={!google.canConnect}
+              data-action={`${api}integrations/google/connect/`}
+              data-body={JSON.stringify({
+                products: ["gbp", "search_console", "analytics"],
+                return_app: "console",
+              })}
+              data-oauth>{google.connectLabel}</button
+            >
+            <button
+              type="button"
+              class="control"
+              inert
+              disabled={!google.canDisconnect}
+              data-action={`${api}integrations/google/disconnect/`}
+              data-body="{}"
+              data-confirm-title="Disconnect Google?"
+              data-confirm-text={`LILOs stops reading and publishing to ${clientName}'s Google accounts until you connect again.`}
+              data-confirm-label="Disconnect">Disconnect</button
+            >
+          </div></td
+        >
+      </tr>
+      <tr
+        data-integration="publishing"
+        data-publishing-state={publishing.state}
+      >
+        <td>
+          <b>Website publishing</b>
+          <span class="sub">{publishing.detail}</span>
+        </td>
+        <td>
           <button
-            inert
-            disabled={
-              !v.locations.some(
-                (l) => l.id === m.platform_resource_id && l.can_map,
+            type="button"
+            class="statuschip"
+            data-dialog="publishing-details"
+            aria-label={`Website publishing: ${publishing.chip.label}. Open details`}
+          >
+            <StatusBadge
+              text={publishing.chip.label}
+              tone={publishing.chip.tone}
+            />
+          </button>
+        </td>
+        <td>
+          {
+            publishing.state === "linked"
+              ? "Blog posts publish through GitHub"
+              : "Not publishing yet"
+          }
+        </td>
+        <td
+          ><div class="rowactions">
+            {
+              publishing.action === "select" && (
+                <button
+                  type="button"
+                  class="control primary"
+                  inert
+                  data-dialog="repository-dialog"
+                  data-repository-open={`${api}command-center/integrations/publishing/`}
+                >
+                  Select repository
+                </button>
               )
             }
-            data-action={
-              api +
-              `locations/${m.platform_resource_id}/gbp-mapping/${m.gbp_location_id}/`
+            {
+              publishing.action === "verify" && (
+                <a class="control" href={mfa}>
+                  Verify authenticator
+                </a>
+              )
             }
-            data-method="DELETE"
-            data-confirm="Remove this confirmed profile mapping?"
-          >
-            Remove mapping
-          </button>
-        )}
+          </div></td
+        >
+      </tr>
+    </tbody>
+  </DataTable>
+</section>
+{
+  publishing.state === "github_not_connected" && (
+    <section class="panel spaced-section" data-publishing-empty>
+      <EmptyState title="Connect GitHub to publish to this website">
+        LILOs publishes blog posts by adding them to the website's repository on
+        GitHub. Connect {clientName}'s GitHub account to get started.
+        <button
+          slot="action"
+          type="button"
+          class="control primary"
+          inert
+          disabled={publishing.action !== "connect_github"}
+          data-github-install={`${api}integrations/github/install/`}
+        >
+          Connect GitHub
+        </button>
+      </EmptyState>
+    </section>
+  )
+}
+{
+  publishing.state === "format_unverified" && (
+    <InsightPanel class="insight contextinsight spaced-section">
+      Publishing is paused for {clientName}. The blog format of this website has
+      not been checked yet, so posts cannot be published until it is. The LILOs
+      team checks each website's format before publishing is turned on.
+    </InsightPanel>
+  )
+}
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Google data</Fragment>
+  </SectionHeading>
+  {
+    noData && (
+      <EmptyState title="No Google data is connected yet">
+        Connect Google, then match this client's Business Profile, Search
+        Console and Analytics below.
+      </EmptyState>
+    )
+  }
+  {
+    resources.map((r) => (
+      <div class="listrow" data-resource-row>
+        <div>
+          <b>{r.name}</b>
+          <small>Business Profile · {r.detail}</small>
+        </div>
+        <div class="rowactions">
+          {r.chips.map((c) => (
+            <StatusBadge text={c.label} tone={c.tone} />
+          ))}
+          {r.syncUrl && (
+            <button
+              type="button"
+              class="control"
+              inert
+              disabled={!r.canSync}
+              data-action={r.syncUrl}
+              data-body="{}"
+            >
+              Sync profile
+            </button>
+          )}
+          {r.unmapUrl && (
+            <button
+              type="button"
+              class="control"
+              inert
+              disabled={!r.canUnmap}
+              data-action={r.unmapUrl}
+              data-method="DELETE"
+              data-confirm-title="Remove this match?"
+              data-confirm-text="LILOs stops using this Business Profile for the client until you match it again."
+              data-confirm-label="Remove match"
+            >
+              Remove match
+            </button>
+          )}
+        </div>
       </div>
     ))
   }
   {
-    !v.google.mapped_resources.length && (
-      <p>No confirmed Google location mappings.</p>
-    )
-  }
-  {
-    [
-      ...v.search_properties.map((p) => ({ ...p, source: "Search Console" })),
-      ...v.analytics_properties.map((p) => ({ ...p, source: "GA4" })),
-    ].map((p) => (
-      <div class="listrow">
-        <>
-          <div>
-            <>
-              <h3>
-                {p.source} · {p.display_name ?? p.external_property_id}
-              </h3>
-              <p>
-                Website: {p.website_id ?? "Unmapped"} · Mapping:{" "}
-                {p.mapping_status} · Freshness: {p.freshness_status} · Last
-                sync: {p.last_synced_at ?? "Never synced"}
-              </p>
-            </>
-          </div>
+    properties.map((p) => (
+      <div class="listrow" data-property-row>
+        <div>
+          <b>{p.name}</b>
+          <small>
+            {p.source} · {p.website} · {p.detail}
+          </small>
+        </div>
+        <div class="rowactions">
+          {p.chips.map((c) => (
+            <StatusBadge text={c.label} tone={c.tone} />
+          ))}
           <button
+            type="button"
+            class="control"
             inert
-            disabled={
-              !p.can_sync || !p.website_id || p.mapping_status !== "mapped"
-            }
-            data-action={
-              p.source === "GA4"
-                ? api + `insights/analytics/properties/${p.id}/sync/`
-                : api +
-                  `seo/websites/${p.website_id}/search-properties/${p.id}/sync/`
-            }
+            disabled={!p.canSync}
+            data-action={p.syncUrl}
             data-body={JSON.stringify({ days: 28 })}
           >
-            Queue {p.source} sync
+            Sync now
           </button>
-        </>
+        </div>
       </div>
     ))
   }
-  {!v.search_properties.length && <p>No authorized Search Console mapping.</p>}{
-    !v.analytics_properties.length && <p>No authorized GA4 mapping.</p>
-  }
 </section>
-<section class="panel">
-  <h2>Recent sync state</h2>{
-    v.syncs.length ? (
-      v.syncs.map((s) => (
-        <p>
-          {s.source} · {s.status} · {s.failure_code ?? "No failure code"} ·{" "}
-          {s.completed_at ?? s.started_at ?? "Not started"} · Run {s.id}
-        </p>
-      ))
-    ) : (
-      <p>No recorded source sync runs.</p>
-    )
-  }
-</section>
-<section class="panel">
-  <h2>Resource mapping</h2><p>
-    Choose a website, discover accessible provider properties, then explicitly
-    confirm the exact property. Discovery never confirms a mapping
-    automatically.
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Match Google accounts</Fragment>
+  </SectionHeading>
+  <p class="panelnote">
+    LILOs only uses a Google property after you confirm it belongs to this
+    client.
   </p>
   {
-    ["search_console", "analytics"].map((source) => (
-      <form inert data-discovery data-source={source} data-api={api}>
-        <>
+    sources.map((s) => (
+      <form
+        inert
+        class="listrow"
+        data-discovery
+        data-source={s.key}
+        data-api={api}
+      >
+        <div>
           <label>
-            Website for {source === "analytics" ? "GA4" : "Search Console"}
-            <select
-              name="website_id"
-              required
-              disabled={
-                source === "analytics"
-                  ? !v.can_manage_analytics
-                  : !v.can_manage_search
-              }
-            >
+            Website for {s.name}
+            <select name="website_id" required disabled={!s.can}>
               {v.websites.map((w) => (
                 <option value={w.id}>
                   {w.name} · {w.canonical_origin}
@@ -201,33 +310,46 @@ const g = api + "integrations/google/";
               ))}
             </select>
           </label>
-          <button
-            disabled={
-              !v.websites.length ||
-              (source === "analytics"
-                ? !v.can_manage_analytics
-                : !v.can_manage_search)
-            }
-            type="submit"
-          >
-            Discover {source === "analytics" ? "GA4" : "Search Console"}{" "}
-            properties
-          </button>
-          <div data-discovered />
-        </>
+          <div class="discovered" data-discovered />
+        </div>
+        <button
+          class="control"
+          type="submit"
+          disabled={!v.websites.length || !s.can}
+        >
+          Find {s.name} properties
+        </button>
       </form>
     ))
   }
-</section>
-<section class="panel">
-  <h2>Business Profile discovery and mapping</h2><p>
-    {v.google.unmapped_count} discovered resources awaiting confirmation.
-  </p><button
-    inert
-    disabled={!v.can_connect}
-    data-action={g + "discover/"}
-    data-body="{}">Discover Business Profiles</button
-  >
+  {
+    !v.websites.length && (
+      <EmptyState title="No website yet">
+        Add this client's website first, then match its Search Console and
+        Analytics.
+      </EmptyState>
+    )
+  }
+  <div class="listrow">
+    <div>
+      <b>Business Profiles</b>
+      <small>
+        {
+          v.google.unmapped_count
+            ? `${v.google.unmapped_count} found and waiting to be matched`
+            : "None waiting to be matched"
+        }
+      </small>
+    </div>
+    <button
+      type="button"
+      class="control"
+      inert
+      disabled={!v.can_connect}
+      data-action={`${api}integrations/google/discover/`}
+      data-body="{}">Find Business Profiles</button
+    >
+  </div>
   {
     v.unmapped_profiles.map((p) => (
       <form
@@ -238,48 +360,66 @@ const g = api + "integrations/google/";
         data-profile={p.id}
       >
         <div>
-          <>
-            <h3>{p.business_name}</h3>
-            <p>{p.external_location_id}</p>
-            <label>
-              Platform location
-              <select name="location_id" required>
-                {v.locations
-                  .filter((l) => l.can_map)
-                  .map((l) => (
-                    <option value={l.id}>{l.name}</option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              <input type="checkbox" name="write_enabled" /> Enable governed
-              provider writes
-            </label>
-            <button
-              type="submit"
-              disabled={!v.locations.some((l) => l.can_map)}
-            >
-              Confirm exact profile mapping
-            </button>
-          </>
+          <b>{p.business_name}</b>
+          <label>
+            Which location is this?
+            <select name="location_id" required>
+              {v.locations
+                .filter((l) => l.can_map)
+                .map((l) => (
+                  <option value={l.id}>{l.name}</option>
+                ))}
+            </select>
+          </label>
+          <label>
+            <input type="checkbox" name="write_enabled" /> Let LILOs publish to
+            this profile after approval
+          </label>
         </div>
+        <button class="control primary" type="submit" disabled={!canMap}>
+          Match profile
+        </button>
       </form>
     ))
   }
   {
-    !v.locations.some((l) => l.can_map) && (
-      <p>
-        Mapping requires the canonical location permission and verified
-        authenticator.{" "}
-        <a href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`}>
+    v.unmapped_profiles.length > 0 && !canMap && (
+      <InsightPanel class="insight contextinsight spaced-section">
+        Matching a profile needs a verified authenticator.{" "}
+        <a class="link" href={mfa}>
           Verify authenticator
         </a>
-      </p>
+      </InsightPanel>
     )
   }
 </section>
-<p><a href={`/clients/${slug}/local-search/`}>Open Local Search</a></p>
-<p role="status" aria-live="polite" data-search-status></p>
+<p class="formstatus" role="status" aria-live="polite" data-integration-status>
+</p>
+<DetailsDialog
+  id="google-details"
+  title="Google"
+  chip={google.chip}
+  rows={google.details}
+  syncs={google.syncs}
+/>
+<DetailsDialog
+  id="publishing-details"
+  title="Website publishing"
+  chip={publishing.chip}
+  rows={publishing.details}
+  syncs={[]}
+/>
+<RepositoryDialog clientName={clientName} />
+<dialog id="integration-confirm" aria-labelledby="integration-confirm-title">
+  <div class="body">
+    <h2 id="integration-confirm-title" data-confirm-heading></h2>
+    <p data-confirm-body></p>
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-confirm-cancel>Cancel</button>
+    <button type="button" class="control primary" data-confirm-accept></button>
+  </div>
+</dialog>
 <script>
-  import "../../lib/search-actions";
+  import "../../lib/integration-actions";
 </script>

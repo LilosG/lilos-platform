@@ -121,9 +121,19 @@ const integration = z.object({
   can_manage_search: z.boolean(),
   can_manage_analytics: z.boolean(),
   github_status: nullableText,
-  github_limitation: z.literal(
-    "publishing_configuration_remains_in_existing_control_plane",
-  ),
+  publishing: z
+    .object({
+      state: z.enum([
+        "linked",
+        "not_linked",
+        "github_not_connected",
+        "format_unverified",
+      ]),
+      repository: nullableText,
+      branch: nullableText,
+      can_manage: z.boolean(),
+    })
+    .nullable(),
 });
 const search = z.object({
   organization_id: uuid,

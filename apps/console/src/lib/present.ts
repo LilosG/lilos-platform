@@ -399,3 +399,16 @@ export function frequencyText(freq: FrequencyLike, now: Date): string {
       return "Custom schedule";
   }
 }
+/** "just now", "5 minutes ago", "3 hours ago", "2 days ago"; a month or more is a date. */
+export function ago(iso: string | null, now: Date): string {
+  if (!iso) return "";
+  const seconds = Math.round((now.getTime() - new Date(iso).getTime()) / 1000);
+  if (seconds < 0) return dateText(iso);
+  if (seconds < 60) return "just now";
+  const unit = (n: number, word: string) =>
+    `${n} ${word}${n === 1 ? "" : "s"} ago`;
+  if (seconds < 3600) return unit(Math.floor(seconds / 60), "minute");
+  if (seconds < 86400) return unit(Math.floor(seconds / 3600), "hour");
+  if (seconds < 30 * 86400) return unit(Math.floor(seconds / 86400), "day");
+  return dateText(iso);
+}

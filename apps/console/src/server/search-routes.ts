@@ -8,12 +8,14 @@ const route = (
   method: "GET" | "POST" | "DELETE",
   body?: z.ZodType,
   query: string[] = [],
+  idempotency = false,
 ) => ({
   pattern: new RegExp(`^${pattern}/$`),
   method,
   upstream: "",
   query,
   ...(body ? { body } : {}),
+  ...(idempotency ? { idempotency: true } : {}),
 });
 const empty = z.object({}).strict();
 const decide = z.object({ approve: z.boolean() }).strict();
@@ -79,6 +81,16 @@ const sync = z.object({ days: z.number().int().min(7).max(365) }).strict();
 const key = z.object({ idempotency_key: z.string().min(8).max(128) }).strict();
 export const searchRoutes = [
   route(`${org}/command-center/integrations`, "GET"),
+  // Website publishing: the repositories GitHub offers, and linking one as the publishing target.
+  route(`${org}/command-center/integrations/publishing/repositories`, "GET"),
+  route(
+    `${org}/command-center/integrations/publishing/target`,
+    "POST",
+    z.object({ repository_id: z.string().min(1).max(255) }).strict(),
+    [],
+    true,
+  ),
+  route(`${org}/integrations/github/install`, "POST", empty),
   route(`${org}/command-center/gbp/performance`, "GET", undefined, [
     "period",
     "month",

@@ -16,15 +16,21 @@ export class ApiFailure extends Error {
 const csrf = () =>
   document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ??
   "";
-/** A call through the console's own server, which holds the session and the allow-list. */
-export async function action(
+/** A call through the console's own server, which holds the session and the allow-list.
+ * Returns the whole answer: command-center routes answer with the model itself, not a `data` envelope. */
+export async function call(
   url: string,
   body: unknown,
   method = "POST",
+  headers: Record<string, string> = {},
 ): Promise<unknown> {
   const response = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() },
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrf(),
+      ...headers,
+    },
     ...(method === "GET" || method === "DELETE"
       ? {}
       : { body: JSON.stringify(body) }),
@@ -34,7 +40,20 @@ export async function action(
     throw new ApiFailure(
       parsed.code ?? parsed.error?.code ?? `HTTP_${response.status}`,
     );
-  return parsed.data;
+  return parsed;
+}
+/** A call whose answer is wrapped as `{ data }`. */
+export async function action(
+  url: string,
+  body: unknown,
+  method = "POST",
+  headers: Record<string, string> = {},
+): Promise<unknown> {
+  return (
+    envelope.parse(await call(url, body, method, headers)) as {
+      data?: unknown;
+    }
+  ).data;
 }
 /** An upload with its progress, which `fetch` cannot report. Sent as multipart through the
  * console's own server, which holds the session. */

@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
+from httpx import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
@@ -232,12 +233,15 @@ def test_repository_listing_failure_is_a_typed_error_not_an_empty_list(
     assert "github down" not in failed.text
 
 
-def link(client: TestClient, ids: dict[str, UUID], repository: str, key: str = "key-00000001"):  # noqa: ANN201
-    return client.post(
+def link(
+    client: TestClient, ids: dict[str, UUID], repository: str, key: str = "key-00000001"
+) -> Response:
+    response: Response = client.post(
         url(ids, "/target"),
         headers={**HEADERS, "Idempotency-Key": key},
         json={"repository_id": repository},
     )
+    return response
 
 
 def test_link_creates_the_target_with_the_catalog_contract_and_audits_it(

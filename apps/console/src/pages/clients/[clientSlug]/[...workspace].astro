@@ -408,6 +408,7 @@ const title =
   reference={overview !== undefined ||
     notBuilt ||
     (section === "automations" && error === undefined) ||
+    (section === "integrations" && error === undefined) ||
     (section === "opportunities" && error === undefined) ||
     (localSearch !== undefined && error === undefined)}
   title={title}
@@ -556,6 +557,8 @@ const title =
           !localSearch &&
           !reviews &&
           !website &&
+          !integrations &&
+          section !== "integrations" &&
           !automationsPage && (
             <div class="pagehead">
               <div>
@@ -576,6 +579,25 @@ const title =
             <ErrorState title="Website data could not be loaded">
               We could not read this website's data, so nothing is shown rather
               than a guess.
+              <a
+                slot="action"
+                class="control primary"
+                href={Astro.url.pathname + Astro.url.search}
+              >
+                Try again
+              </a>
+            </ErrorState>
+          </Fragment>
+        ) : error && section === "integrations" ? (
+          <Fragment>
+            <PageHeader
+              title="Integrations"
+              subtitle={client.organization_name}
+              client
+            />
+            <ErrorState title="Integrations could not be loaded">
+              We could not read this client's connections, so nothing is shown
+              rather than a guess.
               <a
                 slot="action"
                 class="control primary"
@@ -649,7 +671,12 @@ const title =
             now={new Date()}
           />
         ) : integrations ? (
-          <Integrations view={integrations} slug={client.organization_slug} />
+          <Integrations
+            view={integrations}
+            slug={client.organization_slug}
+            clientName={client.organization_name}
+            now={new Date()}
+          />
         ) : localSearch ? (
           <LocalSearch
             view={localSearch}

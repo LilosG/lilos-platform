@@ -341,6 +341,10 @@ export const contentSim = {
   confirmed: false,
   regenerated: false,
   revisionStatus: "awaiting_editorial",
+  // The publish panel's image picker: what the repository lists, and whether the site needs one.
+  images: "list",
+  requiresImage: false,
+  assetRequests: [],
 };
 export function resetContent() {
   contentSim.requests = [];
@@ -349,6 +353,9 @@ export function resetContent() {
   contentSim.confirmed = false;
   contentSim.regenerated = false;
   contentSim.revisionStatus = "awaiting_editorial";
+  contentSim.images = "list";
+  contentSim.requiresImage = false;
+  contentSim.assetRequests = [];
 }
 const composeState = (status, code, prompt, n) => ({
   status,
@@ -617,8 +624,8 @@ export function contentDetail(org, id) {
     target_selected: true,
     target_id: TARGET,
     missing: [],
-    requires_image: false,
-    requires_image_alt: false,
+    requires_image: contentSim.requiresImage,
+    requires_image_alt: contentSim.requiresImage,
     file_extensions: [".mdx"],
   };
   return {
