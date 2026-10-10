@@ -242,6 +242,8 @@ const BUILT = [
   "/clients/synthetic-alpha/leads/",
   "/clients/synthetic-alpha/opportunities/",
   "/clients/synthetic-alpha/integrations/",
+  "/clients/synthetic-alpha/settings/",
+  "/administration/",
 ];
 test("Every sidebar link routes to a built screen or the typed not-built state", async ({
   page,
