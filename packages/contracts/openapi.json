@@ -4729,12 +4729,6 @@
             "title": "Can Manage Search",
             "type": "boolean"
           },
-          "github_limitation": {
-            "const": "publishing_configuration_remains_in_existing_control_plane",
-            "default": "publishing_configuration_remains_in_existing_control_plane",
-            "title": "Github Limitation",
-            "type": "string"
-          },
           "github_status": {
             "anyOf": [
               {
@@ -4760,6 +4754,16 @@
             "format": "uuid",
             "title": "Organization Id",
             "type": "string"
+          },
+          "publishing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishingSetup"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "search_properties": {
             "items": {
@@ -4802,7 +4806,8 @@
           "can_connect",
           "can_manage_search",
           "can_manage_analytics",
-          "github_status"
+          "github_status",
+          "publishing"
         ],
         "title": "IntegrationView",
         "type": "object"
@@ -6926,6 +6931,45 @@
           "quality"
         ],
         "title": "LeadsWorkspace",
+        "type": "object"
+      },
+      "LinkPublishingTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "repository_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Repository Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_id"
+        ],
+        "title": "LinkPublishingTarget",
+        "type": "object"
+      },
+      "LinkedPublishingTarget": {
+        "properties": {
+          "branch": {
+            "title": "Branch",
+            "type": "string"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "repository": {
+            "title": "Repository",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository",
+          "branch",
+          "replayed"
+        ],
+        "title": "LinkedPublishingTarget",
         "type": "object"
       },
       "LiveCheck": {
@@ -13790,6 +13834,111 @@
         "title": "PublishResponse",
         "type": "object"
       },
+      "PublishingRepositories": {
+        "properties": {
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/PublishingRepository"
+            },
+            "title": "Repositories",
+            "type": "array"
+          }
+        },
+        "required": [
+          "repositories"
+        ],
+        "title": "PublishingRepositories",
+        "type": "object"
+      },
+      "PublishingRepository": {
+        "properties": {
+          "default_branch": {
+            "title": "Default Branch",
+            "type": "string"
+          },
+          "format_verified": {
+            "title": "Format Verified",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "suggested": {
+            "title": "Suggested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repository_id",
+          "name",
+          "default_branch",
+          "private",
+          "format_verified",
+          "suggested"
+        ],
+        "title": "PublishingRepository",
+        "type": "object"
+      },
+      "PublishingSetup": {
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "can_manage": {
+            "title": "Can Manage",
+            "type": "boolean"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PublishingSetupState"
+          }
+        },
+        "required": [
+          "state",
+          "repository",
+          "branch",
+          "can_manage"
+        ],
+        "title": "PublishingSetup",
+        "type": "object"
+      },
+      "PublishingSetupState": {
+        "enum": [
+          "linked",
+          "not_linked",
+          "github_not_connected",
+          "format_unverified"
+        ],
+        "title": "PublishingSetupState",
+        "type": "string"
+      },
       "QualityCode": {
         "enum": [
           "TITLE_TOO_SHORT",
@@ -19991,6 +20140,114 @@
           }
         },
         "summary": "Integrations View",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/integrations/publishing/repositories": {
+      "get": {
+        "operationId": "publishing_repositories_api_v1_organizations__organization_id__command_center_integrations_publishing_repositories_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishingRepositories"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publishing Repositories",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/integrations/publishing/target": {
+      "post": {
+        "description": "Link the client's publishing repository. One key creates one target, however often sent.",
+        "operationId": "link_publishing_target_api_v1_organizations__organization_id__command_center_integrations_publishing_target_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkPublishingTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkedPublishingTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Publishing Target",
         "tags": [
           "command-center"
         ]

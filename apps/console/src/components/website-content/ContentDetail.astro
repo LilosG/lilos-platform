@@ -493,10 +493,74 @@ const failed = v.compose?.status === "failed" && !revision;
                 </p>
               )}
               {v.publishing_requirements.requires_image && (
-                <Fragment>
-                  <label for="publish-image">Image path</label>
-                  <input id="publish-image" name="image" maxlength="1000" />
-                </Fragment>
+                <div
+                  class="imagepicker"
+                  data-image-picker
+                  data-assets-url={
+                    api + `content-operations/${v.id}/publishing-assets/`
+                  }
+                >
+                  <label for="publish-image-search">Featured image</label>
+                  <input type="hidden" name="image" data-picker-value />
+                  <div data-picker-browse>
+                    <input
+                      id="publish-image-search"
+                      type="search"
+                      class="pickersearch"
+                      placeholder="Search images by name or folder"
+                      autocomplete="off"
+                      data-picker-search
+                      hidden
+                    />
+                    <div
+                      class="skeletonlist"
+                      aria-busy="true"
+                      data-picker-loading
+                    >
+                      <span class="sr-only">Loading images</span>
+                      <div class="skeleton" />
+                      <div class="skeleton" />
+                    </div>
+                    <div data-picker-empty hidden>
+                      <EmptyState title="No images found in this repository">
+                        Add an image to the website's public folder, or enter a
+                        path instead.
+                      </EmptyState>
+                    </div>
+                    <div data-picker-error hidden>
+                      <ErrorState
+                        title="Images could not be loaded"
+                        heading="h3"
+                      >
+                        <span data-picker-error-text />
+                        <button
+                          slot="action"
+                          type="button"
+                          class="control"
+                          data-picker-retry
+                        >
+                          Retry
+                        </button>
+                      </ErrorState>
+                    </div>
+                    <ul class="pickerlist" data-picker-list hidden />
+                    <p class="muted" data-picker-none hidden>
+                      No image matches that search.
+                    </p>
+                    <p class="muted" data-picker-selected />
+                  </div>
+                  <div data-picker-manualbox hidden>
+                    <label for="publish-image-path">Image path</label>
+                    <input
+                      id="publish-image-path"
+                      maxlength="1000"
+                      data-picker-manual
+                    />
+                  </div>
+                  <button type="button" class="link" data-picker-toggle>
+                    Enter a path instead
+                  </button>
+                </div>
               )}
               {v.publishing_requirements.requires_image_alt && (
                 <Fragment>

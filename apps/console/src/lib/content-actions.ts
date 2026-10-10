@@ -1,5 +1,6 @@
 import { ApiFailure, action } from "./api-client";
 import { failureFor } from "./content-view";
+import { initImagePicker } from "./image-picker";
 
 const status = () =>
   document.querySelector<HTMLElement>("[data-content-status]");
@@ -252,6 +253,9 @@ function initActions() {
     .querySelectorAll<HTMLFormElement>("[data-content-form='publish']")
     .forEach((form) => {
       form.removeAttribute("inert");
+      form
+        .querySelectorAll<HTMLElement>("[data-image-picker]")
+        .forEach(initImagePicker);
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const data = new FormData(form);

@@ -1,0 +1,58 @@
+---
+import type { DetailRow } from "../../lib/integrations-view";
+import type { Chip } from "../../lib/status";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  id: string;
+  title: string;
+  chip: Chip;
+  rows: DetailRow[];
+  syncs: { name: string; chip: Chip; when: string; note: string }[];
+}
+const { id, title, chip, rows, syncs } = Astro.props;
+---
+
+<dialog id={id} aria-labelledby={`${id}-title`} data-shell-dialog>
+  <div class="panelhead">
+    <span class="muted">Integrations</span>
+    <button type="button" class="close" aria-label="Close details" data-close>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <h2 id={`${id}-title`}>{title}</h2>
+    <p><StatusBadge text={chip.label} tone={chip.tone} /></p>
+    {
+      rows.map((row) => (
+        <div class="listrow">
+          <div>
+            {row.name}
+            {row.detail && <small>{row.detail}</small>}
+          </div>
+          {row.chip && (
+            <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+          )}
+        </div>
+      ))
+    }
+    {
+      syncs.length > 0 && (
+        <>
+          <h3 class="spaced-heading">Recent syncs</h3>
+          {syncs.map((s) => (
+            <div class="listrow">
+              <div>
+                {s.name}
+                <small>{s.note ? `${s.when} · ${s.note}` : s.when}</small>
+              </div>
+              <StatusBadge text={s.chip.label} tone={s.chip.tone} />
+            </div>
+          ))}
+        </>
+      )
+    }
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-close>Close</button>
+  </div>
+</dialog>

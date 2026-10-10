@@ -191,3 +191,38 @@ export const outcomeChips = {
   expired: { label: "Expired", tone: "warn" },
   in_progress: { label: "Running", tone: "neutral" },
 } as const satisfies Record<string, Chip>;
+
+/** Where a client's website publishing stands; the label is ours, never the API's. */
+export const publishingChips = {
+  linked: { label: "Ready to publish", tone: "" },
+  not_linked: { label: "Choose a repository", tone: "warn" },
+  github_not_connected: { label: "GitHub not connected", tone: "neutral" },
+  format_unverified: { label: "Blog format not checked yet", tone: "warn" },
+} as const satisfies Record<string, Chip>;
+export type PublishingState = keyof typeof publishingChips;
+export const unverifiedFormatChip: Chip = publishingChips.format_unverified;
+export const githubConnectionChips = {
+  connected: { label: "GitHub connected", tone: "" },
+  not_connected: { label: "GitHub not connected", tone: "neutral" },
+  reconnect: { label: "Reconnect GitHub", tone: "error" },
+} as const satisfies Record<string, Chip>;
+/** Data from a source, by how recently it was refreshed. */
+export const freshnessChips = {
+  fresh: { label: "Up to date", tone: "" },
+  current: { label: "Up to date", tone: "" },
+  stale: { label: "Out of date", tone: "warn" },
+  never: { label: "Never synced", tone: "neutral" },
+  never_synced: { label: "Never synced", tone: "neutral" },
+} as const satisfies Record<string, Chip>;
+export const freshnessChip = (status: string): Chip =>
+  (freshnessChips as Record<string, Chip>)[status] ?? {
+    label: "Not synced yet",
+    tone: "neutral",
+  };
+/** A Google resource or property by whether it is matched to this client. */
+export const matchChip = (status: string | null): Chip =>
+  status === "mapped" || status === "confirmed"
+    ? { label: "Matched", tone: "" }
+    : status === "stale" || status === "disconnected"
+      ? { label: "Needs attention", tone: "warn" }
+      : { label: "Not matched yet", tone: "neutral" };

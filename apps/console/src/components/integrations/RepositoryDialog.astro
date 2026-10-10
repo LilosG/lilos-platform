@@ -1,0 +1,53 @@
+---
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+interface Props {
+  clientName: string;
+}
+const { clientName } = Astro.props;
+---
+
+<dialog
+  id="repository-dialog"
+  aria-labelledby="repository-dialog-title"
+  data-shell-dialog
+>
+  <div class="panelhead">
+    <span class="muted">Website publishing</span>
+    <button type="button" class="close" aria-label="Close" data-close>×</button>
+  </div>
+  <div class="body">
+    <h2 id="repository-dialog-title">Select repository</h2>
+    <p>
+      Choose the GitHub repository {clientName}'s blog posts are published to.
+    </p>
+    <div data-repo-loading class="skeletonlist" aria-busy="true">
+      <span class="sr-only">Loading repositories</span>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+    <div data-repo-empty hidden>
+      <EmptyState title="No repositories to choose from">
+        GitHub is not sharing any repositories with this client yet. Add the
+        website's repository to the LILOs GitHub app, then try again.
+      </EmptyState>
+    </div>
+    <div data-repo-error hidden>
+      <ErrorState title="Repositories could not be loaded" heading="h3">
+        <span data-repo-error-text></span>
+        <button slot="action" type="button" class="control" data-repo-retry>
+          Retry
+        </button>
+      </ErrorState>
+    </div>
+    <ul class="repolist" data-repo-list hidden></ul>
+    <p class="formstatus" role="status" aria-live="polite" data-repo-status></p>
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-close>Cancel</button>
+    <button type="button" class="control primary" data-repo-confirm disabled>
+      Use this repository
+    </button>
+  </div>
+</dialog>

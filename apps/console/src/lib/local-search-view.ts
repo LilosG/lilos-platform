@@ -311,7 +311,7 @@ const freshnessLabel: Record<string, string> = {
   stale: "Out of date",
   never_synced: "Never synced",
 };
-const syncFailure: Record<string, string> = {
+export const syncFailure: Record<string, string> = {
   PROVIDER_RATE_LIMITED: "Google limited the request; it will be retried.",
   INTEGRATION_RECONNECT_REQUIRED: "Google needs to be reconnected.",
   PROVIDER_ACCESS_DENIED: "Google denied access to this property.",

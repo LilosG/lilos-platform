@@ -16,7 +16,7 @@ async function login(
   await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }
-test("Integrations canonical states -> discover -> explicit mapping -> sync", async ({
+test("Integrations: Google states, explicit mapping and sync, with no system text", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -25,63 +25,56 @@ test("Integrations canonical states -> discover -> explicit mapping -> sync", as
   await expect(
     page.getByRole("heading", { name: "Integrations", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByText("reconnect_required", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText(/PROVIDER_RATE_LIMITED/)).toBeVisible();
-  await expect(
-    page.getByText(/Mapping: mapped · Freshness: stale/),
-  ).toBeVisible();
+  const google = page.locator('[data-integration="google"]');
+  await expect(google).toContainText("Reconnect Google");
+  await expect(google).toContainText("Verified");
+  const text = await page.locator("main").innerText();
+  expect(text).not.toMatch(
+    /reconnect_required|PROVIDER_RATE_LIMITED|Platform resource|\d{4}-\d{2}-\d{2}T|[0-9a-f]{8}-[0-9a-f]{4}-|sc-domain:/,
+  );
+  await expect(page.locator("[data-property-row]").first()).toContainText(
+    "Out of date",
+  );
+  // Sync detail sits behind the status chip.
+  await google.getByRole("button", { name: /Google: .*Open details/ }).click();
+  const details = page.getByRole("dialog");
+  await expect(details).toContainText(
+    "Google limited the request; it will be retried.",
+  );
+  await expect(details).not.toContainText("PROVIDER_RATE_LIMITED");
+  await page.keyboard.press("Escape");
   await page
     .getByRole("button", {
-      name: "Discover Search Console properties",
+      name: "Find Search Console properties",
       exact: true,
     })
     .click();
-  await expect(
-    page.getByRole("button", {
-      name: "Confirm sc-domain:synthetic.example.invalid",
-      exact: true,
-    }),
-  ).toBeVisible();
+  const match = page.getByRole("button", {
+    name: "Match synthetic.example.invalid",
+    exact: true,
+  });
+  await expect(match).toBeVisible();
   const mapReload = page.waitForNavigation({ waitUntil: "domcontentloaded" });
   const mapped = page.waitForRequest(
     (r) =>
       r.url().endsWith("search-console/properties/map/") &&
       r.method() === "POST",
   );
-  await page
-    .getByRole("button", {
-      name: "Confirm sc-domain:synthetic.example.invalid",
-      exact: true,
-    })
-    .click();
+  await match.click();
   await mapReload;
   expect((await mapped).postDataJSON()).toEqual({
     website_id: org,
     external_property_id: "sc-domain:synthetic.example.invalid",
     property_type: "domain",
   });
-  await expect(
-    page.getByRole("heading", { name: "Integrations", exact: true }),
-  ).toBeVisible();
   const syncReload = page.waitForNavigation({ waitUntil: "domcontentloaded" });
   const sync = page.waitForRequest((r) =>
     r.url().includes(`/search-properties/${rev}/sync/`),
   );
-  await page
-    .getByRole("button", { name: "Queue Search Console sync", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Sync now", exact: true }).click();
   await syncReload;
   expect((await sync).postDataJSON()).toEqual({ days: 28 });
-  await expect(
-    page.getByRole("heading", { name: "Integrations", exact: true }),
-  ).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-  await page.screenshot({
-    path: test.info().outputPath("integrations.png"),
-    fullPage: true,
-  });
   expect(errors).toEqual([]);
 });
 test("Local Search tabs, source details, page intelligence and scoped GBP posts", async ({

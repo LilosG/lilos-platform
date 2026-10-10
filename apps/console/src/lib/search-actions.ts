@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { action } from "./api-client";
 const status = () =>
   document.querySelector<HTMLElement>("[data-search-status]");
@@ -6,137 +5,29 @@ function message(text: string) {
   const node = status();
   if (node) node.textContent = text;
 }
-function failure(error: unknown) {
-  message(
-    `Action unavailable (${error instanceof Error ? error.message : "UNKNOWN"}). Refresh to inspect current state before trying again.`,
-  );
-}
+/** Local Search's own actions (a website check). Integrations has its own script. */
 function initialize() {
   document
     .querySelectorAll<HTMLButtonElement>("button[data-action]")
-    .forEach((button) =>
+    .forEach((button) => {
       button.addEventListener("click", async () => {
-        if (button.dataset.confirm && !window.confirm(button.dataset.confirm))
-          return;
         button.disabled = true;
-        message(
-          "Request in progress. Provider completion is not yet confirmed.",
-        );
+        message("Starting the check…");
         try {
           const body = button.hasAttribute("data-key")
             ? { idempotency_key: crypto.randomUUID() }
             : JSON.parse(button.dataset.body ?? "{}");
-          const data = await action(
-            button.dataset.action!,
-            body,
-            button.dataset.method,
-          );
-          if (button.hasAttribute("data-oauth")) {
-            const parsed = z.object({ authorization_url: z.url() }).parse(data);
-            const url = new URL(parsed.authorization_url);
-            if (
-              url.origin !== "https://accounts.google.com" ||
-              url.pathname !== "/o/oauth2/v2/auth"
-            )
-              throw new Error("OAUTH_TARGET_INVALID");
-            window.location.assign(url.href);
-          } else window.location.reload();
-        } catch (error) {
-          failure(error);
-        }
-      }),
-    );
-  document.querySelectorAll<HTMLFormElement>("[data-mapping]").forEach((form) =>
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const values = new FormData(form);
-      const location = z.uuid().parse(values.get("location_id"));
-      form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled =
-        true;
-      try {
-        await action(
-          form.dataset.api +
-            `locations/${location}/gbp-mapping/${form.dataset.profile}/confirm/`,
-          { location_id: location, write_enabled: values.has("write_enabled") },
-        );
-        window.location.reload();
-      } catch (error) {
-        failure(error);
-      }
-    }),
-  );
-  const searchProperty = z.object({
-    external_property_id: z.string(),
-    property_type: z.enum(["domain", "url_prefix"]),
-  });
-  const analyticsProperty = z.object({
-    external_property_id: z.string(),
-    property_number: z.string(),
-    display_name: z.string(),
-  });
-  document
-    .querySelectorAll<HTMLFormElement>("[data-discovery]")
-    .forEach((form) =>
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const website = z.uuid().parse(new FormData(form).get("website_id"));
-        const analytics = form.dataset.source === "analytics";
-        const api = form.dataset.api!;
-        const container = form.querySelector<HTMLElement>("[data-discovered]")!;
-        container.replaceChildren();
-        const submit = form.querySelector<HTMLButtonElement>(
-          'button[type="submit"]',
-        )!;
-        submit.disabled = true;
-        try {
-          const data = await action(
-            analytics
-              ? api + "insights/analytics/discover/"
-              : api + `seo/websites/${website}/search-console/discover/`,
-            { website_id: website },
-            analytics ? "POST" : "GET",
-          );
-          const rows = analytics
-            ? z.object({ properties: z.array(analyticsProperty) }).parse(data)
-                .properties
-            : z.object({ properties: z.array(searchProperty) }).parse(data)
-                .properties;
+          await action(button.dataset.action!, body, button.dataset.method);
+          window.location.reload();
+        } catch {
+          button.disabled = false;
           message(
-            rows.length
-              ? "Select an exact discovered property to confirm its mapping."
-              : "No accessible properties discovered. No mapping has been created.",
+            "That did not start. Refresh to see the current state, then try again.",
           );
-          for (const row of rows) {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.textContent = `Confirm ${row.external_property_id}`;
-            button.addEventListener("click", async () => {
-              button.disabled = true;
-              try {
-                await action(
-                  api +
-                    `integrations/google/${analytics ? "analytics" : "search-console"}/properties/map/`,
-                  { website_id: website, ...row },
-                );
-                window.location.reload();
-              } catch (error) {
-                failure(error);
-              }
-            });
-            container.append(button);
-          }
-        } catch (error) {
-          failure(error);
-        } finally {
-          submit.disabled = false;
         }
-      }),
-    );
-  document
-    .querySelectorAll<HTMLElement>(
-      "[data-action], [data-discovery], [data-mapping]",
-    )
-    .forEach((node) => node.removeAttribute("inert"));
+      });
+      button.removeAttribute("inert");
+    });
 }
 if (document.readyState === "loading")
   document.addEventListener("DOMContentLoaded", initialize, { once: true });

@@ -43,6 +43,7 @@ from apps.api.app.products.seo.models import SEOPage, SEOSearchProperty
 from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.routes.command_center import authorization
+from apps.api.app.routes.command_center_publishing import PublishingSetup, read_publishing_setup
 from apps.api.app.routes.gbp import policy as location_policy
 from apps.api.app.routes.gbp_operations import post_revision_row, provider_post_row
 from apps.api.app.routes.seo import Session, meta, no_store, policy, service
@@ -186,9 +187,7 @@ class IntegrationView(ReadDTO):
     can_manage_search: bool
     can_manage_analytics: bool
     github_status: str | None
-    github_limitation: Literal["publishing_configuration_remains_in_existing_control_plane"] = (
-        "publishing_configuration_remains_in_existing_control_plane"
-    )
+    publishing: PublishingSetup | None
 
 
 class MetricComparison(ReadDTO):
@@ -553,6 +552,15 @@ async def integrations_view(
         )
         else None
     )
+    manage_publishing = await allowed(
+        session, principal, organization_id, request, "content.manage_targets", aal2=True
+    )
+    publishing = (
+        await read_publishing_setup(session, organization_id, can_manage=manage_publishing)
+        if manage_publishing
+        or await allowed(session, principal, organization_id, request, "content.read")
+        else None
+    )
     return IntegrationView(
         organization_id=organization_id,
         google=google,
@@ -588,6 +596,7 @@ async def integrations_view(
         can_manage_search=manage_search,
         can_manage_analytics=manage_analytics,
         github_status=github.connection_status if github else None,
+        publishing=publishing,
     )
 
 

@@ -2519,3 +2519,106 @@ details.activity summary {
     min-width: 180px;
   }
 }
+.listrow .rowactions,
+td .rowactions {
+  margin-top: 0;
+}
+.panelnote {
+  padding: 0 22px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.listrow label {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.discovered {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.skeletonlist {
+  display: grid;
+  gap: 10px;
+  margin: 15px 0;
+}
+.skeleton {
+  height: 52px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #edf0ef, #f6f8f7, #edf0ef);
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+@keyframes skeleton {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+.repolist {
+  list-style: none;
+  margin: 15px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 340px;
+  overflow: auto;
+}
+.repolist button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+.repolist button small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.repolist button[aria-pressed="true"] {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green);
+}
+.repolist button:disabled {
+  opacity: 0.6;
+}
+.pickersearch {
+  width: 100%;
+  margin-top: 8px;
+}
+.pickerlist {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.pickerlist button {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: 9px 12px;
+  border: 0;
+  background: none;
+}
+.pickerlist button small {
+  display: block;
+  color: var(--muted);
+}
+.pickerlist button[aria-pressed="true"] {
+  background: #edf2ed;
+}
