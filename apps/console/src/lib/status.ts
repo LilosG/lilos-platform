@@ -226,3 +226,54 @@ export const matchChip = (status: string | null): Chip =>
     : status === "stale" || status === "disconnected"
       ? { label: "Needs attention", tone: "warn" }
       : { label: "Not matched yet", tone: "neutral" };
+
+/** A client's lifecycle state as a chip; the label is ours, never the API's. */
+export const organizationChips = {
+  prospect: { label: "Prospect", tone: "neutral" },
+  onboarding: { label: "Onboarding", tone: "neutral" },
+  active: { label: "Active", tone: "" },
+  paused: { label: "Paused", tone: "neutral" },
+  suspended: { label: "Suspended", tone: "warn" },
+  offboarding: { label: "Offboarding", tone: "warn" },
+  archived: { label: "Archived", tone: "neutral" },
+} as const satisfies Record<string, Chip>;
+export const organizationChip = (status: string): Chip =>
+  (organizationChips as Record<string, Chip>)[status] ?? {
+    label: "Unknown",
+    tone: "neutral",
+  };
+/** Where the permanent removal of a client's data stands. */
+export const removalChips = {
+  requested: { label: "Removal requested", tone: "neutral" },
+  in_progress: { label: "Removing data", tone: "neutral" },
+  completed: { label: "Data removed", tone: "" },
+  failed: { label: "Removal failed", tone: "error" },
+} as const satisfies Record<string, Chip>;
+/** A location's lifecycle state as a chip. */
+export const locationChips = {
+  setup_required: { label: "Setup needed", tone: "warn" },
+  active: { label: "Active", tone: "" },
+  paused: { label: "Paused", tone: "neutral" },
+  closed_temporarily: { label: "Temporarily closed", tone: "warn" },
+  closed_permanently: { label: "Permanently closed", tone: "neutral" },
+  archived: { label: "Archived", tone: "neutral" },
+} as const satisfies Record<string, Chip>;
+export const locationChip = (status: string): Chip =>
+  (locationChips as Record<string, Chip>)[status] ?? {
+    label: "Unknown",
+    tone: "neutral",
+  };
+/** Where a business fact came from, as a person would say it. */
+export const factSourceChips = {
+  client_approved: { label: "Approved by the client", tone: "" },
+  operator_verified: { label: "Confirmed by our team", tone: "" },
+  provider_observed: { label: "From Google", tone: "neutral" },
+  imported: { label: "Imported", tone: "neutral" },
+  system_derived: { label: "Found by LILOs", tone: "neutral" },
+  industry_default: { label: "Industry default", tone: "neutral" },
+  ai_suggested: { label: "Suggested by AI", tone: "warn" },
+} as const satisfies Record<string, Chip>;
+export const waitingForApprovalChip: Chip = {
+  label: "Waiting for approval",
+  tone: "warn",
+};

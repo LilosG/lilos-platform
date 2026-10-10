@@ -1,0 +1,136 @@
+---
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import TabNav from "../navigation/TabNav.astro";
+import NotBuilt from "../ui/NotBuilt.astro";
+import ConfirmDialog from "./ConfirmDialog.astro";
+import { administrationTabs } from "../../config/routes";
+import type { AdministrationClients } from "../../server/admin-loader";
+interface Props {
+  /** The tab shown: its URL segment, or none for Clients / organizations. */
+  tab?: string;
+  clients?: AdministrationClients;
+  state: "ok" | "forbidden" | "error";
+}
+const { tab, clients, state } = Astro.props;
+const tabs = administrationTabs.map((entry) => ({
+  label: entry.label,
+  href: entry.href,
+  current: entry.slug === (tab ?? ""),
+}));
+const subtitle = "Organizations, onboarding, users, and platform management.";
+---
+
+{
+  state === "forbidden" ? (
+    <Fragment>
+      <PageHeader title="Administration" subtitle={subtitle} />
+      <EmptyState title="You do not have access to Administration" heading="h2">
+        Administration is for verified platform administrators. If that is you,
+        verify your authenticator and open this page again.
+        <a slot="action" class="control primary" href="/mfa/">
+          Verify authenticator
+        </a>
+      </EmptyState>
+    </Fragment>
+  ) : tab ? (
+    <NotBuilt target={{ scope: "portfolio", area: "administration" }}>
+      <TabNav label="Administration" tabs={tabs} />
+    </NotBuilt>
+  ) : (
+    <Fragment>
+      <PageHeader title="Administration" subtitle={subtitle} />
+      <TabNav label="Administration" tabs={tabs} />
+      {state === "error" || !clients ? (
+        <ErrorState title="Clients are temporarily unavailable">
+          We could not read the client list, so nothing is shown rather than a
+          guess.
+          <a
+            slot="action"
+            class="control primary"
+            href={Astro.url.pathname + Astro.url.search}
+          >
+            Try again
+          </a>
+        </ErrorState>
+      ) : clients.rows.length === 0 ? (
+        <EmptyState title="No clients yet" heading="h2">
+          Clients appear here once they are created.
+        </EmptyState>
+      ) : (
+        <section class="panel tablewrap" data-clients-table>
+          <SectionHeading>
+            <Fragment slot="title">Clients</Fragment>
+            <span slot="actions" class="muted">
+              {clients.rows.length}{" "}
+              {clients.rows.length === 1 ? "client" : "clients"}
+              {clients.more ? " shown · more exist" : ""}
+            </span>
+          </SectionHeading>
+          <DataTable>
+            <thead>
+              <tr>
+                <th scope="col">Client</th>
+                <th scope="col">Locations</th>
+                <th scope="col">Status</th>
+                <th scope="col">
+                  <span class="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.rows.map((row) => (
+                <tr data-client={row.id}>
+                  <td>
+                    <b>{row.name}</b>
+                    {row.site && <span class="sub">{row.site}</span>}
+                    {row.removalNote && (
+                      <span class="sub" data-removal-note>
+                        {row.removalNote}
+                      </span>
+                    )}
+                  </td>
+                  <td>{row.locations === null ? "–" : row.locations}</td>
+                  <td>
+                    <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+                    {row.removalChip && (
+                      <span
+                        class:list={["badge", row.removalChip.tone]}
+                        data-removal-poll={
+                          row.removalRunning ? row.id : undefined
+                        }
+                      >
+                        {row.removalChip.label}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {row.action && (
+                      <button
+                        type="button"
+                        class="control"
+                        inert
+                        data-org-action={row.action}
+                        data-org-id={row.id}
+                        data-org-name={row.name}
+                        data-version={row.version}
+                      >
+                        {row.actionLabel}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        </section>
+      )}
+      <ConfirmDialog id="admin-confirm" />
+      <script>import "../../lib/administration-actions";</script>
+    </Fragment>
+  )
+}

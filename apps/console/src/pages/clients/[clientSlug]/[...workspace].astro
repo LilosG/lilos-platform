@@ -49,6 +49,13 @@ import Opportunities from "../../../components/opportunities/Opportunities.astro
 import OpportunityDetail from "../../../components/opportunities/OpportunityDetail.astro";
 import Overview from "../../../components/client/Overview.astro";
 import NotBuilt from "../../../components/ui/NotBuilt.astro";
+import Settings from "../../../components/settings/Settings.astro";
+import {
+  loadFacts,
+  loadLocations,
+  type Section,
+} from "../../../server/admin-loader";
+import type { FactRow, LocationRow } from "../../../lib/settings-view";
 import Automations from "../../../components/automations/Automations.astro";
 import RunDialog from "../../../components/automations/RunDialog.astro";
 import RunFooter from "../../../components/automations/RunFooter.astro";
@@ -121,6 +128,7 @@ const builtSections = [
   "opportunities",
   "attention",
   "automations",
+  "settings",
 ];
 const notBuilt = section in clientAreaSlugs;
 if (section !== "" && !notBuilt && !builtSections.includes(section))
@@ -128,6 +136,8 @@ if (section !== "" && !notBuilt && !builtSections.includes(section))
 if (notBuilt && segments.length > 1)
   return new Response("Page not found", { status: 404 });
 let overview: ClientOverview | undefined;
+let settingsLocations: Section<LocationRow> | undefined;
+let settingsFacts: Section<FactRow> | undefined;
 let automationsPage: AutomationsPage | undefined;
 const websiteId = Astro.url.searchParams.get("website_id") ?? undefined;
 if (
@@ -368,6 +378,18 @@ try {
     if (automationsPage.kind === "unauthenticated")
       return Astro.redirect("/login/", 303);
     if (automationsPage.kind === "error") error = "AUTOMATIONS_UNAVAILABLE";
+  } else if (section === "settings") {
+    if (segments.length > 1)
+      return new Response("Page not found", { status: 404 });
+    [settingsLocations, settingsFacts] = await Promise.all([
+      loadLocations(Astro.locals, client.organization_id),
+      loadFacts(Astro.locals, client.organization_id),
+    ]);
+    if (
+      settingsLocations.kind === "unauthenticated" ||
+      settingsFacts.kind === "unauthenticated"
+    )
+      return Astro.redirect("/login/", 303);
   } else if (section === "attention") {
     const payload = await read<{ data: unknown[]; next_offset: number | null }>(
       Astro.locals,
@@ -385,23 +407,25 @@ try {
 const title =
   section === "automations"
     ? "Automations"
-    : section === "website-content"
-      ? "Website & Content"
-      : section === "leads"
-        ? "Leads"
-        : section === "reviews"
-          ? "Reviews"
-          : section === "local-search"
-            ? "Local Search"
-            : section === "integrations"
-              ? "Integrations"
-              : section === "opportunities"
-                ? "Opportunities"
-                : section === "attention"
-                  ? "Requires attention"
-                  : section
-                    ? section.replaceAll("-", " ")
-                    : client.organization_name;
+    : section === "settings"
+      ? "Settings"
+      : section === "website-content"
+        ? "Website & Content"
+        : section === "leads"
+          ? "Leads"
+          : section === "reviews"
+            ? "Reviews"
+            : section === "local-search"
+              ? "Local Search"
+              : section === "integrations"
+                ? "Integrations"
+                : section === "opportunities"
+                  ? "Opportunities"
+                  : section === "attention"
+                    ? "Requires attention"
+                    : section
+                      ? section.replaceAll("-", " ")
+                      : client.organization_name;
 ---
 
 <AppLayout
@@ -409,6 +433,7 @@ const title =
     notBuilt ||
     (section === "automations" && error === undefined) ||
     (section === "integrations" && error === undefined) ||
+    settingsLocations !== undefined ||
     (section === "opportunities" && error === undefined) ||
     (localSearch !== undefined && error === undefined)}
   title={title}
@@ -461,6 +486,13 @@ const title =
           )}
         />
       </Fragment>
+    ) : settingsLocations && settingsFacts ? (
+      <Settings
+        clientName={client.organization_name}
+        api={`/api/organizations/${client.organization_id}/`}
+        locations={settingsLocations}
+        facts={settingsFacts}
+      />
     ) : notBuilt ? (
       <NotBuilt
         target={{

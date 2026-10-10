@@ -1,3 +1,4 @@
+import { state as adminState } from "./admin-sim.mjs";
 // Synthetic Command Center read feeds for browser tests only. Never imported by the app.
 const gamma = "99999999-9999-4999-8999-999999999999";
 const metric = (source, availability, current = null, previous = null) => ({
@@ -344,11 +345,9 @@ export function commandCenter(url, claims, ids) {
   if (!match) return null;
   const admin = claims.sub === ids.admin && claims.aal === "aal2";
   const all = rows(ids);
-  const visibleIds = admin
-    ? [ids.a, ids.b, gamma]
-    : claims.sub === ids.admin
-      ? []
-      : [claims.sub];
+  const visibleIds = (
+    admin ? [ids.a, ids.b, gamma] : claims.sub === ids.admin ? [] : [claims.sub]
+  ).filter((id) => !adminState.hidden.has(id));
   if (!admin && !all[claims.sub])
     return { status: 404, body: { code: "NOT_FOUND" } };
   const access = (id) =>

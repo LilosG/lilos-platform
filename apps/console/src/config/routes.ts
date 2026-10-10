@@ -53,6 +53,21 @@ export const clientNavigation: {
     ],
   },
 ];
+/** Administration's tabs; only Clients / organizations is built, the rest resolve to NotBuilt. */
+export const administrationTabs = [
+  { label: "Clients / organizations", slug: "", href: "/administration/" },
+  {
+    label: "Onboarding",
+    slug: "onboarding",
+    href: "/administration/onboarding/",
+  },
+  { label: "Users", slug: "users", href: "/administration/users/" },
+  {
+    label: "Platform / system",
+    slug: "platform",
+    href: "/administration/platform/",
+  },
+] as const;
 export const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -65,7 +80,6 @@ export const clientRoute = (slug: string, area: ProductArea = "Overview") =>
 /** Every area that has no screen yet resolves to one typed state, never to fake content. */
 export const clientAreaSlugs: Record<string, ProductArea> = {
   reports: "Reports",
-  settings: "Settings",
 };
 export type NotBuilt =
   | { scope: "portfolio"; area: PortfolioArea }
