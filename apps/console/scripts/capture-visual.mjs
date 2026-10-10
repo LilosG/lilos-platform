@@ -456,6 +456,79 @@ const automationScreens = [
     automationsScenario("error"),
   ],
 ];
+// Step 9: Integrations and the publish panel's image picker. The reference's Integrations screen
+// stands in for each Integrations state; its content dialog stands in for the publish panel.
+// Opening the repository list and linking need a verified sign-in, so these run as "a2".
+const publishingScenario = (mode) => () =>
+  fetch(`${beta}/test/publishing-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+const alphaIntegrations = "/clients/synthetic-alpha/integrations/";
+const referenceIntegrations = "/clients/coco-maya/integrations/";
+const openRepositories = async (page) => {
+  await page.getByRole("button", { name: "Select repository" }).click();
+  await page.locator("[data-repo-list] button").first().waitFor();
+  await page.locator("[data-repo-list] button").first().click();
+};
+const imagePicker = async () => {
+  await fetch(`${beta}/test/website-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode: "content" }),
+  });
+  await fetch(`${beta}/test/content-images`, {
+    method: "POST",
+    body: JSON.stringify({ images: "list" }),
+  });
+};
+const searchImages = async (page) => {
+  await page.locator("[data-picker-list] button").first().waitFor();
+  await page.getByRole("searchbox").fill("blog");
+  await page.locator("[data-picker-list] button").first().click();
+  await page.locator("[data-image-picker]").scrollIntoViewIfNeeded();
+};
+const publishingScreens = [
+  [
+    "integrations-linked",
+    "a",
+    alphaIntegrations,
+    referenceIntegrations,
+    undefined,
+    publishingScenario("linked"),
+  ],
+  [
+    "integrations-not-linked-dialog",
+    "a2",
+    alphaIntegrations,
+    referenceIntegrations,
+    openRepositories,
+    publishingScenario("not_linked"),
+  ],
+  [
+    "integrations-format-unverified",
+    "a",
+    alphaIntegrations,
+    referenceIntegrations,
+    undefined,
+    publishingScenario("format_unverified"),
+  ],
+  [
+    "integrations-github-not-connected",
+    "a",
+    alphaIntegrations,
+    referenceIntegrations,
+    undefined,
+    publishingScenario("github_not_connected"),
+  ],
+  [
+    "publish-panel-image-picker",
+    "a2",
+    readyDraft,
+    referenceContent,
+    searchImages,
+    imagePicker,
+  ],
+];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
 // states (trend, no previous period, not connected) are on screen.
 const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
@@ -521,13 +594,15 @@ const activeScreens =
         ? contentScreens
         : stepName === "step-5a"
           ? websiteScreens
-          : stepName === "step-8-automations"
-            ? automationScreens
-            : stepName === "step-6"
-              ? reviewScreens
-              : stepName === "special-hours-publish"
-                ? screens.filter(([name]) => name === "special-hours-list")
-                : screens;
+          : stepName === "step-9-publishing"
+            ? publishingScreens
+            : stepName === "step-8-automations"
+              ? automationScreens
+              : stepName === "step-6"
+                ? reviewScreens
+                : stepName === "special-hours-publish"
+                  ? screens.filter(([name]) => name === "special-hours-list")
+                  : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
@@ -544,6 +619,19 @@ for (const [label, [width, height]] of Object.entries(sizes)) {
   for (const who of ["a", "b", "admin"]) {
     contexts[who] = await browser.newContext({ viewport });
     await signIn(contexts[who], who);
+  }
+  if (stepName === "step-9-publishing") {
+    // Same person as "a", with the authenticator confirmed.
+    contexts.a2 = await browser.newContext({ viewport });
+    await signIn(contexts.a2, "a");
+    const page = await contexts.a2.newPage();
+    await page.goto(`${consoleUrl}/mfa/?return=%2F`);
+    const enroll = page.getByRole("button", { name: "Set up authenticator" });
+    if (await enroll.count()) await enroll.click();
+    await page.getByLabel("Authenticator code").fill("123456");
+    await page.getByRole("button", { name: "Verify", exact: true }).click();
+    await page.waitForURL((url) => url.pathname === "/");
+    await page.close();
   }
   const plain = await browser.newContext({ viewport });
   for (const [
