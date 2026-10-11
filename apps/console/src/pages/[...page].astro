@@ -27,7 +27,12 @@ import {
   reportingDays,
   type PortfolioOverview,
 } from "../server/command-center";
-import { organizations } from "../server/context";
+import { organizations, workspace } from "../server/context";
+import Administration from "../components/administration/Administration.astro";
+import {
+  loadClientsTable,
+  type AdministrationClients,
+} from "../server/admin-loader";
 import { APIError, read } from "../server/bff";
 const page = (Astro.params.page ?? "").replace(/\/$/, "");
 const [area, sub] = page.split("/");
@@ -64,6 +69,25 @@ if (area === "automations") {
     return new Response("Page not found", { status: 404 });
   if (automationsPage.kind === "unauthenticated")
     return Astro.redirect("/login/", 303);
+}
+let administrationState: "ok" | "forbidden" | "error" | undefined;
+let administrationClients: AdministrationClients | undefined;
+if (area === "administration" && administration) {
+  // The API decides who may administer; the shell only hides what it would refuse.
+  if (!(await workspace(Astro.locals)).platformAdministrator)
+    administrationState = "forbidden";
+  else if (sub === undefined) {
+    const loaded = await loadClientsTable(Astro.locals);
+    if (loaded.kind === "unauthenticated")
+      return Astro.redirect("/login/", 303);
+    administrationState =
+      loaded.kind === "ok"
+        ? "ok"
+        : loaded.kind === "forbidden"
+          ? "forbidden"
+          : "error";
+    if (loaded.kind === "ok") administrationClients = loaded.clients;
+  } else administrationState = "ok";
 }
 const days = reportingDays(Astro.url.searchParams.get("days"));
 if (days === null) return new Response("Invalid period", { status: 400 });
@@ -132,7 +156,13 @@ const title =
   updatedAt={overview?.generated_at}
 >
   {
-    automationsPage?.kind === "error" ? (
+    administrationState ? (
+      <Administration
+        state={administrationState}
+        tab={sub}
+        clients={administrationClients}
+      />
+    ) : automationsPage?.kind === "error" ? (
       <Fragment>
         <PageHeader
           title="Automations"

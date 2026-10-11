@@ -2622,3 +2622,59 @@ td .rowactions {
 .pickerlist button[aria-pressed="true"] {
   background: #edf2ed;
 }
+.typedname {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 18px 0 6px;
+  font-weight: 600;
+}
+.control.primary.danger {
+  background: var(--red);
+  border-color: var(--red);
+}
+.control.primary.danger:disabled {
+  opacity: 0.5;
+}
+.facttext {
+  max-width: 460px;
+  overflow-wrap: anywhere;
+}
+.factform {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+.factform label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 600;
+}
+.factform .hint {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 13px;
+}
+.addressgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.addressgrid .wide {
+  grid-column: 1/-1;
+}
+.primarymark {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+}
+tr.retired b {
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .addressgrid {
+    grid-template-columns: 1fr;
+  }
+}

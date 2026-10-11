@@ -61,6 +61,13 @@ class ConflictError(ApiError):
     public_message = "The request conflicts with the current resource state."
 
 
+class DatabaseIntegrityConflictError(ConflictError):
+    """A database constraint rejected the write, usually because a concurrent request won."""
+
+    code = "DATABASE_INTEGRITY_CONFLICT"
+    public_message = "Another request changed this at the same time. Refresh and try again."
+
+
 class DatabaseUnavailableError(ApiError):
     """Required PostgreSQL functionality is unavailable."""
 

@@ -212,7 +212,11 @@ function bindGitHub() {
         try {
           const data = z
             .object({ authorization_url: z.string(), reconciled: z.boolean() })
-            .parse(await action(button.dataset.githubInstall!, {}));
+            .parse(
+              await action(button.dataset.githubInstall!, {
+                return_app: "console",
+              }),
+            );
           // Already installed: the API reconciled it, so this screen only needs to show the result.
           if (data.reconciled) return window.location.reload();
           const target = githubInstallTarget(data.authorization_url);

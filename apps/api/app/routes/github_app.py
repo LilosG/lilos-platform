@@ -21,6 +21,7 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.config import Settings
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.integrations.contracts import GitHubInstallRequest
 from apps.api.app.integrations.directory_service import IntegrationDirectoryService
 from apps.api.app.integrations.errors import (
     IntegrationNotConfiguredError,
@@ -69,10 +70,27 @@ def no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-def _frontend_return_url(settings: Settings, *, installed: bool, reason: str | None = None) -> str:
+def _frontend_return_url(
+    settings: Settings,
+    *,
+    installed: bool,
+    reason: str | None = None,
+    organization_id: UUID | None = None,
+    console_return: bool = False,
+) -> str:
+    """Where the browser lands after the install: the console only when the flow began there.
+
+    Console installs return only to the configured bare HTTPS console origin, carrying the
+    organization so the console can open that client's Integrations screen. Installs started
+    from the older app keep returning to the first configured web origin.
+    """
+    params = {"installed": "1"} if installed else {"installed": "0", "reason": reason or "error"}
+    if console_return and settings.console_origin:
+        if organization_id is not None:
+            params["org"] = str(organization_id)
+        return f"{str(settings.console_origin).rstrip('/')}/integrations/?{urlencode(params)}"
     origins = settings.allowed_web_origins()
     base = origins[0] if origins else ""
-    params = {"installed": "1"} if installed else {"installed": "0", "reason": reason or "error"}
     return f"{base}/integrations?{urlencode(params)}"
 
 
@@ -88,9 +106,11 @@ async def begin_install(
     session: Session,
     principal: Authenticated,
     _: GitHubManage,
+    command: GitHubInstallRequest | None = None,
 ) -> dict[str, object]:
     settings = settings_from_request(request)
     correlation_id = request_correlation_id(request)
+    console_return = command is not None and command.return_app == "console"
 
     reconciled = await owner_installation_reconciler.reconcile(
         session,
@@ -109,7 +129,12 @@ async def begin_install(
         )
         return {
             "data": {
-                "authorization_url": _frontend_return_url(settings, installed=True),
+                "authorization_url": _frontend_return_url(
+                    settings,
+                    installed=True,
+                    organization_id=organization_id,
+                    console_return=console_return,
+                ),
                 "reconciled": True,
             },
             "meta": ResponseMeta(correlation_id=correlation_id).model_dump(),
@@ -121,6 +146,7 @@ async def begin_install(
         organization_id,
         actor_id=principal.platform_user_id,
         correlation_id=correlation_id,
+        console_return=console_return,
     )
     return {
         "data": {"authorization_url": url, "reconciled": False},
@@ -219,6 +245,8 @@ async def github_callback(
             url=_frontend_return_url(settings, installed=False, reason="invalid_state"),
             status_code=status.HTTP_302_FOUND,
         )
+    # The marker is part of the persisted state hash: it cannot be added to an existing intent.
+    console_return = state.startswith("console.")
     if error or not installation_id:
         await service.fail_install(
             session,
@@ -229,7 +257,11 @@ async def github_callback(
         )
         return RedirectResponse(
             url=_frontend_return_url(
-                settings, installed=False, reason=error or "missing_installation_id"
+                settings,
+                installed=False,
+                reason=error or "missing_installation_id",
+                organization_id=organization_id,
+                console_return=console_return,
             ),
             status_code=status.HTTP_302_FOUND,
         )
@@ -252,11 +284,22 @@ async def github_callback(
         )
     except (IntegrationStateInvalidError, IntegrationNotFoundError, IntegrationNotConfiguredError):
         return RedirectResponse(
-            url=_frontend_return_url(settings, installed=False, reason="install_failed"),
+            url=_frontend_return_url(
+                settings,
+                installed=False,
+                reason="install_failed",
+                organization_id=organization_id,
+                console_return=console_return,
+            ),
             status_code=status.HTTP_302_FOUND,
         )
     return RedirectResponse(
-        url=_frontend_return_url(settings, installed=True),
+        url=_frontend_return_url(
+            settings,
+            installed=True,
+            organization_id=organization_id,
+            console_return=console_return,
+        ),
         status_code=status.HTTP_302_FOUND,
     )
 

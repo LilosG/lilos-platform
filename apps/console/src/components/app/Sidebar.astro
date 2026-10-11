@@ -9,8 +9,18 @@ interface Props {
   email: string;
   role: string;
   opportunities?: number | null;
+  /** Whether the signed-in person may reach Administration. */
+  administrator?: boolean;
 }
-const { client, page, area, email, role, opportunities } = Astro.props;
+const {
+  client,
+  page,
+  area,
+  email,
+  role,
+  opportunities,
+  administrator = false,
+} = Astro.props;
 ---
 
 <aside id="sidebar" aria-label="Application navigation">
@@ -24,7 +34,11 @@ const { client, page, area, email, role, opportunities } = Astro.props;
     client ? (
       <ClientNav client={client} area={area} />
     ) : (
-      <PortfolioNav page={page} opportunities={opportunities} />
+      <PortfolioNav
+        page={page}
+        opportunities={opportunities}
+        administrator={administrator}
+      />
     )
   }
   <div class="sidebarbottom">

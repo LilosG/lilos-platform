@@ -165,7 +165,8 @@ test("GitHub not connected: an empty state whose action starts the GitHub instal
   );
   await clean(page);
   await empty.getByRole("button", { name: "Connect GitHub" }).click();
-  await install;
+  // The install says which app to come back to, so it returns to this screen.
+  expect((await install).postDataJSON()).toEqual({ return_app: "console" });
   await page.waitForURL(/github\.com\/apps\/.+\/installations\/new/);
 });
 test("format not checked: publishing is paused, in plain words", async ({

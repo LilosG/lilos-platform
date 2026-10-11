@@ -125,6 +125,7 @@ class GitHubAppService:
         *,
         actor_id: UUID | None,
         correlation_id: str,
+        console_return: bool = False,
     ) -> str:
         """Build the GitHub authorization URL to install the LILOs GitHub App.
 
@@ -133,11 +134,15 @@ class GitHubAppService:
         callback can recover the LILOs organization from ``state`` alone.
         """
         _, _, _, redirect_uri = self.require_configured(settings)
+        if console_return and not settings.console_origin:
+            raise IntegrationNotConfiguredError
         provider = await self.get_provider(session)
         connection = await self._get_or_create_pending_connection(
             session, organization_id, provider
         )
-        _, state = await self.intents.create(session, organization_id, connection.id, redirect_uri)
+        _, state = await self.intents.create(
+            session, organization_id, connection.id, redirect_uri, console_return=console_return
+        )
         params = {"state": state}
         url = (
             f"https://github.com/apps/{settings.github_app_slug}/installations/new"

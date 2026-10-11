@@ -4,8 +4,10 @@ interface Props {
   page: string;
   /** Open opportunities across the portfolio, when the source is loaded. */
   opportunities?: number | null;
+  /** Administration is shown only to people the API will let in. */
+  administrator?: boolean;
 }
-const { page, opportunities = null } = Astro.props;
+const { page, opportunities = null, administrator = false } = Astro.props;
 ---
 
 <div class="navlabel">ENTIRE PORTFOLIO</div>
@@ -28,16 +30,23 @@ const { page, opportunities = null } = Astro.props;
     ))
   }
 </nav>
-<div data-owner-navigation>
-  <div class="navlabel">MANAGE</div>
-  <nav aria-label="Portfolio management">
-    <a
-      href={portfolioRoute("administration")}
-      class:list={{ active: page === "administration" }}
-      aria-current={page === "administration" ? "page" : undefined}
-    >
-      <span class="navicon" aria-hidden="true"> ⚙ </span>
-      Administration
-    </a>
-  </nav>
-</div>
+{
+  administrator && (
+    <div data-owner-navigation>
+      <div class="navlabel">MANAGE</div>
+      <nav aria-label="Portfolio management">
+        <a
+          href={portfolioRoute("administration")}
+          class:list={{ active: page === "administration" }}
+          aria-current={page === "administration" ? "page" : undefined}
+        >
+          <span class="navicon" aria-hidden="true">
+            {" "}
+            ⚙{" "}
+          </span>
+          Administration
+        </a>
+      </nav>
+    </div>
+  )
+}

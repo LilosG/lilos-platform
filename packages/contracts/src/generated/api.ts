@@ -6819,6 +6819,18 @@ export interface components {
             /** External Account Reference */
             external_account_reference?: string | null;
         };
+        /**
+         * GitHubInstallRequest
+         * @description Begin the GitHub App installation, and say which app the browser returns to.
+         */
+        GitHubInstallRequest: {
+            /**
+             * Return App
+             * @default web
+             * @enum {string}
+             */
+            return_app: "web" | "console";
+        };
         /** GoogleCapability */
         GoogleCapability: {
             /** Enabled */
@@ -15141,7 +15153,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GitHubInstallRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

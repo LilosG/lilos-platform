@@ -529,6 +529,206 @@ const publishingScreens = [
     imagePicker,
   ],
 ];
+// Step 9b: Administration and client Settings. The reference's Administration screen and client
+// Settings stand in for each console state; the console shows each in the scenario that exercises it.
+const adminScenario = (mode) => () =>
+  fetch(`${beta}/test/admin-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+const settingsPath = "/clients/synthetic-alpha/settings/";
+const referenceSettings = "/clients/coco-maya/settings/";
+const rowOf = (page, name) =>
+  page.locator("tbody tr").filter({ hasText: name });
+const clickRow = (name, button) => async (page) => {
+  await rowOf(page, name).getByRole("button", { name: button }).click();
+  await page.locator("dialog[open]").waitFor();
+};
+const typeName = (name, button, typed) => async (page) => {
+  await clickRow(name, button)(page);
+  await page.getByLabel(/^Type .* to confirm$/).fill(typed);
+};
+const retire = (accept) => async (page) => {
+  await rowOf(page, "DONT USE")
+    .getByRole("button", { name: "Retire location" })
+    .click();
+  await page.locator("dialog[open]").waitFor();
+  if (accept) {
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Retire location" })
+      .click();
+    await page
+      .getByRole("alert")
+      .filter({ hasText: "did not go through" })
+      .waitFor();
+  }
+};
+const openFact = async (page) => {
+  await page
+    .getByRole("button", { name: "Add or change a fact" })
+    .first()
+    .click();
+  await page.locator("dialog[open]").waitFor();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("What is it?")
+    .selectOption({ label: "Business name" });
+  await dialog
+    .getByRole("textbox", { name: "Business name" })
+    .fill("Synthetic Alpha Kitchen");
+};
+const saveFact = async (page) => {
+  await openFact(page);
+  await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+  await page.getByText("Waiting for approval").first().waitFor();
+};
+const adminScreens = [
+  [
+    "administration-clients",
+    "admin",
+    "/administration/",
+    "/administration/",
+    undefined,
+    adminScenario("default"),
+  ],
+  [
+    "administration-offboard-dialog",
+    "admin",
+    "/administration/",
+    "/administration/",
+    clickRow("Synthetic Alpha", "Start offboarding"),
+    adminScenario("default"),
+  ],
+  [
+    "administration-archive-dialog",
+    "admin",
+    "/administration/",
+    "/administration/",
+    clickRow("Maple Street Cafe", "Archive"),
+    adminScenario("default"),
+  ],
+  [
+    "administration-remove-dialog",
+    "admin",
+    "/administration/",
+    "/administration/",
+    typeName("Old Test Client", "Remove data permanently", "Old Test"),
+    adminScenario("default"),
+  ],
+  [
+    "administration-removal-failed",
+    "admin",
+    "/administration/",
+    "/administration/",
+    undefined,
+    adminScenario("removal_failed"),
+  ],
+  [
+    "administration-no-access",
+    "a",
+    "/administration/",
+    "/administration/",
+    undefined,
+    adminScenario("default"),
+  ],
+  [
+    "administration-error",
+    "admin",
+    "/administration/",
+    "/administration/",
+    undefined,
+    adminScenario("error"),
+  ],
+  [
+    "administration-empty",
+    "admin",
+    "/administration/",
+    "/administration/",
+    undefined,
+    adminScenario("no_clients"),
+  ],
+  [
+    "administration-not-built",
+    "admin",
+    "/administration/users/",
+    "/administration/users/",
+    undefined,
+    adminScenario("default"),
+  ],
+  [
+    "settings",
+    "a",
+    settingsPath,
+    referenceSettings,
+    undefined,
+    adminScenario("default"),
+  ],
+  [
+    "settings-retire-dialog",
+    "a",
+    settingsPath,
+    referenceSettings,
+    retire(false),
+    adminScenario("default"),
+  ],
+  [
+    "settings-retire-stopped",
+    "a",
+    settingsPath,
+    referenceSettings,
+    retire(true),
+    adminScenario("retire_archive_fails"),
+  ],
+  [
+    "settings-fact-dialog",
+    "a",
+    settingsPath,
+    referenceSettings,
+    openFact,
+    adminScenario("default"),
+  ],
+  [
+    "settings-fact-waiting",
+    "a",
+    settingsPath,
+    referenceSettings,
+    saveFact,
+    adminScenario("default"),
+  ],
+  [
+    "settings-locations-error",
+    "a",
+    settingsPath,
+    referenceSettings,
+    undefined,
+    adminScenario("locations_error"),
+  ],
+  [
+    "settings-locations-empty",
+    "a",
+    settingsPath,
+    referenceSettings,
+    undefined,
+    adminScenario("locations_empty"),
+  ],
+  [
+    "settings-facts-empty",
+    "a",
+    settingsPath,
+    referenceSettings,
+    undefined,
+    adminScenario("facts_empty"),
+  ],
+  [
+    "settings-facts-error",
+    "a",
+    settingsPath,
+    referenceSettings,
+    undefined,
+    adminScenario("facts_error"),
+  ],
+];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
 // states (trend, no previous period, not connected) are on screen.
 const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
@@ -594,15 +794,17 @@ const activeScreens =
         ? contentScreens
         : stepName === "step-5a"
           ? websiteScreens
-          : stepName === "step-9-publishing"
-            ? publishingScreens
-            : stepName === "step-8-automations"
-              ? automationScreens
-              : stepName === "step-6"
-                ? reviewScreens
-                : stepName === "special-hours-publish"
-                  ? screens.filter(([name]) => name === "special-hours-list")
-                  : screens;
+          : stepName === "step-9b-administration"
+            ? adminScreens
+            : stepName === "step-9-publishing"
+              ? publishingScreens
+              : stepName === "step-8-automations"
+                ? automationScreens
+                : stepName === "step-6"
+                  ? reviewScreens
+                  : stepName === "special-hours-publish"
+                    ? screens.filter(([name]) => name === "special-hours-list")
+                    : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

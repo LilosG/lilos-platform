@@ -1,0 +1,37 @@
+---
+import ErrorState from "../ui/ErrorState.astro";
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+---
+
+<dialog id={id} aria-labelledby={`${id}-title`} data-confirm-dialog>
+  <div class="body">
+    <h2 id={`${id}-title`} data-confirm-title></h2>
+    <div data-confirm-lines></div>
+    <label class="typedname" data-confirm-typed hidden>
+      <span data-confirm-typed-label></span>
+      <input
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        data-confirm-typed-input
+      />
+    </label>
+    <div data-confirm-error hidden>
+      <ErrorState title="That did not go through" heading="h3">
+        <span data-confirm-error-text></span>
+      </ErrorState>
+    </div>
+    <p class="formstatus" role="status" aria-live="polite" data-confirm-status>
+    </p>
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-confirm-cancel>Cancel</button>
+    <button type="button" class="control primary" data-confirm-accept> </button>
+  </div>
+</dialog>
+<script>
+  import "../../lib/confirm-dialog";
+</script>

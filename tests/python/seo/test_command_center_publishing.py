@@ -1,10 +1,12 @@
 """Website publishing setup: state, repository listing and idempotent target linking."""
 
 import asyncio
+import threading
 from uuid import UUID, uuid4
 
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
+from fastapi import Request
 from httpx import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -304,6 +306,66 @@ def test_replaying_the_same_key_returns_the_same_target_and_creates_nothing(
     assert other.status_code == 409
     assert other.json()["error"]["code"] == "PUBLISHING_IDEMPOTENCY_CONFLICT"
     assert len(targets(seo_session_factory, org)) == 1
+
+
+def test_two_simultaneous_links_with_one_key_never_return_a_server_error(
+    seo_client: Fixture,
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, ids = seo_client
+    org = ids["organization"]
+    setup_github(seo_session_factory, org)
+    fake_repositories(monkeypatch, REPOSITORIES)
+    from apps.api.app.routes import command_center_publishing as route
+
+    real = route.accessible_repositories
+    waiting: list[int] = []
+    gate: list[asyncio.Event] = []
+
+    async def held(
+        request: Request, session: AsyncSession, organization_id: UUID
+    ) -> tuple[UUID, list[DiscoveredRepository]]:
+        # Both requests have already looked for the key and found none; neither has written.
+        # Hold the first until the second arrives so the two genuinely race to create the target.
+        if not gate:
+            gate.append(asyncio.Event())
+        waiting.append(1)
+        if len(waiting) >= 2:
+            gate[0].set()
+        await gate[0].wait()
+        return await real(request, session, organization_id)
+
+    monkeypatch.setattr(route, "accessible_repositories", held)
+    results: list[Response] = []
+
+    def send() -> None:
+        results.append(link(client, ids, VERIFIED, key="key-race-0001"))
+
+    threads = [threading.Thread(target=send) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert len(results) == 2
+    codes = sorted(response.status_code for response in results)
+    assert all(code < 500 for code in codes), [response.text for response in results]
+    # One request created the target. The other either replayed it or lost cleanly with a
+    # typed conflict; never a second target and never a server error.
+    assert codes[0] in {200, 201}
+    assert codes[1] in {200, 201, 409}
+    for response in results:
+        if response.status_code == 409:
+            assert response.json()["error"]["code"] in {
+                "DATABASE_INTEGRITY_CONFLICT",
+                "PUBLISHING_TARGET_EXISTS",
+                "PUBLISHING_IDEMPOTENCY_CONFLICT",
+            }
+    assert len(targets(seo_session_factory, org)) == 1
+    # The same key sent again now replays the target that was created.
+    again = link(client, ids, VERIFIED, key="key-race-0001")
+    assert again.status_code == 200
+    assert again.json()["replayed"] is True
 
 
 def test_a_repository_outside_the_installation_is_rejected(

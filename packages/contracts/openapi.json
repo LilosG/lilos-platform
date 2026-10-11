@@ -4024,6 +4024,23 @@
         "title": "GitHubConnectionCreate",
         "type": "object"
       },
+      "GitHubInstallRequest": {
+        "additionalProperties": false,
+        "description": "Begin the GitHub App installation, and say which app the browser returns to.",
+        "properties": {
+          "return_app": {
+            "default": "web",
+            "enum": [
+              "web",
+              "console"
+            ],
+            "title": "Return App",
+            "type": "string"
+          }
+        },
+        "title": "GitHubInstallRequest",
+        "type": "object"
+      },
       "GoogleCapability": {
         "properties": {
           "enabled": {
@@ -24361,6 +24378,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GitHubInstallRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Command"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

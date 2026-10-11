@@ -15,6 +15,7 @@ const title = notBuiltTitle(target);
   subtitle={subtitle ?? "This screen is not part of the Command Center yet."}
   client={target.scope === "client"}
 />
+<slot />
 <section class="panel" data-not-built={`${target.scope}:${target.area}`}>
   <div class="clearstate">
     <span class="severity low">…</span>

@@ -1,0 +1,189 @@
+---
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import ConfirmDialog from "../administration/ConfirmDialog.astro";
+import FactDialog from "./FactDialog.astro";
+import type { Section } from "../../server/admin-loader";
+import type { FactRow, LocationRow } from "../../lib/settings-view";
+interface Props {
+  clientName: string;
+  /** The BFF path for this client, ending in a slash. */
+  api: string;
+  locations: Section<LocationRow>;
+  facts: Section<FactRow>;
+}
+const { clientName, api, locations, facts } = Astro.props;
+const primary =
+  locations.kind === "ok"
+    ? (locations.rows.find((row) => row.primary)?.id ?? null)
+    : null;
+const retry = Astro.url.pathname + Astro.url.search;
+---
+
+<PageHeader
+  title="Settings"
+  subtitle={`${clientName} · Locations and business details.`}
+  client
+/>
+<section class="panel tablewrap" data-settings="locations" data-api={api}>
+  <SectionHeading>
+    <Fragment slot="title">Locations</Fragment>
+  </SectionHeading>
+  {
+    locations.kind === "forbidden" ? (
+      <EmptyState title="You do not have access to locations">
+        Ask an administrator for access to manage this client's locations.
+      </EmptyState>
+    ) : locations.kind !== "ok" ? (
+      <ErrorState title="Locations could not be loaded" heading="h3">
+        We could not read this client's locations, so nothing is shown rather
+        than a guess.
+        <a slot="action" class="control primary" href={retry}>
+          Try again
+        </a>
+      </ErrorState>
+    ) : locations.rows.length === 0 ? (
+      <EmptyState title="No locations yet">
+        Locations appear here once they are added during onboarding.
+      </EmptyState>
+    ) : (
+      <DataTable>
+        <thead>
+          <tr>
+            <th scope="col">Location</th>
+            <th scope="col">Status</th>
+            <th scope="col">
+              <span class="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {locations.rows.map((row) => (
+            <tr class:list={{ retired: row.retired }} data-location={row.id}>
+              <td>
+                <b>{row.name}</b>
+                {row.primary && <span class="primarymark">Primary</span>}
+                <span class="sub">{row.address}</span>
+              </td>
+              <td>
+                <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+              </td>
+              <td>
+                <div class="rowactions">
+                  {row.actions.map((entry) => (
+                    <button
+                      type="button"
+                      class="control"
+                      inert
+                      data-location-action={entry.action}
+                      data-location-id={row.id}
+                      data-name={row.name}
+                      data-version={row.version}
+                      data-status={row.status}
+                    >
+                      {entry.label}
+                    </button>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    )
+  }
+</section>
+<section class="panel tablewrap" data-settings="facts" data-api={api}>
+  <SectionHeading>
+    <Fragment slot="title">Business facts</Fragment>
+    <button
+      slot="actions"
+      type="button"
+      class="control"
+      inert
+      data-fact-open
+      hidden={facts.kind !== "ok"}
+    >
+      Add or change a fact
+    </button>
+  </SectionHeading>
+  {
+    facts.kind === "forbidden" ? (
+      <EmptyState title="You do not have access to business facts">
+        Ask an administrator for access to this client's business details.
+      </EmptyState>
+    ) : facts.kind !== "ok" ? (
+      <ErrorState title="Business facts could not be loaded" heading="h3">
+        We could not read this client's business details, so nothing is shown
+        rather than a guess.
+        <a slot="action" class="control primary" href={retry}>
+          Try again
+        </a>
+      </ErrorState>
+    ) : facts.rows.length === 0 ? (
+      <EmptyState title="No business facts yet">
+        Add the details LILOs should use when it writes for this client.
+        <button
+          slot="action"
+          type="button"
+          class="control primary"
+          inert
+          data-fact-open
+        >
+          Add or change a fact
+        </button>
+      </EmptyState>
+    ) : (
+      <DataTable>
+        <thead>
+          <tr>
+            <th scope="col">Detail</th>
+            <th scope="col">Value</th>
+            <th scope="col">Source</th>
+            <th scope="col">
+              <span class="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {facts.rows.map((row) => (
+            <tr data-fact={row.field ?? ""} data-waiting={row.waiting}>
+              <td>
+                <b>{row.label}</b>
+              </td>
+              <td class="facttext">{row.value}</td>
+              <td>
+                <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+              </td>
+              <td>
+                {row.field && !row.waiting && (
+                  <button
+                    type="button"
+                    class="control"
+                    inert
+                    data-fact-open
+                    data-fact-field={row.field}
+                    data-fact-identity={row.identity}
+                    data-fact-location={row.locationId ?? ""}
+                    data-fact-raw={JSON.stringify(row.raw)}
+                  >
+                    Change
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    )
+  }
+</section>
+<ConfirmDialog id="settings-confirm" />
+<FactDialog primaryLocationId={primary} />
+<script>
+  import "../../lib/settings-actions";
+</script>

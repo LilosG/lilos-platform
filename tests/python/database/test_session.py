@@ -75,3 +75,69 @@ def test_session_dependency_commits_and_rolls_back(postgresql_test_url: str) -> 
         assert asyncio.run(probe_row_count(postgresql_test_url)) == 1
     finally:
         asyncio.run(drop_probe_table(postgresql_test_url))
+
+
+UNIQUE_TABLE = "phase_01_unique_probe"
+
+
+async def reset_unique_table(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f'DROP TABLE IF EXISTS "{UNIQUE_TABLE}"'))
+            await connection.execute(
+                text(f'CREATE TABLE "{UNIQUE_TABLE}" (value INTEGER NOT NULL UNIQUE)')
+            )
+    finally:
+        await engine.dispose()
+
+
+async def unique_row_count(database_url: str) -> int:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(text(f'SELECT count(*) FROM "{UNIQUE_TABLE}"'))
+            return int(result.scalar_one())
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.integration
+def test_unique_violation_is_a_conflict_not_database_unavailable(
+    postgresql_test_url: str,
+) -> None:
+    asyncio.run(reset_unique_table(postgresql_test_url))
+    settings = Settings(
+        environment=EnvironmentName.TEST,
+        database_url=POSTGRES_DSN_ADAPTER.validate_python(postgresql_test_url),
+    )
+    app = create_app(settings)
+
+    @app.post("/_test/database/unique")
+    async def unique_probe(session: SessionDependency) -> dict[str, str]:
+        await session.execute(text(f'INSERT INTO "{UNIQUE_TABLE}" (value) VALUES (1)'))
+        await session.flush()
+        return {"status": "inserted"}
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            first = client.post("/_test/database/unique")
+            second = client.post("/_test/database/unique")
+
+        assert first.status_code == 200
+        assert second.status_code == 409
+        assert second.json()["error"]["code"] == "DATABASE_INTEGRITY_CONFLICT"
+        assert second.json()["error"]["category"] == "conflict"
+        assert "phase_01_unique_probe" not in second.text
+        assert asyncio.run(unique_row_count(postgresql_test_url)) == 1
+    finally:
+        asyncio.run(drop_unique_table(postgresql_test_url))
+
+
+async def drop_unique_table(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text(f'DROP TABLE IF EXISTS "{UNIQUE_TABLE}"'))
+    finally:
+        await engine.dispose()

@@ -43,6 +43,12 @@ import {
   state as publishingState,
 } from "./publishing-sim.mjs";
 import {
+  handle as adminHandle,
+  modes as adminModes,
+  reset as resetAdmin,
+  state as adminState,
+} from "./admin-sim.mjs";
+import {
   handle as beta,
   notConnected,
   reset as resetBeta,
@@ -211,6 +217,13 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/test/publishing-requests")
     return reply({ requests: publishingState.requests });
+  if (url.pathname === "/test/admin-scenario") {
+    if (!adminModes.includes(parsed.mode)) return reply({ ok: false }, 400);
+    resetAdmin(parsed.mode, ids);
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/admin-requests")
+    return reply({ requests: adminState.requests });
   if (url.pathname === "/test/automations-runs")
     return reply({ runs: automationState.runs });
   if (url.pathname === "/test/gbp-reset") {
@@ -330,6 +343,8 @@ createServer(async (req, res) => {
     factorsByUser.delete(claims.sub);
     return reply({ id: ids.factor });
   }
+  const administration = adminHandle(req, url, claims, ids, parsed);
+  if (administration) return reply(administration.body, administration.status);
   const automation = automations(req, url, claims, ids);
   if (automation) return reply(automation.body, automation.status);
   const feed = commandCenter(url, claims, ids);

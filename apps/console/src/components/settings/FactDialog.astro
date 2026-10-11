@@ -1,0 +1,86 @@
+---
+import ErrorState from "../ui/ErrorState.astro";
+import { FACT_FIELDS } from "../../lib/settings-view";
+interface Props {
+  /** Where a new address is filed when none exists yet: the primary location. */
+  primaryLocationId: string | null;
+}
+const { primaryLocationId } = Astro.props;
+---
+
+<dialog
+  id="fact-dialog"
+  aria-labelledby="fact-dialog-title"
+  data-fact-dialog
+  data-primary-location={primaryLocationId ?? ""}
+>
+  <form data-fact-form novalidate>
+    <div class="body">
+      <h2 id="fact-dialog-title">Add or change a fact</h2>
+      <p>
+        These details are used in content, review replies and reports. A change
+        replaces what is shown today.
+      </p>
+      <div class="factform">
+        <label>
+          What is it?
+          <select name="field" data-fact-field>
+            {
+              FACT_FIELDS.map((field) => (
+                <option value={field.id}>{field.label}</option>
+              ))
+            }
+          </select>
+          <span class="hint" data-fact-hint></span>
+        </label>
+        <label data-fact-input="string">
+          <span data-fact-input-label>Value</span>
+          <input type="text" name="value" autocomplete="off" />
+        </label>
+        <label data-fact-input="string_list" hidden>
+          Claims, one per line
+          <textarea name="list" rows="5"></textarea>
+        </label>
+        <div class="addressgrid" data-fact-input="object" hidden>
+          <label class="wide">
+            Street address
+            <input type="text" name="address_line_1" autocomplete="off" />
+          </label>
+          <label class="wide">
+            Suite or unit (optional)
+            <input type="text" name="address_line_2" autocomplete="off" />
+          </label>
+          <label>
+            City
+            <input type="text" name="city" autocomplete="off" />
+          </label>
+          <label>
+            State
+            <input type="text" name="region" autocomplete="off" />
+          </label>
+          <label>
+            Postal code
+            <input type="text" name="postal_code" autocomplete="off" />
+          </label>
+        </div>
+        <label>
+          Why is it changing? (optional)
+          <input type="text" name="reason" autocomplete="off" maxlength="200" />
+        </label>
+      </div>
+      <div data-fact-error hidden>
+        <ErrorState title="That did not go through" heading="h3">
+          <span data-fact-error-text></span>
+        </ErrorState>
+      </div>
+      <p class="formstatus" role="status" aria-live="polite" data-fact-status>
+      </p>
+    </div>
+    <div class="dialogfoot">
+      <button type="button" class="control" data-fact-cancel>Cancel</button>
+      <button type="submit" class="control primary" data-fact-save disabled>
+        Save
+      </button>
+    </div>
+  </form>
+</dialog>
