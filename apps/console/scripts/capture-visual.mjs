@@ -649,14 +649,6 @@ const adminScreens = [
     adminScenario("no_clients"),
   ],
   [
-    "administration-not-built",
-    "admin",
-    "/administration/users/",
-    "/administration/users/",
-    undefined,
-    adminScenario("default"),
-  ],
-  [
     "settings",
     "a",
     settingsPath,
@@ -729,6 +721,77 @@ const adminScreens = [
     adminScenario("facts_error"),
   ],
 ];
+// Step 9c: Administration's Onboarding, Users and Platform / system tabs. The reference's tab of
+// the same name stands in for each state; the console shows each in the scenario that exercises it.
+const onboardingTab = "/administration/onboarding/";
+const usersTab = "/administration/users/";
+const platformTab = "/administration/platform/";
+const openActivation = async (page) => {
+  await page
+    .locator("[data-client]")
+    .filter({ hasText: "Juniper Living" })
+    .getByRole("button", { name: "Activate client" })
+    .click();
+  await page.locator("dialog[open]").waitFor();
+};
+const openCancelInvitation = async (page) => {
+  await rowOf(page, "Pat Lee")
+    .getByRole("button", { name: /^Cancel invitation/ })
+    .click();
+  await page.locator("dialog[open]").waitFor();
+};
+const openSystemDetails = async (page) => {
+  await page.getByRole("button", { name: "Background work details" }).click();
+  await page.locator("dialog[open]").waitFor();
+};
+const tab = (name, who, path, mode, step) => [
+  name,
+  who,
+  path,
+  path,
+  step,
+  adminScenario(mode),
+];
+const adminTabScreens = [
+  tab("onboarding-list", "admin", onboardingTab, "default"),
+  tab(
+    "onboarding-activate-dialog",
+    "admin",
+    onboardingTab,
+    "default",
+    openActivation,
+  ),
+  tab("onboarding-empty", "admin", onboardingTab, "onboarding_empty"),
+  tab("onboarding-error", "admin", onboardingTab, "error"),
+  tab(
+    "onboarding-could-not-load",
+    "admin",
+    onboardingTab,
+    "onboarding_state_fails",
+  ),
+  tab("users-list", "admin", usersTab, "default"),
+  tab(
+    "users-cancel-invitation-dialog",
+    "admin",
+    usersTab,
+    "default",
+    openCancelInvitation,
+  ),
+  tab("users-empty", "admin", usersTab, "users_empty"),
+  tab("users-error", "admin", usersTab, "users_error"),
+  tab("platform-needs-attention", "admin", platformTab, "system_default"),
+  tab(
+    "platform-details-dialog",
+    "admin",
+    platformTab,
+    "system_default",
+    openSystemDetails,
+  ),
+  tab("platform-healthy", "admin", platformTab, "system_healthy"),
+  tab("platform-unknown", "admin", platformTab, "system_unknown"),
+  tab("platform-error", "admin", platformTab, "system_error"),
+  tab("tabs-no-access", "a", usersTab, "default"),
+];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
 // states (trend, no previous period, not connected) are on screen.
 const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
@@ -794,17 +857,21 @@ const activeScreens =
         ? contentScreens
         : stepName === "step-5a"
           ? websiteScreens
-          : stepName === "step-9b-administration"
-            ? adminScreens
-            : stepName === "step-9-publishing"
-              ? publishingScreens
-              : stepName === "step-8-automations"
-                ? automationScreens
-                : stepName === "step-6"
-                  ? reviewScreens
-                  : stepName === "special-hours-publish"
-                    ? screens.filter(([name]) => name === "special-hours-list")
-                    : screens;
+          : stepName === "step-9c-administration-tabs"
+            ? adminTabScreens
+            : stepName === "step-9b-administration"
+              ? adminScreens
+              : stepName === "step-9-publishing"
+                ? publishingScreens
+                : stepName === "step-8-automations"
+                  ? automationScreens
+                  : stepName === "step-6"
+                    ? reviewScreens
+                    : stepName === "special-hours-publish"
+                      ? screens.filter(
+                          ([name]) => name === "special-hours-list",
+                        )
+                      : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

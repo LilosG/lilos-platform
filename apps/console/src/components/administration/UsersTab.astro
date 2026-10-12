@@ -1,0 +1,128 @@
+---
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import { userPaging } from "../../lib/administration-view";
+import {
+  USERS_PAGE,
+  type AdministrationUsers,
+} from "../../server/admin-loader";
+interface Props {
+  users?: AdministrationUsers;
+}
+const { users } = Astro.props;
+const retry = Astro.url.pathname + Astro.url.search;
+const paging = users
+  ? userPaging(users.offset, users.nextOffset, USERS_PAGE)
+  : null;
+---
+
+{
+  !users ? (
+    <ErrorState title="People are temporarily unavailable">
+      We could not read who has access, so nothing is shown rather than a guess.
+      <a slot="action" class="control primary" href={retry}>
+        Try again
+      </a>
+    </ErrorState>
+  ) : users.rows.length === 0 ? (
+    <EmptyState title="No people yet" heading="h2">
+      People appear here once they have signed in to LILOs.
+    </EmptyState>
+  ) : (
+    <section class="panel tablewrap" data-users-table>
+      <SectionHeading>
+        <Fragment slot="title">People</Fragment>
+        <span slot="actions" class="muted">
+          {users.rows.length} {users.rows.length === 1 ? "person" : "people"}
+          {users.nextOffset !== null ? " shown · more exist" : ""}
+        </span>
+      </SectionHeading>
+      <DataTable>
+        <thead>
+          <tr>
+            <th scope="col">User</th>
+            <th scope="col">Role</th>
+            <th scope="col">Access</th>
+            <th scope="col">Status</th>
+            <th scope="col">
+              <span class="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.rows.map((person) => (
+            <tr data-person={person.id}>
+              <td>
+                <b>{person.name}</b>
+                {person.email && <span class="sub">{person.email}</span>}
+              </td>
+              <td>{person.roles}</td>
+              <td>
+                {person.clients.length === 0 ? (
+                  <span class="muted">No clients</span>
+                ) : (
+                  <Fragment>
+                    {person.clients.map((client) => (
+                      <span class="sub accessline">
+                        {client.name}
+                        {client.chip && (
+                          <StatusBadge
+                            text={client.chip.label}
+                            tone={client.chip.tone}
+                          />
+                        )}
+                      </span>
+                    ))}
+                    {person.moreClients > 0 && (
+                      <span class="sub">and {person.moreClients} more</span>
+                    )}
+                  </Fragment>
+                )}
+              </td>
+              <td>
+                <StatusBadge text={person.chip.label} tone={person.chip.tone} />
+              </td>
+              <td>
+                {person.invitations.map((invitation) => (
+                  <button
+                    type="button"
+                    class="control"
+                    inert
+                    data-cancel-invitation
+                    data-org-id={invitation.organizationId}
+                    data-invitation-id={invitation.invitationId}
+                    data-version={invitation.version}
+                    data-person={person.name}
+                    data-client-name={invitation.client}
+                    aria-label={`Cancel invitation to ${invitation.client}`}
+                  >
+                    Cancel invitation
+                  </button>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+      {paging && (paging.previous || paging.next) && (
+        <nav class="listrow" aria-label="Pages of people">
+          {paging.previous ? (
+            <a class="control" href={paging.previous}>
+              Previous
+            </a>
+          ) : (
+            <span />
+          )}
+          {paging.next && (
+            <a class="control" href={paging.next}>
+              Next
+            </a>
+          )}
+        </nav>
+      )}
+    </section>
+  )
+}

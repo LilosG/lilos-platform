@@ -277,3 +277,24 @@ export const waitingForApprovalChip: Chip = {
   label: "Waiting for approval",
   tone: "warn",
 };
+/** How well a part of the platform's own machinery is working; `unknown` is never "fine". */
+export const healthChips = {
+  healthy: { label: "Healthy", tone: "" },
+  attention: { label: "Needs attention", tone: "warn" },
+  unknown: { label: "Unknown", tone: "neutral" },
+} as const satisfies Record<string, Chip>;
+/** A person's standing across the clients they reach. */
+export const personChips = {
+  active: { label: "Active", tone: "" },
+  invited: { label: "Invited", tone: "neutral" },
+  suspended: { label: "Suspended", tone: "warn" },
+  deactivated: { label: "Deactivated", tone: "neutral" },
+  no_access: { label: "No access", tone: "neutral" },
+} as const satisfies Record<string, Chip>;
+export type PersonState = keyof typeof personChips;
+/** Where a client stands on the way to going live. */
+export const onboardingChips = {
+  ready: { label: "Ready to activate", tone: "" },
+  not_started: { label: "Not started", tone: "neutral" },
+  unavailable: { label: "Could not load", tone: "warn" },
+} as const satisfies Record<string, Chip>;

@@ -79,18 +79,6 @@ test.describe("Administration", () => {
     await noRaw(page);
     await clean(page);
   });
-  test("tabs that are not built resolve to the designed not-built state", async ({
-    page,
-  }) => {
-    await login(page, "admin", "/administration/users/");
-    await expect(page.locator("[data-not-built]")).toContainText(
-      "Administration is not built yet",
-    );
-    await expect(
-      page.getByRole("navigation", { name: "Administration" }),
-    ).toBeVisible();
-    await clean(page);
-  });
   test("a person who is not an administrator sees a designed no-access state", async ({
     page,
   }) => {
@@ -202,6 +190,8 @@ test.describe("Administration", () => {
     await accept.click();
     const chip = row(page, "Old Test Client").locator(".badge").nth(1);
     await expect(chip).toHaveText("Removal requested");
+    // The page has reloaded and started following the removal: only now does time move it on.
+    await expect(chip).toHaveAttribute("data-following", "true");
     await expect(row(page, "Old Test Client").getByRole("button")).toHaveCount(
       0,
     );

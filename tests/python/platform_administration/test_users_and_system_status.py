@@ -3,6 +3,7 @@
 pagination and the rule that an unreadable component is unknown, never healthy and never 0."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -26,7 +27,8 @@ from apps.api.app.execution.models import (
 )
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.platform_admin.system_status import SystemStatusService
-from tests.python.platform_administration.test_api import (  # noqa: F401
+
+from .test_api import (  # noqa: F401
     HEADERS,
     FakeVerifier,
     claims,
@@ -75,8 +77,10 @@ def test_only_a_platform_administrator_at_aal2_may_read(
     assert allowed.headers["cache-control"] == "no-store"
 
 
-def _run(factory: async_sessionmaker[AsyncSession], work):  # type: ignore[no-untyped-def]
-    async def go():  # type: ignore[no-untyped-def]
+def _run[T](
+    factory: async_sessionmaker[AsyncSession], work: Callable[[AsyncSession], Awaitable[T]]
+) -> T:
+    async def go() -> T:
         async with factory.begin() as session:
             return await work(session)
 
@@ -217,7 +221,7 @@ def test_a_platform_administrator_cancels_an_invitation_without_a_membership(
     async def audit(session: AsyncSession) -> list[str]:
         rows = await session.execute(
             text("SELECT event_type FROM audit_events WHERE organization_id = :id"),
-            {"id": UUID(organization["id"])},  # type: ignore[arg-type]
+            {"id": UUID(organization["id"])},
         )
         return [row[0] for row in rows]
 
@@ -423,7 +427,7 @@ def test_a_retired_clients_work_is_not_counted_against_the_platform(
     async def retire(session: AsyncSession) -> None:
         await session.execute(
             text("UPDATE organizations SET status='archived', archived_at=now() WHERE id = :id"),
-            {"id": UUID(organization["id"])},  # type: ignore[arg-type]
+            {"id": UUID(organization["id"])},
         )
 
     _run(platform_administration_session_factory, retire)

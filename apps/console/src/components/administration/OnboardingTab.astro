@@ -1,0 +1,112 @@
+---
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import type { AdministrationOnboarding } from "../../server/admin-loader";
+interface Props {
+  onboarding?: AdministrationOnboarding;
+}
+const { onboarding } = Astro.props;
+const retry = Astro.url.pathname + Astro.url.search;
+---
+
+{
+  !onboarding ? (
+    <ErrorState title="Onboarding is temporarily unavailable">
+      We could not read the client list, so nothing is shown rather than a
+      guess.
+      <a slot="action" class="control primary" href={retry}>
+        Try again
+      </a>
+    </ErrorState>
+  ) : onboarding.rows.length === 0 ? (
+    <EmptyState title="No clients are onboarding" heading="h2">
+      New clients appear here from the moment they are added until they go live.
+      Review the live clients to see where everyone stands.
+      <a slot="action" class="control primary" href="/administration/">
+        Review clients
+      </a>
+    </EmptyState>
+  ) : (
+    <section class="panel" data-onboarding>
+      <SectionHeading>
+        <Fragment slot="title">Client onboarding</Fragment>
+        <span slot="actions" class="muted">
+          {onboarding.rows.length}{" "}
+          {onboarding.rows.length === 1 ? "client" : "clients"}
+          {onboarding.more ? " shown · more exist" : ""}
+        </span>
+      </SectionHeading>
+      {onboarding.rows.map((row) => (
+        <div class="setuprow" data-client={row.id}>
+          <div class="listrow">
+            <div>
+              <h3>{row.name}</h3>
+              {row.site && <small>{row.site}</small>}
+            </div>
+            <div class="tagrow">
+              <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+              {row.readiness && (
+                <StatusBadge
+                  text={row.readiness.label}
+                  tone={row.readiness.tone}
+                />
+              )}
+            </div>
+            {row.canActivate && (
+              <button
+                type="button"
+                class="control primary"
+                inert
+                data-activate
+                data-org-id={row.id}
+                data-org-name={row.name}
+                data-version={row.version}
+              >
+                Activate client
+              </button>
+            )}
+            {row.unavailable && (
+              <a class="control" href={retry}>
+                Try again
+              </a>
+            )}
+          </div>
+          {row.percent !== null && (
+            <div class="setupmeter">
+              <div
+                class="progress"
+                role="progressbar"
+                aria-label={`${row.name} setup progress`}
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={row.percent}
+              >
+                <i style={`width:${row.percent}%`} />
+              </div>
+              <span class="muted">{row.percent}% complete</span>
+            </div>
+          )}
+          {row.note && <p class="setupnote">{row.note}</p>}
+          {row.blockers.length > 0 && (
+            <ul class="blockerlist" aria-label={`Still needed for ${row.name}`}>
+              {row.blockers.map((blocker) => (
+                <li>
+                  <span>{blocker.label}</span>
+                  {blocker.href ? (
+                    <a class="control" href={blocker.href}>
+                      {blocker.hrefLabel}
+                    </a>
+                  ) : (
+                    <span class="muted">Not editable in the console yet</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}

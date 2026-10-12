@@ -2,13 +2,24 @@ import { APIError, read } from "./bff";
 import {
   adaptFacts,
   adaptLocations,
+  adaptOnboarding,
   adaptOrganizations,
   adaptRemoval,
+  adaptSystem,
+  adaptUsers,
+  type OnboardingRecord,
+  type OrganizationRecord,
   type RemovalRecord,
+  type SystemRecord,
 } from "../adapters/administration";
 import {
+  isOnboarding,
+  onboardingRows,
   organizationRows,
+  personRows,
+  type OnboardingRow,
   type OrganizationRow,
+  type PersonRow,
 } from "../lib/administration-view";
 import {
   factRows,
@@ -131,6 +142,108 @@ export async function loadFacts(
     ]);
     const facts = adaptFacts(effective, waiting);
     return { kind: "ok", rows: factRows(facts.effective, facts.waiting) };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export interface AdministrationOnboarding {
+  rows: OnboardingRow[];
+  /** More clients exist than the pages read, so some prospects may not be listed. */
+  more: boolean;
+}
+const MAX_PAGES = 5;
+/** Every client that is not live yet, with where its setup stands. */
+export async function loadOnboarding(
+  locals: App.Locals,
+): Promise<{ kind: "ok"; onboarding: AdministrationOnboarding } | Failed> {
+  const organizations: OrganizationRecord[] = [];
+  let more = false;
+  try {
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const raw = await read(
+        locals,
+        `platform/organizations/?limit=${PAGE}&offset=${page * PAGE}`,
+      );
+      organizations.push(...adaptOrganizations(raw));
+      more = Boolean((raw as { data?: { has_more?: boolean } }).data?.has_more);
+      if (!more) break;
+    }
+  } catch (error) {
+    return failure(error);
+  }
+  const states = new Map<string, OnboardingRecord | null>();
+  // Only clients mid-onboarding have a setup state to read; a failed read stays unknown.
+  await inGroups(
+    organizations.filter((org) => org.status === "onboarding"),
+    async (org) => {
+      try {
+        states.set(
+          org.id,
+          adaptOnboarding(
+            await read(
+              locals,
+              `platform/organizations/${org.id}/onboarding-state/`,
+            ),
+          ),
+        );
+      } catch {
+        states.set(org.id, null);
+      }
+    },
+  );
+  return {
+    kind: "ok",
+    onboarding: {
+      rows: onboardingRows(
+        organizations.filter((org) => isOnboarding(org.status)),
+        states,
+      ),
+      more,
+    },
+  };
+}
+
+export const USERS_PAGE = 50;
+export interface AdministrationUsers {
+  rows: PersonRow[];
+  offset: number;
+  nextOffset: number | null;
+}
+/** One page of people and the clients they reach. */
+export async function loadUsers(
+  locals: App.Locals,
+  offset: number,
+): Promise<{ kind: "ok"; users: AdministrationUsers } | Failed> {
+  try {
+    const page = adaptUsers(
+      await read(
+        locals,
+        `platform/users/?limit=${USERS_PAGE}&offset=${offset}`,
+      ),
+    );
+    return {
+      kind: "ok",
+      users: {
+        rows: personRows(page.people),
+        offset,
+        nextOffset: page.next_offset,
+      },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** The platform's own health, as the API judged it. */
+export async function loadSystem(
+  locals: App.Locals,
+): Promise<{ kind: "ok"; system: SystemRecord } | Failed> {
+  try {
+    return {
+      kind: "ok",
+      system: adaptSystem(await read(locals, "platform/system-status/")),
+    };
   } catch (error) {
     return failure(error);
   }

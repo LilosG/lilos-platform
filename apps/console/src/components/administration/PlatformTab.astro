@@ -1,0 +1,123 @@
+---
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import { componentRows, systemDetails } from "../../lib/administration-view";
+import { healthChips } from "../../lib/status";
+import type { SystemRecord } from "../../adapters/administration";
+interface Props {
+  system?: SystemRecord;
+}
+const { system } = Astro.props;
+const retry = Astro.url.pathname + Astro.url.search;
+const rows = system ? componentRows(system) : [];
+const details = system ? systemDetails(system, new Date()) : null;
+const overall = system ? healthChips[system.overall] : null;
+---
+
+{
+  !system || !details || !overall ? (
+    <ErrorState title="System status is temporarily unavailable">
+      We could not read the platform's status, so nothing is shown rather than a
+      guess.
+      <a slot="action" class="control primary" href={retry}>
+        Try again
+      </a>
+    </ErrorState>
+  ) : (
+    <Fragment>
+      <section class="panel" data-system>
+        <SectionHeading>
+          <Fragment slot="title">Platform / system administration</Fragment>
+          <Fragment slot="actions">
+            <StatusBadge text={overall.label} tone={overall.tone} />
+          </Fragment>
+        </SectionHeading>
+        {rows.map((row) => (
+          <div class="listrow" data-component={row.key}>
+            <div>
+              <h3>{row.name}</h3>
+              <p>{row.sentence}</p>
+            </div>
+            <div class="tagrow">
+              <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+              {row.details && (
+                <button
+                  type="button"
+                  class="control"
+                  data-dialog="system-details"
+                  aria-label={`${row.name} details`}
+                >
+                  Details
+                </button>
+              )}
+              {row.integrations && (
+                <a class="control" href="/integrations/">
+                  Open integrations
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </section>
+      <dialog
+        id="system-details"
+        aria-labelledby="system-details-title"
+        data-shell-dialog
+      >
+        <div class="panelhead">
+          <span class="muted">Platform / system</span>
+          <button
+            type="button"
+            class="close"
+            aria-label="Close details"
+            data-close
+          >
+            ×
+          </button>
+        </div>
+        <div class="body">
+          <h2 id="system-details-title">System details</h2>
+          <p>
+            <StatusBadge text={overall.label} tone={overall.tone} />
+            <span class="muted"> Checked {details.checked}</span>
+          </p>
+          <div class="listrow">
+            <div>
+              Last scheduled dispatch
+              <small>
+                {details.lastDispatch ?? "No scheduled work has run yet."}
+              </small>
+            </div>
+          </div>
+          <div class="listrow">
+            <div>
+              Longest wait for due work
+              <small>
+                {details.oldestWaiting
+                  ? `Waiting since ${details.oldestWaiting}`
+                  : "Nothing due is waiting."}
+              </small>
+            </div>
+          </div>
+          <h3 class="spaced-heading">Jobs that gave up</h3>
+          {details.reasons.length === 0 ? (
+            <p class="muted">No jobs have given up.</p>
+          ) : (
+            details.reasons.map((reason) => (
+              <div class="listrow">
+                <div>{reason.text}</div>
+                <b>{reason.count}</b>
+              </div>
+            ))
+          )}
+        </div>
+        <div class="dialogfoot">
+          <button type="button" class="control" data-close>
+            Close
+          </button>
+        </div>
+      </dialog>
+    </Fragment>
+  )
+}
