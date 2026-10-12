@@ -3023,6 +3023,50 @@
         "title": "DataResponse",
         "type": "object"
       },
+      "DatabaseComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DatabaseComponent",
+        "type": "object"
+      },
+      "DeadLetterGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DeadLetterReason"
+          }
+        },
+        "required": [
+          "reason",
+          "count"
+        ],
+        "title": "DeadLetterGroup",
+        "type": "object"
+      },
+      "DeadLetterReason": {
+        "description": "Why a job was given up on, from its final attempt.",
+        "enum": [
+          "permanent_failure",
+          "retries_exhausted",
+          "lease_expired",
+          "timed_out",
+          "outcome_uncertain",
+          "unrecorded"
+        ],
+        "title": "DeadLetterReason",
+        "type": "string"
+      },
       "Decision": {
         "additionalProperties": false,
         "properties": {
@@ -3501,6 +3545,31 @@
         ],
         "title": "FactAuthority",
         "type": "string"
+      },
+      "FailedRunsComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "failed_last_24h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Last 24H"
+          },
+          "status": {
+            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+          }
+        },
+        "required": [
+          "status",
+          "failed_last_24h"
+        ],
+        "title": "FailedRunsComponent",
+        "type": "object"
       },
       "FeatureFlagCreate": {
         "additionalProperties": false,
@@ -4827,6 +4896,31 @@
           "publishing"
         ],
         "title": "IntegrationView",
+        "type": "object"
+      },
+      "IntegrationsComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "needing_attention": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needing Attention"
+          },
+          "status": {
+            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+          }
+        },
+        "required": [
+          "status",
+          "needing_attention"
+        ],
+        "title": "IntegrationsComponent",
         "type": "object"
       },
       "InvitationAccept": {
@@ -12395,6 +12489,37 @@
         "title": "PageSummary",
         "type": "object"
       },
+      "PendingInvitation": {
+        "additionalProperties": false,
+        "description": "The one pending invitation behind an ``invited`` membership, enough to cancel it.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvitationStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "expires_at"
+        ],
+        "title": "PendingInvitation",
+        "type": "object"
+      },
       "PerformanceComparison": {
         "properties": {
           "change": {
@@ -12887,6 +13012,129 @@
         "title": "PlatformAdministratorSelfStatusResponse",
         "type": "object"
       },
+      "PlatformUser": {
+        "additionalProperties": false,
+        "description": "A person: name, email, standing and the clients they reach. Nothing else.",
+        "properties": {
+          "access": {
+            "items": {
+              "$ref": "#/components/schemas/UserClientAccess"
+            },
+            "title": "Access",
+            "type": "array"
+          },
+          "access_total": {
+            "title": "Access Total",
+            "type": "integer"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "platform_administrator": {
+            "title": "Platform Administrator",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "email",
+          "status",
+          "platform_administrator",
+          "access",
+          "access_total"
+        ],
+        "title": "PlatformUser",
+        "type": "object"
+      },
+      "PlatformUserListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PlatformUserPage"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PlatformUserListResponse",
+        "type": "object"
+      },
+      "PlatformUserPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlatformUser"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset",
+          "next_offset",
+          "has_more"
+        ],
+        "title": "PlatformUserPage",
+        "type": "object"
+      },
       "PolicyCategory": {
         "enum": [
           "general",
@@ -13062,7 +13310,7 @@
           },
           "systems": {
             "items": {
-              "$ref": "#/components/schemas/SystemHealth"
+              "$ref": "#/components/schemas/apps__api__app__routes__command_center_portfolio__SystemHealth"
             },
             "title": "Systems",
             "type": "array"
@@ -15700,6 +15948,56 @@
         "title": "ScheduleUpdateRequest",
         "type": "object"
       },
+      "SchedulerComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "active_schedules": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Schedules"
+          },
+          "last_dispatch_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Dispatch At"
+          },
+          "overdue": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overdue"
+          },
+          "status": {
+            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+          }
+        },
+        "required": [
+          "status",
+          "active_schedules",
+          "last_dispatch_at",
+          "overdue"
+        ],
+        "title": "SchedulerComponent",
+        "type": "object"
+      },
       "ScopeType": {
         "enum": [
           "organization",
@@ -16696,39 +16994,72 @@
         "title": "SyncState",
         "type": "object"
       },
-      "SystemHealth": {
+      "SystemRole": {
+        "description": "The fixed role catalog (``access_control.catalog.ROLE_CATALOG``), as codes.",
+        "enum": [
+          "organization_owner",
+          "organization_admin",
+          "organization_manager",
+          "organization_member",
+          "organization_viewer"
+        ],
+        "title": "SystemRole",
+        "type": "string"
+      },
+      "SystemStatus": {
         "additionalProperties": false,
         "properties": {
-          "affected_clients": {
-            "title": "Affected Clients",
-            "type": "integer"
+          "database": {
+            "$ref": "#/components/schemas/DatabaseComponent"
           },
-          "key": {
-            "enum": [
-              "google",
-              "analytics",
-              "automations"
-            ],
-            "title": "Key",
+          "evaluated_at": {
+            "format": "date-time",
+            "title": "Evaluated At",
             "type": "string"
           },
-          "status": {
-            "enum": [
-              "healthy",
-              "needs_attention",
-              "error",
-              "not_connected"
-            ],
-            "title": "Status",
-            "type": "string"
+          "failed_runs": {
+            "$ref": "#/components/schemas/FailedRunsComponent"
+          },
+          "integrations": {
+            "$ref": "#/components/schemas/IntegrationsComponent"
+          },
+          "overall": {
+            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/SchedulerComponent"
+          },
+          "worker_queue": {
+            "$ref": "#/components/schemas/WorkerQueueComponent"
           }
         },
         "required": [
-          "key",
-          "status",
-          "affected_clients"
+          "overall",
+          "evaluated_at",
+          "database",
+          "scheduler",
+          "worker_queue",
+          "failed_runs",
+          "integrations"
         ],
-        "title": "SystemHealth",
+        "title": "SystemStatus",
+        "type": "object"
+      },
+      "SystemStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SystemStatus"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "SystemStatusResponse",
         "type": "object"
       },
       "TargetCreate": {
@@ -16938,6 +17269,54 @@
           "next_run_at"
         ],
         "title": "UpcomingItem",
+        "type": "object"
+      },
+      "UserClientAccess": {
+        "additionalProperties": false,
+        "description": "One client a person can reach, with how.",
+        "properties": {
+          "invitation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingInvitation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "membership_status": {
+            "$ref": "#/components/schemas/MembershipStatus"
+          },
+          "membership_type": {
+            "$ref": "#/components/schemas/MembershipType"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "organization_name": {
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/SystemRole"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "organization_name",
+          "membership_type",
+          "membership_status",
+          "roles",
+          "invitation"
+        ],
+        "title": "UserClientAccess",
         "type": "object"
       },
       "UserProfileCreate": {
@@ -17762,6 +18141,64 @@
         "title": "WorkItem",
         "type": "object"
       },
+      "WorkerQueueComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "backlogged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backlogged"
+          },
+          "dead_letter_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Letter Count"
+          },
+          "dead_letter_groups": {
+            "items": {
+              "$ref": "#/components/schemas/DeadLetterGroup"
+            },
+            "title": "Dead Letter Groups",
+            "type": "array"
+          },
+          "oldest_pending_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Pending At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+          }
+        },
+        "required": [
+          "status",
+          "dead_letter_count",
+          "dead_letter_groups",
+          "oldest_pending_at",
+          "backlogged"
+        ],
+        "title": "WorkerQueueComponent",
+        "type": "object"
+      },
       "WorkflowRunStart": {
         "additionalProperties": false,
         "properties": {
@@ -17830,6 +18267,16 @@
           "agent.growth"
         ],
         "title": "WorkflowTypeCode",
+        "type": "string"
+      },
+      "apps__api__app__platform_admin__contracts__SystemHealth": {
+        "description": "A component's standing. ``unknown`` means it could not be read, never \"fine\".",
+        "enum": [
+          "healthy",
+          "attention",
+          "unknown"
+        ],
+        "title": "SystemHealth",
         "type": "string"
       },
       "apps__api__app__products__content__contracts__AIDraftCreate": {
@@ -17917,6 +18364,41 @@
           "idempotency_key"
         ],
         "title": "AIDraftCreate",
+        "type": "object"
+      },
+      "apps__api__app__routes__command_center_portfolio__SystemHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_clients": {
+            "title": "Affected Clients",
+            "type": "integer"
+          },
+          "key": {
+            "enum": [
+              "google",
+              "analytics",
+              "automations"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "needs_attention",
+              "error",
+              "not_connected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "affected_clients"
+        ],
+        "title": "SystemHealth",
         "type": "object"
       },
       "apps__api__app__routes__content_operations__PublishRequest": {
@@ -37054,6 +37536,79 @@
         ]
       }
     },
+    "/api/v1/platform/organizations/{organization_id}/invitations/{invitation_id}/cancel": {
+      "post": {
+        "description": "The organization route needs a membership in that client, which a platform\nadministrator working across clients does not hold. Same service, same version check,\nsame audit event: a stale ``expected_version`` is refused and a second cancel conflicts.",
+        "operationId": "cancel_organization_invitation_api_v1_platform_organizations__organization_id__invitations__invitation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembershipLifecycleCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Caller is not an active platform administrator"
+          },
+          "404": {
+            "description": "Organization or location not found"
+          },
+          "409": {
+            "description": "Slug, lifecycle, primary, or version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel a pending invitation to a client",
+        "tags": [
+          "platform-administration"
+        ]
+      }
+    },
     "/api/v1/platform/organizations/{organization_id}/locations": {
       "get": {
         "operationId": "list_locations_api_v1_platform_organizations__organization_id__locations_get",
@@ -38824,6 +39379,103 @@
           }
         },
         "summary": "List the product catalog for platform administration",
+        "tags": [
+          "platform-administration"
+        ]
+      }
+    },
+    "/api/v1/platform/system-status": {
+      "get": {
+        "description": "Deterministic facts only; a component that cannot be read reports ``unknown``.",
+        "operationId": "get_system_status_api_v1_platform_system_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Caller is not an active platform administrator"
+          },
+          "404": {
+            "description": "Organization or location not found"
+          },
+          "409": {
+            "description": "Slug, lifecycle, primary, or version conflict"
+          }
+        },
+        "summary": "Read whether the platform's own machinery is working",
+        "tags": [
+          "platform-administration"
+        ]
+      }
+    },
+    "/api/v1/platform/users": {
+      "get": {
+        "description": "Read-only: name, email, standing, and each client's membership status and roles.\n\nA pending invitation carries the id and version needed to cancel it through\n``/organizations/{id}/invitations/{id}/cancel``; no invitation token or inviter is exposed.",
+        "operationId": "list_platform_users_api_v1_platform_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformUserListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Caller is not an active platform administrator"
+          },
+          "404": {
+            "description": "Organization or location not found"
+          },
+          "409": {
+            "description": "Slug, lifecycle, primary, or version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List people and the clients they reach",
         "tags": [
           "platform-administration"
         ]

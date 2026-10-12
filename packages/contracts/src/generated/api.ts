@@ -4903,6 +4903,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/organizations/{organization_id}/invitations/{invitation_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a pending invitation to a client
+         * @description The organization route needs a membership in that client, which a platform
+         *     administrator working across clients does not hold. Same service, same version check,
+         *     same audit event: a stale ``expected_version`` is refused and a second cancel conflicts.
+         */
+        post: operations["cancel_organization_invitation_api_v1_platform_organizations__organization_id__invitations__invitation_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/organizations/{organization_id}/locations": {
         parameters: {
             query?: never;
@@ -5369,6 +5391,49 @@ export interface paths {
          *     received depended on router order. Operator pages use this explicit route.
          */
         get: operations["list_platform_products_api_v1_platform_products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/system-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read whether the platform's own machinery is working
+         * @description Deterministic facts only; a component that cannot be read reports ``unknown``.
+         */
+        get: operations["get_system_status_api_v1_platform_system_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List people and the clients they reach
+         * @description Read-only: name, email, standing, and each client's membership status and roles.
+         *
+         *     A pending invitation carries the id and version needed to cancel it through
+         *     ``/organizations/{id}/invitations/{id}/cancel``; no invitation token or inviter is exposed.
+         */
+        get: operations["list_platform_users_api_v1_platform_users_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6475,6 +6540,22 @@ export interface components {
             data: unknown;
             meta: components["schemas"]["ResponseMeta"];
         };
+        /** DatabaseComponent */
+        DatabaseComponent: {
+            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+        };
+        /** DeadLetterGroup */
+        DeadLetterGroup: {
+            /** Count */
+            count: number;
+            reason: components["schemas"]["DeadLetterReason"];
+        };
+        /**
+         * DeadLetterReason
+         * @description Why a job was given up on, from its final attempt.
+         * @enum {string}
+         */
+        DeadLetterReason: "permanent_failure" | "retries_exhausted" | "lease_expired" | "timed_out" | "outcome_uncertain" | "unrecorded";
         /** Decision */
         Decision: {
             /**
@@ -6652,6 +6733,12 @@ export interface components {
          * @enum {string}
          */
         FactAuthority: "client_approved" | "operator_verified" | "provider_observed" | "imported" | "system_derived" | "industry_default" | "ai_suggested";
+        /** FailedRunsComponent */
+        FailedRunsComponent: {
+            /** Failed Last 24H */
+            failed_last_24h: number | null;
+            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+        };
         /** FeatureFlagCreate */
         FeatureFlagCreate: {
             /** Effective From */
@@ -7116,6 +7203,12 @@ export interface components {
             unmapped_profiles: components["schemas"]["UnmappedProfile"][];
             /** Websites */
             websites: components["schemas"]["WebsiteOption"][];
+        };
+        /** IntegrationsComponent */
+        IntegrationsComponent: {
+            /** Needing Attention */
+            needing_attention: number | null;
+            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
         };
         /** InvitationAccept */
         InvitationAccept: {
@@ -9446,6 +9539,25 @@ export interface components {
              */
             website_id: string;
         };
+        /**
+         * PendingInvitation
+         * @description The one pending invitation behind an ``invited`` membership, enough to cancel it.
+         */
+        PendingInvitation: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["InvitationStatus"];
+            /** Version */
+            version: number;
+        };
         /** PerformanceComparison */
         PerformanceComparison: {
             /** Change */
@@ -9625,6 +9737,46 @@ export interface components {
             meta: components["schemas"]["ResponseMeta"];
         };
         /**
+         * PlatformUser
+         * @description A person: name, email, standing and the clients they reach. Nothing else.
+         */
+        PlatformUser: {
+            /** Access */
+            access: components["schemas"]["UserClientAccess"][];
+            /** Access Total */
+            access_total: number;
+            /** Display Name */
+            display_name: string | null;
+            /** Email */
+            email: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Platform Administrator */
+            platform_administrator: boolean;
+            status: components["schemas"]["UserStatus"];
+        };
+        /** PlatformUserListResponse */
+        PlatformUserListResponse: {
+            data: components["schemas"]["PlatformUserPage"];
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        /** PlatformUserPage */
+        PlatformUserPage: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["PlatformUser"][];
+            /** Limit */
+            limit: number;
+            /** Next Offset */
+            next_offset: number | null;
+            /** Offset */
+            offset: number;
+        };
+        /**
          * PolicyCategory
          * @enum {string}
          */
@@ -9686,7 +9838,7 @@ export interface components {
              */
             period_start: string;
             /** Systems */
-            systems: components["schemas"]["SystemHealth"][];
+            systems: components["schemas"]["apps__api__app__routes__command_center_portfolio__SystemHealth"][];
             totals: components["schemas"]["PortfolioTotals"];
             /** Upcoming */
             upcoming: components["schemas"]["UpcomingItem"][];
@@ -10573,6 +10725,16 @@ export interface components {
             /** Timezone */
             timezone?: string | null;
         };
+        /** SchedulerComponent */
+        SchedulerComponent: {
+            /** Active Schedules */
+            active_schedules: number | null;
+            /** Last Dispatch At */
+            last_dispatch_at: string | null;
+            /** Overdue */
+            overdue: boolean | null;
+            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+        };
         /**
          * ScopeType
          * @enum {string}
@@ -10924,20 +11086,30 @@ export interface components {
             /** Status */
             status: string;
         };
-        /** SystemHealth */
-        SystemHealth: {
-            /** Affected Clients */
-            affected_clients: number;
+        /**
+         * SystemRole
+         * @description The fixed role catalog (``access_control.catalog.ROLE_CATALOG``), as codes.
+         * @enum {string}
+         */
+        SystemRole: "organization_owner" | "organization_admin" | "organization_manager" | "organization_member" | "organization_viewer";
+        /** SystemStatus */
+        SystemStatus: {
+            database: components["schemas"]["DatabaseComponent"];
             /**
-             * Key
-             * @enum {string}
+             * Evaluated At
+             * Format: date-time
              */
-            key: "google" | "analytics" | "automations";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "healthy" | "needs_attention" | "error" | "not_connected";
+            evaluated_at: string;
+            failed_runs: components["schemas"]["FailedRunsComponent"];
+            integrations: components["schemas"]["IntegrationsComponent"];
+            overall: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            scheduler: components["schemas"]["SchedulerComponent"];
+            worker_queue: components["schemas"]["WorkerQueueComponent"];
+        };
+        /** SystemStatusResponse */
+        SystemStatusResponse: {
+            data: components["schemas"]["SystemStatus"];
+            meta: components["schemas"]["ResponseMeta"];
         };
         /**
          * TargetCreate
@@ -11033,6 +11205,24 @@ export interface components {
             organization_slug: string;
             /** Workflow Key */
             workflow_key: string;
+        };
+        /**
+         * UserClientAccess
+         * @description One client a person can reach, with how.
+         */
+        UserClientAccess: {
+            invitation: components["schemas"]["PendingInvitation"] | null;
+            membership_status: components["schemas"]["MembershipStatus"];
+            membership_type: components["schemas"]["MembershipType"];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Roles */
+            roles: components["schemas"]["SystemRole"][];
         };
         /** UserProfileCreate */
         UserProfileCreate: {
@@ -11305,6 +11495,18 @@ export interface components {
             /** Workflow Key */
             workflow_key: string;
         };
+        /** WorkerQueueComponent */
+        WorkerQueueComponent: {
+            /** Backlogged */
+            backlogged: boolean | null;
+            /** Dead Letter Count */
+            dead_letter_count: number | null;
+            /** Dead Letter Groups */
+            dead_letter_groups: components["schemas"]["DeadLetterGroup"][];
+            /** Oldest Pending At */
+            oldest_pending_at: string | null;
+            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+        };
         /** WorkflowRunStart */
         WorkflowRunStart: {
             /**
@@ -11327,6 +11529,12 @@ export interface components {
          * @enum {string}
          */
         WorkflowTypeCode: "content.publish" | "content.draft_revision" | "content.compose" | "seo.crawl_or_analysis" | "seo.analyze" | "seo.sync_search_console" | "insights.sync_analytics" | "seo.apply_site_change" | "gbp.generate_post" | "gbp.publish_change" | "gbp.publish_post" | "gbp.upload_media" | "gbp.publish_special_hours" | "reviews.publish_response" | "leads.send_communication" | "gbp.sync" | "gbp.sync_performance" | "reviews.ingest" | "agent.gbp" | "agent.seo" | "agent.content" | "agent.reviews" | "agent.leads" | "agent.insights" | "agent.growth";
+        /**
+         * SystemHealth
+         * @description A component's standing. ``unknown`` means it could not be read, never "fine".
+         * @enum {string}
+         */
+        apps__api__app__platform_admin__contracts__SystemHealth: "healthy" | "attention" | "unknown";
         /** AIDraftCreate */
         apps__api__app__products__content__contracts__AIDraftCreate: {
             /**
@@ -11360,6 +11568,21 @@ export interface components {
              * Format: uuid
              */
             review_revision_id: string;
+        };
+        /** SystemHealth */
+        apps__api__app__routes__command_center_portfolio__SystemHealth: {
+            /** Affected Clients */
+            affected_clients: number;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "google" | "analytics" | "automations";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "healthy" | "needs_attention" | "error" | "not_connected";
         };
         /** PublishRequest */
         apps__api__app__routes__content_operations__PublishRequest: {
@@ -22593,6 +22816,63 @@ export interface operations {
             };
         };
     };
+    cancel_organization_invitation_api_v1_platform_organizations__organization_id__invitations__invitation_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipLifecycleCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponse"];
+                };
+            };
+            /** @description Caller is not an active platform administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Organization or location not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Slug, lifecycle, primary, or version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_locations_api_v1_platform_organizations__organization_id__locations_get: {
         parameters: {
             query?: {
@@ -24174,6 +24454,100 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_system_status_api_v1_platform_system_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatusResponse"];
+                };
+            };
+            /** @description Caller is not an active platform administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Organization or location not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Slug, lifecycle, primary, or version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_platform_users_api_v1_platform_users_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformUserListResponse"];
+                };
+            };
+            /** @description Caller is not an active platform administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Organization or location not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Slug, lifecycle, primary, or version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

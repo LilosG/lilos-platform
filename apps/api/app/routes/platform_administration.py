@@ -18,6 +18,12 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.access_control.contracts import (
+    InvitationData,
+    InvitationResponse,
+    MembershipLifecycleCommand,
+)
+from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.administration.contracts import (
     DataResponse,
     EntitlementCreate,
@@ -32,7 +38,7 @@ from apps.api.app.administration.errors import (
 from apps.api.app.administration.service import AdministrationService
 from apps.api.app.authentication.contracts import UserProfileCreate
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
-from apps.api.app.database.session import get_database_session
+from apps.api.app.database.session import database_runtime_from_request, get_database_session
 from apps.api.app.domains.contracts import (
     OrganizationDomainArchive,
     OrganizationDomainCreate,
@@ -73,8 +79,11 @@ from apps.api.app.organizations.contracts import (
 )
 from apps.api.app.organizations.enums import OrganizationLifecycleAction
 from apps.api.app.organizations.service import OrganizationService
+from apps.api.app.platform_admin.contracts import PlatformUserListResponse, SystemStatusResponse
 from apps.api.app.platform_admin.dependencies import require_platform_administrator
+from apps.api.app.platform_admin.directory import PlatformDirectoryService
 from apps.api.app.platform_admin.service import PlatformAdministrationService
+from apps.api.app.platform_admin.system_status import SystemStatusService
 from apps.api.app.profiles.contracts import (
     LocationProfileCreate,
     LocationProfileData,
@@ -119,6 +128,9 @@ organization_profiles = OrganizationProfileService()
 location_profiles = LocationProfileService()
 organization_domains = OrganizationDomainService()
 administration = AdministrationService()
+directory = PlatformDirectoryService()
+system_status = SystemStatusService()
+access_service = AccessControlService()
 DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -1151,4 +1163,71 @@ async def list_step_assignments(
     return response(
         request,
         [{"step_key": a.step_key, "assigned_to": a.assigned_to} for a in assignments],
+    )
+
+
+@router.get(
+    "/users",
+    response_model=PlatformUserListResponse,
+    summary="List people and the clients they reach",
+)
+async def list_platform_users(
+    request: Request,
+    session: DatabaseSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> PlatformUserListResponse:
+    """Read-only: name, email, standing, and each client's membership status and roles.
+
+    A pending invitation carries the id and version needed to cancel it through
+    ``/organizations/{id}/invitations/{id}/cancel``; no invitation token or inviter is exposed.
+    """
+    return PlatformUserListResponse(
+        data=await directory.list_users(session, limit=limit, offset=offset),
+        meta=ResponseMeta(correlation_id=request_correlation_id(request)),
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/invitations/{invitation_id}/cancel",
+    response_model=InvitationResponse,
+    summary="Cancel a pending invitation to a client",
+)
+async def cancel_organization_invitation(
+    request: Request,
+    organization_id: UUID,
+    invitation_id: UUID,
+    command: MembershipLifecycleCommand,
+    session: DatabaseSession,
+) -> InvitationResponse:
+    """The organization route needs a membership in that client, which a platform
+    administrator working across clients does not hold. Same service, same version check,
+    same audit event: a stale ``expected_version`` is refused and a second cancel conflicts.
+    """
+    invitation = await access_service.cancel_invitation(
+        session,
+        organization_id,
+        invitation_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return InvitationResponse(
+        data=InvitationData.model_validate(invitation),
+        meta=ResponseMeta(correlation_id=request_correlation_id(request)),
+    )
+
+
+@router.get(
+    "/system-status",
+    response_model=SystemStatusResponse,
+    summary="Read whether the platform's own machinery is working",
+)
+async def get_system_status(
+    request: Request,
+    session: DatabaseSession,
+) -> SystemStatusResponse:
+    """Deterministic facts only; a component that cannot be read reports ``unknown``."""
+    return SystemStatusResponse(
+        data=await system_status.evaluate(session, database_runtime_from_request(request)),
+        meta=ResponseMeta(correlation_id=request_correlation_id(request)),
     )
