@@ -545,7 +545,7 @@ describe("administration BFF allow-list", () => {
     await bad(`${client}/locations/${id(2)}/set-primary/`, "POST", {
       expected_version: 1,
     });
-    await bad(`${platform}/${id(1)}/activate/`, "POST", {
+    await bad(`${platform}/${id(1)}/pause/`, "POST", {
       expected_version: 1,
     });
     await bad(`${platform}/not-a-uuid/archive/`, "POST", {

@@ -10,6 +10,15 @@ export const modes = [
   "locations_empty",
   "facts_empty",
   "facts_error",
+  "onboarding_empty",
+  "onboarding_state_fails",
+  "users_empty",
+  "users_error",
+  "users_many",
+  "system_default",
+  "system_healthy",
+  "system_unknown",
+  "system_error",
 ];
 const gamma = "99999999-9999-4999-8999-999999999999";
 // The lifecycle table of apps/api/app/locations/service.py, restated for the simulator.
@@ -28,6 +37,10 @@ const TARGET = {
   "close-permanently": "closed_permanently",
   archive: "archived",
 };
+const juniper = tag(51);
+const harbor = tag(52);
+const bakery = tag(53);
+const unreadable = tag(54);
 export const state = {
   mode: "default",
   requests: [],
@@ -36,6 +49,7 @@ export const state = {
   facts: [],
   waiting: [],
   removalPolls: new Map(),
+  people: [],
   /** Clients that no longer appear in the switcher. */
   hidden: new Set(),
 };
@@ -78,6 +92,7 @@ export function reset(mode, ids) {
   state.removalPolls = new Map();
   state.hidden = new Set();
   state.waiting = [];
+  state.people = people(mode, ids);
   state.orgs =
     mode === "no_clients"
       ? []
@@ -96,6 +111,16 @@ export function reset(mode, ids) {
             "Maple Street Cafe",
             "maple-street-cafe",
             "offboarding",
+            null,
+          ),
+          org(juniper, "Juniper Living", "juniper-living", "onboarding", null),
+          org(harbor, "Harbor Grill", "harbor-grill", "onboarding", null),
+          org(bakery, "Prospect Bakery", "prospect-bakery", "prospect", null),
+          org(
+            unreadable,
+            "Unreadable Setup",
+            "unreadable-setup",
+            "onboarding",
             null,
           ),
           org(tag(42), "Old Test Client", "old-test-client", "archived", null),
@@ -225,10 +250,240 @@ const fact = (key, type, value, authority, location, n) => ({
   source: "synthetic",
   approved_at: "2026-09-01T00:00:00Z",
 });
+/** What stands between each onboarding client and going live, as the API reports it. */
+const SETUP = {
+  [juniper]: { progress: 100, blockers: [] },
+  [harbor]: {
+    progress: 40,
+    blockers: [
+      ["locations", "/onboarding"],
+      ["connections", "/integrations"],
+      ["organization-profile", "/onboarding"],
+      ["locations", "/onboarding"],
+    ],
+  },
+  [unreadable]: { progress: 10, blockers: [] },
+};
+const onboardingState = (found) => {
+  const setup = SETUP[found.id] ?? { progress: 0, blockers: [] };
+  return {
+    organization_id: found.id,
+    organization_name: found.name,
+    organization_status: found.status,
+    organization_version: found.version,
+    steps: [],
+    products: [],
+    blockers: setup.blockers.map(
+      () => "A sentence the screen must never show.",
+    ),
+    blocker_details: setup.blockers.map(([control, route]) => ({
+      message: "A sentence the screen must never show.",
+      resolution: {
+        step_key: control.replace("-", "_"),
+        route,
+        control,
+        permission: "locations.create",
+        label: "A label the screen must never show",
+      },
+      product_name: null,
+    })),
+    warnings: [],
+    progress_percent: setup.progress,
+    activation_eligible: setup.blockers.length === 0 && found.id === juniper,
+    evaluated_at: "2026-10-12T15:00:00Z",
+  };
+};
+const person = (n, name, email, access, over = {}) => ({
+  id: tag(700 + n),
+  display_name: name,
+  email,
+  status: "active",
+  platform_administrator: false,
+  access,
+  access_total: access.length,
+  ...over,
+});
+const reach = (
+  organization_id,
+  organization_name,
+  status,
+  roles,
+  invitation,
+) => ({
+  organization_id,
+  organization_name,
+  membership_type: "client",
+  membership_status: status,
+  roles,
+  invitation: invitation ?? null,
+});
+const people = (mode, ids) => {
+  if (mode === "users_empty") return [];
+  const alpha = "Synthetic Alpha";
+  const base = [
+    person(1, "Mike Prickett", "mike@example.test", [], {
+      platform_administrator: true,
+    }),
+    person(2, "Dana Rivera", "dana@example.test", [
+      reach(ids.a, alpha, "active", ["organization_owner"]),
+      reach(ids.b, "Synthetic Beta", "active", ["organization_manager"]),
+    ]),
+    person(3, "Pat Lee", "pat@example.test", [
+      reach(ids.a, alpha, "invited", ["organization_viewer"], {
+        id: tag(801),
+        version: 1,
+        status: "pending",
+        expires_at: "2026-10-19T19:00:00Z",
+      }),
+    ]),
+    person(4, "Sam Ortiz", "sam@example.test", [
+      reach(ids.a, alpha, "suspended", ["organization_member"]),
+    ]),
+    person(5, null, "no-name@example.test", [], {}),
+    person(6, "Kim Park", "kim@example.test", [], { status: "deactivated" }),
+  ];
+  if (mode !== "users_many") return base;
+  return [
+    ...base,
+    ...Array.from({ length: 54 }, (_, i) =>
+      person(
+        10 + i,
+        `Person ${String(i + 1).padStart(2, "0")}`,
+        `p${i}@example.test`,
+        [reach(ids.a, alpha, "active", ["organization_member"])],
+      ),
+    ),
+  ];
+};
+const system = (mode) => {
+  const base = {
+    overall: "attention",
+    evaluated_at: "2026-10-12T15:00:00Z",
+    database: { status: "healthy" },
+    scheduler: {
+      status: "healthy",
+      active_schedules: 12,
+      last_dispatch_at: "2026-10-12T14:58:00Z",
+      overdue: false,
+    },
+    worker_queue: {
+      status: "attention",
+      dead_letter_count: 4,
+      dead_letter_groups: [
+        { reason: "permanent_failure", count: 2 },
+        { reason: "lease_expired", count: 1 },
+        { reason: "retries_exhausted", count: 1 },
+      ],
+      oldest_pending_at: null,
+      backlogged: false,
+    },
+    failed_runs: { status: "attention", failed_last_24h: 3 },
+    integrations: { status: "attention", needing_attention: 2 },
+  };
+  if (mode === "system_healthy")
+    return {
+      ...base,
+      overall: "healthy",
+      worker_queue: {
+        status: "healthy",
+        dead_letter_count: 0,
+        dead_letter_groups: [],
+        oldest_pending_at: null,
+        backlogged: false,
+      },
+      failed_runs: { status: "healthy", failed_last_24h: 0 },
+      integrations: { status: "healthy", needing_attention: 0 },
+    };
+  if (mode === "system_unknown")
+    return {
+      ...base,
+      overall: "unknown",
+      worker_queue: {
+        status: "unknown",
+        dead_letter_count: null,
+        dead_letter_groups: [],
+        oldest_pending_at: null,
+        backlogged: null,
+      },
+      failed_runs: { status: "unknown", failed_last_24h: null },
+      integrations: { status: "healthy", needing_attention: 0 },
+      scheduler: {
+        status: "unknown",
+        active_schedules: null,
+        last_dispatch_at: null,
+        overdue: null,
+      },
+    };
+  return base;
+};
 const json = (status, body) => ({ status, body });
 const denied = () => json(403, { error: { code: "AUTHORIZATION_DENIED" } });
 const conflict = (code) => json(409, { error: { code } });
 export function handle(req, url, claims, ids, parsed) {
+  const extra = url.pathname.match(
+    /^\/api\/v1\/platform\/(users|system-status|organizations\/([^/]+)\/(onboarding-state|activate|invitations\/([^/]+)\/cancel))$/,
+  );
+  if (extra) {
+    const administrator = claims.sub === ids.admin && claims.aal === "aal2";
+    if (!administrator) return denied();
+    const [, kind, id, tail, invitation] = extra;
+    if (kind === "users") {
+      if (state.mode === "users_error")
+        return json(503, { error: { code: "DATABASE_UNAVAILABLE" } });
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      const items = state.people.slice(offset, offset + limit);
+      const more = offset + limit < state.people.length;
+      return json(200, {
+        data: {
+          items,
+          limit,
+          offset,
+          next_offset: more ? offset + limit : null,
+          has_more: more,
+        },
+        meta: {},
+      });
+    }
+    if (kind === "system-status") {
+      if (state.mode === "system_error")
+        return json(503, { error: { code: "DATABASE_UNAVAILABLE" } });
+      return json(200, { data: system(state.mode), meta: {} });
+    }
+    const found = state.orgs.find((o) => o.id === id);
+    if (!found) return json(404, { error: { code: "ORGANIZATION_NOT_FOUND" } });
+    if (tail === "onboarding-state") {
+      if (found.id === unreadable || state.mode === "onboarding_state_fails")
+        return json(503, { error: { code: "DATABASE_UNAVAILABLE" } });
+      return json(200, { data: onboardingState(found), meta: {} });
+    }
+    state.requests.push({
+      path: tail === "activate" ? "activate" : "cancel-invitation",
+      organization_id: found.id,
+      invitation_id: invitation,
+      body: parsed,
+    });
+    if (tail === "activate") {
+      if (parsed.expected_version !== found.version)
+        return conflict("ORGANIZATION_VERSION_CONFLICT");
+      if (!onboardingState(found).activation_eligible)
+        return conflict("ONBOARDING_INCOMPLETE");
+      found.status = "active";
+      found.version += 1;
+      return json(200, { data: found });
+    }
+    const owner = state.people.find((p) =>
+      p.access.some((a) => a.invitation?.id === invitation),
+    );
+    const access = owner?.access.find((a) => a.invitation?.id === invitation);
+    if (!access || access.organization_id !== found.id)
+      return json(404, { error: { code: "INVITATION_NOT_FOUND" } });
+    if (parsed.expected_version !== access.invitation.version)
+      return conflict("INVITATION_VERSION_CONFLICT");
+    owner.access = owner.access.filter((a) => a !== access);
+    owner.access_total = owner.access.length;
+    return json(200, { data: { id: invitation, status: "cancelled" } });
+  }
   const platform = url.pathname.match(
     /^\/api\/v1\/platform\/organizations(?:\/([^/]+)(?:\/([^/]+))?)?$/,
   );
@@ -245,7 +500,12 @@ export function handle(req, url, claims, ids, parsed) {
     if (!id && req.method === "GET")
       return json(200, {
         data: {
-          items: state.orgs,
+          items:
+            state.mode === "onboarding_empty"
+              ? state.orgs.filter(
+                  (o) => o.status !== "onboarding" && o.status !== "prospect",
+                )
+              : state.orgs,
           limit: 100,
           offset: 0,
           next_offset: null,

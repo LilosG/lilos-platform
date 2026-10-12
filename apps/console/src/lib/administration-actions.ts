@@ -1,5 +1,10 @@
 import { action, ApiFailure } from "./api-client";
-import { confirmCopy, administrationFailureText } from "./administration-view";
+import {
+  activateConfirm,
+  administrationFailureText,
+  cancelInvitationConfirm,
+  confirmCopy,
+} from "./administration-view";
 import type { OrganizationAction } from "./administration-view";
 import { confirmDialog, openConfirm } from "./confirm-dialog";
 import { removalChips } from "./status";
@@ -39,12 +44,58 @@ function bindActions() {
       });
     });
 }
+/** Activating a client that is ready, after asking first. */
+function bindActivation() {
+  const dialog = confirmDialog("admin-confirm");
+  if (!dialog) return;
+  document
+    .querySelectorAll<HTMLButtonElement>("button[data-activate]")
+    .forEach((button) => {
+      button.removeAttribute("inert");
+      button.addEventListener("click", () => {
+        const { orgId, orgName, version } = button.dataset;
+        openConfirm(dialog, activateConfirm(orgName!), {
+          failure,
+          work: async () => {
+            await action(`/api/platform/organizations/${orgId}/activate/`, {
+              expected_version: Number(version),
+            });
+          },
+        });
+      });
+    });
+}
+/** Cancelling a pending invitation, after asking first. */
+function bindInvitations() {
+  const dialog = confirmDialog("admin-confirm");
+  if (!dialog) return;
+  document
+    .querySelectorAll<HTMLButtonElement>("button[data-cancel-invitation]")
+    .forEach((button) => {
+      button.removeAttribute("inert");
+      button.addEventListener("click", () => {
+        const { orgId, invitationId, version, person, clientName } =
+          button.dataset;
+        openConfirm(dialog, cancelInvitationConfirm(person!, clientName!), {
+          failure,
+          work: async () => {
+            await action(
+              `/api/platform/organizations/${orgId}/invitations/${invitationId}/cancel/`,
+              { expected_version: Number(version) },
+            );
+          },
+        });
+      });
+    });
+}
 /** A removal runs in the background; its chip follows it until it finishes. */
 function followRemovals() {
   const chips = document.querySelectorAll<HTMLElement>("[data-removal-poll]");
   if (!chips.length) return;
   const settled = (state: RemovalState | null) =>
     state === "completed" || state === "failed";
+  // The chip is being followed from here on; a test (or a person) can tell it is no longer static.
+  chips.forEach((chip) => (chip.dataset.following = "true"));
   const timer = window.setInterval(async () => {
     let finished = false;
     for (const chip of chips) {
@@ -70,4 +121,6 @@ function followRemovals() {
   }, 5000);
 }
 bindActions();
+bindActivation();
+bindInvitations();
 followRemovals();

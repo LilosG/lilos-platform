@@ -59,13 +59,19 @@ const lifecycle = [
   "archive",
 ];
 /**
- * Administration and Settings through the BFF: the platform's client lifecycle, a client's
- * locations and their lifecycle, and the client's governed business facts.
+ * Administration and Settings through the BFF: the platform's client lifecycle and onboarding,
+ * its people and system status, a client's locations and their lifecycle, and the client's
+ * governed business facts.
  */
 export const adminRoutes = [
   route(platform, "GET", undefined, ["limit", "offset"]),
   route(`${platform}/${uuid}/removal`, "GET"),
   route(`${platform}/${uuid}/locations`, "GET", undefined, ["limit", "offset"]),
+  route(`${platform}/${uuid}/onboarding-state`, "GET"),
+  route(`${platform}/${uuid}/activate`, "POST", transition),
+  route(`${platform}/${uuid}/invitations/${uuid}/cancel`, "POST", transition),
+  route("platform/users", "GET", undefined, ["limit", "offset"]),
+  route("platform/system-status", "GET"),
   route(`${platform}/${uuid}/start-offboarding`, "POST", transition),
   route(`${platform}/${uuid}/archive`, "POST", transition),
   route(`${platform}/${uuid}/remove`, "POST", removal),

@@ -7,6 +7,8 @@ export interface DialogCopy {
   title: string;
   lines: string[];
   accept: string;
+  /** The label that leaves without changing anything; "Cancel" unless that would be confusing. */
+  dismiss?: string;
   tone: "normal" | "danger";
   /** The exact text that must be typed before the change is allowed. */
   typedName?: string | null;
@@ -42,6 +44,7 @@ export function openConfirm(
   const error = part<HTMLElement>(dialog, "error");
   const status = part<HTMLElement>(dialog, "status");
   accept.textContent = copy.accept;
+  cancel.textContent = copy.dismiss ?? "Cancel";
   accept.classList.toggle("danger", copy.tone === "danger");
   error.hidden = true;
   status.textContent = "";

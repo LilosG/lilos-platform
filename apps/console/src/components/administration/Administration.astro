@@ -6,17 +6,27 @@ import DataTable from "../ui/DataTable.astro";
 import EmptyState from "../ui/EmptyState.astro";
 import ErrorState from "../ui/ErrorState.astro";
 import TabNav from "../navigation/TabNav.astro";
-import NotBuilt from "../ui/NotBuilt.astro";
+import OnboardingTab from "./OnboardingTab.astro";
+import UsersTab from "./UsersTab.astro";
+import PlatformTab from "./PlatformTab.astro";
 import ConfirmDialog from "./ConfirmDialog.astro";
 import { administrationTabs } from "../../config/routes";
-import type { AdministrationClients } from "../../server/admin-loader";
+import type {
+  AdministrationClients,
+  AdministrationOnboarding,
+  AdministrationUsers,
+} from "../../server/admin-loader";
+import type { SystemRecord } from "../../adapters/administration";
 interface Props {
   /** The tab shown: its URL segment, or none for Clients / organizations. */
   tab?: string;
   clients?: AdministrationClients;
+  onboarding?: AdministrationOnboarding;
+  users?: AdministrationUsers;
+  system?: SystemRecord;
   state: "ok" | "forbidden" | "error";
 }
-const { tab, clients, state } = Astro.props;
+const { tab, clients, onboarding, users, system, state } = Astro.props;
 const tabs = administrationTabs.map((entry) => ({
   label: entry.label,
   href: entry.href,
@@ -38,9 +48,19 @@ const subtitle = "Organizations, onboarding, users, and platform management.";
       </EmptyState>
     </Fragment>
   ) : tab ? (
-    <NotBuilt target={{ scope: "portfolio", area: "administration" }}>
+    <Fragment>
+      <PageHeader title="Administration" subtitle={subtitle} />
       <TabNav label="Administration" tabs={tabs} />
-    </NotBuilt>
+      {tab === "onboarding" ? (
+        <OnboardingTab onboarding={onboarding} />
+      ) : tab === "users" ? (
+        <UsersTab users={users} />
+      ) : (
+        <PlatformTab system={system} />
+      )}
+      <ConfirmDialog id="admin-confirm" />
+      <script>import "../../lib/administration-actions";</script>
+    </Fragment>
   ) : (
     <Fragment>
       <PageHeader title="Administration" subtitle={subtitle} />

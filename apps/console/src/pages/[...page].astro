@@ -31,8 +31,14 @@ import { organizations, workspace } from "../server/context";
 import Administration from "../components/administration/Administration.astro";
 import {
   loadClientsTable,
+  loadOnboarding,
+  loadSystem,
+  loadUsers,
   type AdministrationClients,
+  type AdministrationOnboarding,
+  type AdministrationUsers,
 } from "../server/admin-loader";
+import type { SystemRecord } from "../adapters/administration";
 import { APIError, read } from "../server/bff";
 const page = (Astro.params.page ?? "").replace(/\/$/, "");
 const [area, sub] = page.split("/");
@@ -72,12 +78,28 @@ if (area === "automations") {
 }
 let administrationState: "ok" | "forbidden" | "error" | undefined;
 let administrationClients: AdministrationClients | undefined;
+let administrationOnboarding: AdministrationOnboarding | undefined;
+let administrationUsers: AdministrationUsers | undefined;
+let administrationSystem: SystemRecord | undefined;
 if (area === "administration" && administration) {
   // The API decides who may administer; the shell only hides what it would refuse.
   if (!(await workspace(Astro.locals)).platformAdministrator)
     administrationState = "forbidden";
-  else if (sub === undefined) {
-    const loaded = await loadClientsTable(Astro.locals);
+  else {
+    const offset = Number(Astro.url.searchParams.get("offset") ?? 0);
+    if (
+      sub === "users" &&
+      (!Number.isInteger(offset) || offset < 0 || offset > 100000)
+    )
+      return new Response("Invalid page", { status: 400 });
+    const loaded =
+      sub === "onboarding"
+        ? await loadOnboarding(Astro.locals)
+        : sub === "users"
+          ? await loadUsers(Astro.locals, offset)
+          : sub === "platform"
+            ? await loadSystem(Astro.locals)
+            : await loadClientsTable(Astro.locals);
     if (loaded.kind === "unauthenticated")
       return Astro.redirect("/login/", 303);
     administrationState =
@@ -86,8 +108,13 @@ if (area === "administration" && administration) {
         : loaded.kind === "forbidden"
           ? "forbidden"
           : "error";
-    if (loaded.kind === "ok") administrationClients = loaded.clients;
-  } else administrationState = "ok";
+    if (loaded.kind === "ok") {
+      if ("clients" in loaded) administrationClients = loaded.clients;
+      if ("onboarding" in loaded) administrationOnboarding = loaded.onboarding;
+      if ("users" in loaded) administrationUsers = loaded.users;
+      if ("system" in loaded) administrationSystem = loaded.system;
+    }
+  }
 }
 const days = reportingDays(Astro.url.searchParams.get("days"));
 if (days === null) return new Response("Invalid period", { status: 400 });
@@ -161,6 +188,9 @@ const title =
         state={administrationState}
         tab={sub}
         clients={administrationClients}
+        onboarding={administrationOnboarding}
+        users={administrationUsers}
+        system={administrationSystem}
       />
     ) : automationsPage?.kind === "error" ? (
       <Fragment>
