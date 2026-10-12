@@ -6542,7 +6542,7 @@ export interface components {
         };
         /** DatabaseComponent */
         DatabaseComponent: {
-            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            status: components["schemas"]["PlatformHealth"];
         };
         /** DeadLetterGroup */
         DeadLetterGroup: {
@@ -6737,7 +6737,7 @@ export interface components {
         FailedRunsComponent: {
             /** Failed Last 24H */
             failed_last_24h: number | null;
-            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            status: components["schemas"]["PlatformHealth"];
         };
         /** FeatureFlagCreate */
         FeatureFlagCreate: {
@@ -7208,7 +7208,7 @@ export interface components {
         IntegrationsComponent: {
             /** Needing Attention */
             needing_attention: number | null;
-            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            status: components["schemas"]["PlatformHealth"];
         };
         /** InvitationAccept */
         InvitationAccept: {
@@ -9737,6 +9737,12 @@ export interface components {
             meta: components["schemas"]["ResponseMeta"];
         };
         /**
+         * PlatformHealth
+         * @description A component's standing. ``unknown`` means it could not be read, never "fine".
+         * @enum {string}
+         */
+        PlatformHealth: "healthy" | "attention" | "unknown";
+        /**
          * PlatformUser
          * @description A person: name, email, standing and the clients they reach. Nothing else.
          */
@@ -9838,7 +9844,7 @@ export interface components {
              */
             period_start: string;
             /** Systems */
-            systems: components["schemas"]["apps__api__app__routes__command_center_portfolio__SystemHealth"][];
+            systems: components["schemas"]["SystemHealth"][];
             totals: components["schemas"]["PortfolioTotals"];
             /** Upcoming */
             upcoming: components["schemas"]["UpcomingItem"][];
@@ -10733,7 +10739,7 @@ export interface components {
             last_dispatch_at: string | null;
             /** Overdue */
             overdue: boolean | null;
-            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            status: components["schemas"]["PlatformHealth"];
         };
         /**
          * ScopeType
@@ -11086,6 +11092,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** SystemHealth */
+        SystemHealth: {
+            /** Affected Clients */
+            affected_clients: number;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "google" | "analytics" | "automations";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "healthy" | "needs_attention" | "error" | "not_connected";
+        };
         /**
          * SystemRole
          * @description The fixed role catalog (``access_control.catalog.ROLE_CATALOG``), as codes.
@@ -11102,7 +11123,7 @@ export interface components {
             evaluated_at: string;
             failed_runs: components["schemas"]["FailedRunsComponent"];
             integrations: components["schemas"]["IntegrationsComponent"];
-            overall: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            overall: components["schemas"]["PlatformHealth"];
             scheduler: components["schemas"]["SchedulerComponent"];
             worker_queue: components["schemas"]["WorkerQueueComponent"];
         };
@@ -11505,7 +11526,7 @@ export interface components {
             dead_letter_groups: components["schemas"]["DeadLetterGroup"][];
             /** Oldest Pending At */
             oldest_pending_at: string | null;
-            status: components["schemas"]["apps__api__app__platform_admin__contracts__SystemHealth"];
+            status: components["schemas"]["PlatformHealth"];
         };
         /** WorkflowRunStart */
         WorkflowRunStart: {
@@ -11529,12 +11550,6 @@ export interface components {
          * @enum {string}
          */
         WorkflowTypeCode: "content.publish" | "content.draft_revision" | "content.compose" | "seo.crawl_or_analysis" | "seo.analyze" | "seo.sync_search_console" | "insights.sync_analytics" | "seo.apply_site_change" | "gbp.generate_post" | "gbp.publish_change" | "gbp.publish_post" | "gbp.upload_media" | "gbp.publish_special_hours" | "reviews.publish_response" | "leads.send_communication" | "gbp.sync" | "gbp.sync_performance" | "reviews.ingest" | "agent.gbp" | "agent.seo" | "agent.content" | "agent.reviews" | "agent.leads" | "agent.insights" | "agent.growth";
-        /**
-         * SystemHealth
-         * @description A component's standing. ``unknown`` means it could not be read, never "fine".
-         * @enum {string}
-         */
-        apps__api__app__platform_admin__contracts__SystemHealth: "healthy" | "attention" | "unknown";
         /** AIDraftCreate */
         apps__api__app__products__content__contracts__AIDraftCreate: {
             /**
@@ -11568,21 +11583,6 @@ export interface components {
              * Format: uuid
              */
             review_revision_id: string;
-        };
-        /** SystemHealth */
-        apps__api__app__routes__command_center_portfolio__SystemHealth: {
-            /** Affected Clients */
-            affected_clients: number;
-            /**
-             * Key
-             * @enum {string}
-             */
-            key: "google" | "analytics" | "automations";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "healthy" | "needs_attention" | "error" | "not_connected";
         };
         /** PublishRequest */
         apps__api__app__routes__content_operations__PublishRequest: {

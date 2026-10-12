@@ -3027,7 +3027,7 @@
         "additionalProperties": false,
         "properties": {
           "status": {
-            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+            "$ref": "#/components/schemas/PlatformHealth"
           }
         },
         "required": [
@@ -3561,7 +3561,7 @@
             "title": "Failed Last 24H"
           },
           "status": {
-            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+            "$ref": "#/components/schemas/PlatformHealth"
           }
         },
         "required": [
@@ -4913,7 +4913,7 @@
             "title": "Needing Attention"
           },
           "status": {
-            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+            "$ref": "#/components/schemas/PlatformHealth"
           }
         },
         "required": [
@@ -13012,6 +13012,16 @@
         "title": "PlatformAdministratorSelfStatusResponse",
         "type": "object"
       },
+      "PlatformHealth": {
+        "description": "A component's standing. ``unknown`` means it could not be read, never \"fine\".",
+        "enum": [
+          "healthy",
+          "attention",
+          "unknown"
+        ],
+        "title": "PlatformHealth",
+        "type": "string"
+      },
       "PlatformUser": {
         "additionalProperties": false,
         "description": "A person: name, email, standing and the clients they reach. Nothing else.",
@@ -13310,7 +13320,7 @@
           },
           "systems": {
             "items": {
-              "$ref": "#/components/schemas/apps__api__app__routes__command_center_portfolio__SystemHealth"
+              "$ref": "#/components/schemas/SystemHealth"
             },
             "title": "Systems",
             "type": "array"
@@ -15986,7 +15996,7 @@
             "title": "Overdue"
           },
           "status": {
-            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+            "$ref": "#/components/schemas/PlatformHealth"
           }
         },
         "required": [
@@ -16994,6 +17004,41 @@
         "title": "SyncState",
         "type": "object"
       },
+      "SystemHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_clients": {
+            "title": "Affected Clients",
+            "type": "integer"
+          },
+          "key": {
+            "enum": [
+              "google",
+              "analytics",
+              "automations"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "needs_attention",
+              "error",
+              "not_connected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "affected_clients"
+        ],
+        "title": "SystemHealth",
+        "type": "object"
+      },
       "SystemRole": {
         "description": "The fixed role catalog (``access_control.catalog.ROLE_CATALOG``), as codes.",
         "enum": [
@@ -17024,7 +17069,7 @@
             "$ref": "#/components/schemas/IntegrationsComponent"
           },
           "overall": {
-            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+            "$ref": "#/components/schemas/PlatformHealth"
           },
           "scheduler": {
             "$ref": "#/components/schemas/SchedulerComponent"
@@ -18186,7 +18231,7 @@
             "title": "Oldest Pending At"
           },
           "status": {
-            "$ref": "#/components/schemas/apps__api__app__platform_admin__contracts__SystemHealth"
+            "$ref": "#/components/schemas/PlatformHealth"
           }
         },
         "required": [
@@ -18267,16 +18312,6 @@
           "agent.growth"
         ],
         "title": "WorkflowTypeCode",
-        "type": "string"
-      },
-      "apps__api__app__platform_admin__contracts__SystemHealth": {
-        "description": "A component's standing. ``unknown`` means it could not be read, never \"fine\".",
-        "enum": [
-          "healthy",
-          "attention",
-          "unknown"
-        ],
-        "title": "SystemHealth",
         "type": "string"
       },
       "apps__api__app__products__content__contracts__AIDraftCreate": {
@@ -18364,41 +18399,6 @@
           "idempotency_key"
         ],
         "title": "AIDraftCreate",
-        "type": "object"
-      },
-      "apps__api__app__routes__command_center_portfolio__SystemHealth": {
-        "additionalProperties": false,
-        "properties": {
-          "affected_clients": {
-            "title": "Affected Clients",
-            "type": "integer"
-          },
-          "key": {
-            "enum": [
-              "google",
-              "analytics",
-              "automations"
-            ],
-            "title": "Key",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "healthy",
-              "needs_attention",
-              "error",
-              "not_connected"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "status",
-          "affected_clients"
-        ],
-        "title": "SystemHealth",
         "type": "object"
       },
       "apps__api__app__routes__content_operations__PublishRequest": {

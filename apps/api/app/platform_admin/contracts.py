@@ -122,7 +122,7 @@ class PlatformUserListResponse(BaseModel):
     meta: ResponseMeta
 
 
-class SystemHealth(StrEnum):
+class PlatformHealth(StrEnum):
     """A component's standing. ``unknown`` means it could not be read, never "fine"."""
 
     HEALTHY = "healthy"
@@ -151,13 +151,13 @@ class DeadLetterGroup(BaseModel):
 class DatabaseComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: SystemHealth
+    status: PlatformHealth
 
 
 class SchedulerComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: SystemHealth
+    status: PlatformHealth
     active_schedules: int | None
     # The scheduled time of the most recent dispatch across active schedules.
     last_dispatch_at: datetime | None
@@ -168,7 +168,7 @@ class SchedulerComponent(BaseModel):
 class WorkerQueueComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: SystemHealth
+    status: PlatformHealth
     dead_letter_count: int | None
     dead_letter_groups: tuple[DeadLetterGroup, ...]
     # When the longest-waiting job that is already due became available.
@@ -179,21 +179,21 @@ class WorkerQueueComponent(BaseModel):
 class FailedRunsComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: SystemHealth
+    status: PlatformHealth
     failed_last_24h: int | None
 
 
 class IntegrationsComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: SystemHealth
+    status: PlatformHealth
     needing_attention: int | None
 
 
 class SystemStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    overall: SystemHealth
+    overall: PlatformHealth
     evaluated_at: datetime
     database: DatabaseComponent
     scheduler: SchedulerComponent

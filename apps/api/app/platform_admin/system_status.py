@@ -27,8 +27,8 @@ from apps.api.app.platform_admin.contracts import (
     DeadLetterReason,
     FailedRunsComponent,
     IntegrationsComponent,
+    PlatformHealth,
     SchedulerComponent,
-    SystemHealth,
     SystemStatus,
     WorkerQueueComponent,
 )
@@ -62,12 +62,12 @@ def dead_letter_reason(status: str | None, error_category: str | None) -> DeadLe
     return DeadLetterReason.UNRECORDED
 
 
-def overall_health(components: list[SystemHealth]) -> SystemHealth:
-    if SystemHealth.ATTENTION in components:
-        return SystemHealth.ATTENTION
-    if SystemHealth.UNKNOWN in components:
-        return SystemHealth.UNKNOWN
-    return SystemHealth.HEALTHY
+def overall_health(components: list[PlatformHealth]) -> PlatformHealth:
+    if PlatformHealth.ATTENTION in components:
+        return PlatformHealth.ATTENTION
+    if PlatformHealth.UNKNOWN in components:
+        return PlatformHealth.UNKNOWN
+    return PlatformHealth.HEALTHY
 
 
 class SystemStatusService:
@@ -84,33 +84,33 @@ class SystemStatusService:
             overall=overall_health(
                 [
                     database_component.status,
-                    scheduler.status if scheduler else SystemHealth.UNKNOWN,
-                    queue.status if queue else SystemHealth.UNKNOWN,
-                    runs.status if runs else SystemHealth.UNKNOWN,
-                    integrations.status if integrations else SystemHealth.UNKNOWN,
+                    scheduler.status if scheduler else PlatformHealth.UNKNOWN,
+                    queue.status if queue else PlatformHealth.UNKNOWN,
+                    runs.status if runs else PlatformHealth.UNKNOWN,
+                    integrations.status if integrations else PlatformHealth.UNKNOWN,
                 ]
             ),
             evaluated_at=now,
             database=database_component,
             scheduler=scheduler
             or SchedulerComponent(
-                status=SystemHealth.UNKNOWN,
+                status=PlatformHealth.UNKNOWN,
                 active_schedules=None,
                 last_dispatch_at=None,
                 overdue=None,
             ),
             worker_queue=queue
             or WorkerQueueComponent(
-                status=SystemHealth.UNKNOWN,
+                status=PlatformHealth.UNKNOWN,
                 dead_letter_count=None,
                 dead_letter_groups=(),
                 oldest_pending_at=None,
                 backlogged=None,
             ),
             failed_runs=runs
-            or FailedRunsComponent(status=SystemHealth.UNKNOWN, failed_last_24h=None),
+            or FailedRunsComponent(status=PlatformHealth.UNKNOWN, failed_last_24h=None),
             integrations=integrations
-            or IntegrationsComponent(status=SystemHealth.UNKNOWN, needing_attention=None),
+            or IntegrationsComponent(status=PlatformHealth.UNKNOWN, needing_attention=None),
         )
 
     async def _guarded(self, session: AsyncSession, read: Callable[[], Awaitable[T]]) -> T | None:
@@ -130,9 +130,9 @@ class SystemStatusService:
         try:
             health = await check_database_health(database)
         except Exception:
-            return DatabaseComponent(status=SystemHealth.UNKNOWN)
+            return DatabaseComponent(status=PlatformHealth.UNKNOWN)
         return DatabaseComponent(
-            status=SystemHealth.HEALTHY if health.available else SystemHealth.ATTENTION
+            status=PlatformHealth.HEALTHY if health.available else PlatformHealth.ATTENTION
         )
 
     async def _scheduler(self, session: AsyncSession, now: datetime) -> SchedulerComponent:
@@ -167,7 +167,7 @@ class SystemStatusService:
             )
         ).one()
         return SchedulerComponent(
-            status=SystemHealth.ATTENTION if overdue else SystemHealth.HEALTHY,
+            status=PlatformHealth.ATTENTION if overdue else PlatformHealth.HEALTHY,
             active_schedules=total,
             last_dispatch_at=last_dispatch,
             overdue=bool(overdue),
@@ -201,7 +201,7 @@ class SystemStatusService:
         backlogged = oldest is not None and oldest < now - QUEUE_BACKLOG_AFTER
         dead = sum(counts.values())
         return WorkerQueueComponent(
-            status=SystemHealth.ATTENTION if dead or backlogged else SystemHealth.HEALTHY,
+            status=PlatformHealth.ATTENTION if dead or backlogged else PlatformHealth.HEALTHY,
             dead_letter_count=dead,
             dead_letter_groups=tuple(
                 DeadLetterGroup(reason=reason, count=counts[reason])
@@ -220,7 +220,7 @@ class SystemStatusService:
             )
         )
         return FailedRunsComponent(
-            status=SystemHealth.ATTENTION if failed else SystemHealth.HEALTHY,
+            status=PlatformHealth.ATTENTION if failed else PlatformHealth.HEALTHY,
             failed_last_24h=failed or 0,
         )
 
@@ -235,6 +235,6 @@ class SystemStatusService:
             )
         )
         return IntegrationsComponent(
-            status=SystemHealth.ATTENTION if needing else SystemHealth.HEALTHY,
+            status=PlatformHealth.ATTENTION if needing else PlatformHealth.HEALTHY,
             needing_attention=needing or 0,
         )
