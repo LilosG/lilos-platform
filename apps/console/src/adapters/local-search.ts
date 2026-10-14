@@ -307,6 +307,7 @@ const publication = z.object({
   dispatched_at: nullableText,
   provider_post_id: nullableText,
   verified_at: nullableText,
+  safe_error_code: nullableText,
   recovery_allowed: z.boolean(),
 });
 export type ProfileView = components["schemas"]["GBPDetailView"];

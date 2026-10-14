@@ -13486,6 +13486,17 @@
             "title": "Recovery Allowed",
             "type": "boolean"
           },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
           "scheduled_for": {
             "anyOf": [
               {
@@ -13522,6 +13533,7 @@
           "dispatched_at",
           "provider_post_id",
           "verified_at",
+          "safe_error_code",
           "recovery_allowed"
         ],
         "title": "PostPublicationData",

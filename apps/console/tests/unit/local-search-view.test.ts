@@ -16,7 +16,7 @@ import {
   profileSummary,
   postRows,
 } from "../../src/lib/gbp-view";
-import { postState, postChips } from "../../src/lib/status";
+import { postState, postChips, postStateNote } from "../../src/lib/status";
 import { clockText } from "../../src/lib/present";
 const org = fixtures.search.organization_id;
 const raw =
@@ -95,6 +95,41 @@ describe("Business Profile presenters", () => {
     );
     expect(postChips.published.label).toBe("Published");
   });
+  it("reads a post waiting on Google as in progress, keyed on its typed code", () => {
+    for (const code of [
+      "POST_NOT_YET_LIVE",
+      "POST_RECOVERY_PROVIDER_MATCHED",
+    ]) {
+      const state = postState("approved", "reconciliation_required", code);
+      expect(state).toBe("confirming");
+      expect(postChips[state]).toEqual({
+        label: "Confirming with Google",
+        tone: "neutral",
+      });
+      expect(postStateNote(state, code)).toMatch(/checking it/);
+    }
+  });
+  it("shows a parked post as needing attention with its next step", () => {
+    const timeout = postState(
+      "approved",
+      "reconciliation_required",
+      "POST_NOT_LIVE_TIMEOUT",
+    );
+    expect(timeout).toBe("needs_attention");
+    expect(postChips[timeout].label).toBe("Needs attention");
+    expect(postStateNote(timeout, "POST_NOT_LIVE_TIMEOUT")).toMatch(
+      /retry publishing/,
+    );
+    expect(postStateNote(timeout, "GOOGLE_RECONNECT_REQUIRED")).toMatch(
+      /Reconnect it in Integrations/,
+    );
+    // An unknown code never leaks into the screen.
+    expect(postStateNote(timeout, "SOMETHING_NEW")).toBeNull();
+    // Without a code, a reconciling post stays "needs attention", as before.
+    expect(postState("approved", "reconciliation_required")).toBe(
+      "needs_attention",
+    );
+  });
   it("offers only the actions each state allows", () => {
     const post = (status: string, pub: string | null) => ({
       id: "1",
@@ -113,6 +148,7 @@ describe("Business Profile presenters", () => {
             dispatched_at: null,
             provider_post_id: null,
             verified_at: null,
+            safe_error_code: null,
             recovery_allowed: false,
           }
         : null,

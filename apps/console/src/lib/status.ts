@@ -19,6 +19,7 @@ export type PostState =
   | "approved"
   | "rejected"
   | "publishing"
+  | "confirming"
   | "published"
   | "not_published"
   | "discarded"
@@ -29,6 +30,7 @@ export const postChips: Record<PostState, Chip> = {
   approved: { label: "Approved", tone: "" },
   rejected: { label: "Rejected", tone: "error" },
   publishing: { label: "Publishing", tone: "neutral" },
+  confirming: { label: "Confirming with Google", tone: "neutral" },
   published: { label: "Published", tone: "" },
   not_published: { label: "Not published", tone: "warn" },
   discarded: { label: "Discarded", tone: "neutral" },
@@ -51,13 +53,47 @@ const revisionState: Record<string, PostState> = {
   approved: "approved",
   rejected: "rejected",
 };
+/**
+ * Codes of a publication Google accepted but has not confirmed live yet. It is in progress,
+ * not a problem: LILOs checks Google again by itself.
+ */
+const confirmingCodes = new Set([
+  "POST_NOT_YET_LIVE",
+  "POST_RECOVERY_PROVIDER_MATCHED",
+]);
+/** What a person does next for a post parked or failing on a typed code. */
+const postNextStep: Record<string, string> = {
+  POST_NOT_LIVE_TIMEOUT:
+    "Google has not shown this post after a day. Check your Business Profile, then retry publishing.",
+  GOOGLE_RECONNECT_REQUIRED:
+    "Google needs to be reconnected. Reconnect it in Integrations, then retry publishing.",
+  POST_REJECTED_BY_PROVIDER:
+    "Google rejected this post. Write a new post to replace it.",
+};
 /** A post's state: what happened to its publication wins over its revision's approval. */
 export function postState(
   revision: string,
   publication: string | null,
+  code: string | null = null,
 ): PostState {
+  if (
+    publication === "reconciliation_required" &&
+    code &&
+    confirmingCodes.has(code)
+  )
+    return "confirming";
   if (publication) return publicationState[publication] ?? "needs_attention";
   return revisionState[revision] ?? "draft";
+}
+/** One plain sentence for a post that is confirming or needs attention, keyed on the typed code. */
+export function postStateNote(
+  state: PostState,
+  code: string | null,
+): string | null {
+  if (state === "confirming")
+    return "Google accepted this post and is still checking it. LILOs looks again automatically.";
+  if (state === "needs_attention" && code) return postNextStep[code] ?? null;
+  return null;
 }
 const approvalChips: Record<string, Chip> = {
   awaiting_approval: postChips.awaiting_approval,

@@ -9892,6 +9892,8 @@ export interface components {
             provider_post_id: string | null;
             /** Recovery Allowed */
             recovery_allowed: boolean;
+            /** Safe Error Code */
+            safe_error_code: string | null;
             /** Scheduled For */
             scheduled_for: string | null;
             /** Status */
