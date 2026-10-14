@@ -5,6 +5,19 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+
+from apps.api.app.locations.enums import LocationStatus
+from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
+from apps.api.app.reports.contracts import (
+    Availability,
+    NoteCode,
+    ReportReadiness,
+    SplitKey,
+    UnavailableReason,
+    WorkKind,
+)
+from apps.api.app.reports.errors import ReportMonthNotEndedError
+from apps.api.app.reports.snapshot import build_snapshot, data_hash, last_ended_month
 from reports.support import (
     AUGUST,
     CORE,
@@ -24,19 +37,6 @@ from reports.support import (
     store_search_month,
     store_terms,
 )
-
-from apps.api.app.locations.enums import LocationStatus
-from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
-from apps.api.app.reports.contracts import (
-    Availability,
-    NoteCode,
-    ReportReadiness,
-    SplitKey,
-    UnavailableReason,
-    WorkKind,
-)
-from apps.api.app.reports.errors import ReportMonthNotEndedError
-from apps.api.app.reports.snapshot import build_snapshot, data_hash, last_ended_month
 
 pytestmark = pytest.mark.integration
 

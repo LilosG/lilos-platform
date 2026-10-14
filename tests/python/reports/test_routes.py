@@ -7,9 +7,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from starlette.testclient import TestClient
+
 from reports.routes_support import BASE, call
 from reports.support import Factory
-from starlette.testclient import TestClient
 
 pytestmark = pytest.mark.integration
 SEPT = "2026-09"

@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
-from reports.support import Factory, seed_complete_month, seed_org
 from starlette.testclient import TestClient
 
 from apps.api.app.access_control.catalog import AccessCatalogSeeder
@@ -21,6 +20,7 @@ from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.main import create_app
+from reports.support import Factory, seed_complete_month, seed_org
 
 BASE = "/api/v1/organizations"
 

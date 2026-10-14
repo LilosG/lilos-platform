@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from reports.routes_support import reports_app  # noqa: F401  (fixture)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+
+from reports.routes_support import reports_app  # noqa: F401  (fixture)
 
 ROOT = Path(__file__).resolve().parents[3]
 
