@@ -92,7 +92,20 @@ def test_a_finished_month_is_compared_with_the_whole_month_before() -> None:
     windows = period_windows(PerformancePeriod.MONTH, today=TODAY, month=date(2026, 3, 9))
 
     assert (windows.current.start, windows.current.end) == (date(2026, 3, 1), date(2026, 3, 31))
-    assert (windows.previous.start, windows.previous.end) == (date(2026, 2, 1), date(2026, 3, 3))
+    # Never into the month being reported: February has 28 days, so the window stops there.
+    assert (windows.previous.start, windows.previous.end) == (date(2026, 2, 1), date(2026, 2, 28))
+    assert windows.previous.end < windows.current.start
+
+
+def test_the_month_before_is_never_longer_than_that_month() -> None:
+    long_month = period_windows(PerformancePeriod.MONTH, today=TODAY, month=date(2026, 8, 1))
+    leap = period_windows(PerformancePeriod.MONTH, today=date(2028, 4, 5), month=date(2028, 3, 1))
+
+    assert (long_month.previous.start, long_month.previous.end) == (
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+    assert (leap.previous.start, leap.previous.end) == (date(2028, 2, 1), date(2028, 2, 29))
 
 
 def test_totals_say_how_far_to_trust_them() -> None:

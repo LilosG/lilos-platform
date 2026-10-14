@@ -149,8 +149,9 @@ async def test_analytics_sync_holds_no_transaction_during_provider_http(
         await probe.close()
 
     assert result["periods_synced"] == [7, 28, 90]
-    # Token refresh + 3 reports x 3 periods + the compatibility check + 3 organic reports.
-    assert len(probe.open_during_provider_calls) == 1 + 9 + 1 + 3
+    # Token refresh + 3 reports x 3 periods + the compatibility check + 3 organic reports
+    # + the two calendar months the monthly report needs.
+    assert len(probe.open_during_provider_calls) == 1 + 9 + 1 + 3 + 2
     assert set(probe.open_during_provider_calls) == {0}
     async with insights_session_factory() as session:
         observations = list(await session.scalars(select(MetricObservation.id)))

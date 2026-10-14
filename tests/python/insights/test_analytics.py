@@ -411,6 +411,8 @@ async def test_organic_page_evidence_pins_website_and_location_through_remap(
             if (
                 "insert into metric_observations" in statement.lower()
                 and "on conflict" in statement.lower()
+                # The monthly report's per-month totals are not page evidence.
+                and "organic_month_total" not in repr(parameters)
             ):
                 page_upserts += 1
 

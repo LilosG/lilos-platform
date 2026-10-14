@@ -51,7 +51,9 @@ from apps.api.app.products.seo.search_console_service import (
 )
 from apps.api.app.reporting_periods import (
     GSC_SYNC_TAIL_EXCLUSION_DAYS,
+    calendar_month_window,
     comparison_window,
+    completed_months,
     provider_end_date,
     provider_start_date,
     reporting_window,
@@ -794,7 +796,12 @@ async def test_gsc_page_rows_use_chunked_upserts_without_per_row_selects(
             sql = statement.lower()
             if "seo_search_observations" in sql and sql.lstrip().startswith("select"):
                 observation_selects += 1
-            if "insert into seo_search_observations" in sql and "on conflict" in sql:
+            if (
+                "insert into seo_search_observations" in sql
+                and "on conflict" in sql
+                # Whole calendar months for the monthly report are stored apart from the windows.
+                and "month_" not in repr(parameters)
+            ):
                 page_upserts += 1
 
         event.listen(engine, "before_cursor_execute", inspect_statement)
@@ -1022,7 +1029,9 @@ async def test_search_console_discover_recommend_map_and_sync(
         observations = list(
             await session.scalars(
                 select(SEOSearchObservation).where(
-                    SEOSearchObservation.search_property_id == mapped.id
+                    SEOSearchObservation.search_property_id == mapped.id,
+                    # Whole calendar months for the monthly report are stored apart.
+                    ~SEOSearchObservation.dimensions["observation_type"].astext.like("month_%"),
                 )
             )
         )
@@ -1101,7 +1110,8 @@ async def test_search_console_sync_is_idempotent_on_repeat(
         observations = list(
             await session.scalars(
                 select(SEOSearchObservation).where(
-                    SEOSearchObservation.search_property_id == mapped.id
+                    SEOSearchObservation.search_property_id == mapped.id,
+                    ~SEOSearchObservation.dimensions["observation_type"].astext.like("month_%"),
                 )
             )
         )
@@ -1261,7 +1271,19 @@ async def test_search_console_sync_sends_exact_inclusive_provider_dates(
         )
 
         # Current site-summary windows must each span exactly 7/28/90 inclusive dates.
-        summary_calls = [c for c in fake.query_calls if c[0] != "list" and c[3] == ()]
+        months = {
+            (start.isoformat(), (following - timedelta(days=1)).isoformat())
+            for start, following in (
+                (m.replace(day=1), calendar_month_window(m)[1].date())
+                for m in completed_months(datetime.now(UTC).date(), 2)
+            )
+        }
+        # Whole calendar months are fetched for the monthly report, apart from the windows.
+        summary_calls = [
+            c
+            for c in fake.query_calls
+            if c[0] != "list" and c[3] == () and (c[1], c[2]) not in months
+        ]
         assert len(summary_calls) == 6  # 3 current + 3 prior
         spans = sorted(_inclusive_span(s, e) for _, s, e, _ in summary_calls)
         assert spans == [7, 7, 28, 28, 90, 90]
@@ -1276,7 +1298,9 @@ async def test_search_console_sync_sends_exact_inclusive_provider_dates(
 
         # Daily/query/page provider requests are also inclusive and exact.
         for dims in (("date",), ("query",), ("page",)):
-            typed_calls = [c for c in fake.query_calls if c[3] == dims]
+            typed_calls = [
+                c for c in fake.query_calls if c[3] == dims and (c[1], c[2]) not in months
+            ]
             assert len(typed_calls) == 3  # current only, one per period
             typed_spans = sorted(_inclusive_span(s, e) for _, s, e, _ in typed_calls)
             assert typed_spans == [7, 28, 90]

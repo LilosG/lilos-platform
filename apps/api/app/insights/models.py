@@ -1,12 +1,13 @@
 # ruff: noqa: E501
 """Versioned analytical definitions, observations, goals, reports, and evidence."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -201,13 +202,22 @@ class ReportRevision(UUIDPrimaryKeyMixin, Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("organization_id", "id", name="uq_report_revisions_org_id"),
-        UniqueConstraint("report_definition_id", "revision", name="uq_report_revision"),
+        # Revisions are numbered per month: a month's first report is revision 1.
+        UniqueConstraint(
+            "report_definition_id", "period_month", "revision", name="uq_report_revision_month"
+        ),
         UniqueConstraint("snapshot_hash", name="uq_report_snapshot_hash"),
+        CheckConstraint(
+            "period_month = date_trunc('month', period_month)::date", name="month_is_first_day"
+        ),
+        Index("ix_report_revisions_org_period_month", "organization_id", "period_month"),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     report_definition_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    # The first day of the calendar month the report covers.
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     metric_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
@@ -217,6 +227,7 @@ class ReportRevision(UUIDPrimaryKeyMixin, Base):
     approved_by_user_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
     )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -244,6 +255,11 @@ class ReportDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     notification_delivery_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
+    # The day a person told the client the report was sent; the platform sends nothing itself.
+    sent_on: Mapped[date] = mapped_column(Date, nullable=False)
+    sent_by_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
+    )
     artifact_reference: Mapped[str | None] = mapped_column(String(1000))
 
 

@@ -70,6 +70,12 @@ from apps.api.app.products.analytics.errors import (
     AnalyticsWebsiteScopeError,
 )
 from apps.api.app.products.analytics.models import AnalyticsProperty
+from apps.api.app.products.analytics.month_observations import (
+    OrganicMonthFetch,
+    fetch_months,
+    months_to_fetch,
+    store_month,
+)
 from apps.api.app.products.seo.models import SEOWebsite
 from apps.api.app.products.seo.page_identity import PageResolver
 from apps.api.app.reporting_periods import (
@@ -577,6 +583,13 @@ class AnalyticsService:
             connection_id = connection.id
             property_number = prop.property_number
             organic = await self._plan_organic_pages(session, organization_id, prop)
+            months = (
+                await months_to_fetch(
+                    session, organization_id, prop.external_property_id, datetime.now(UTC).date()
+                )
+                if organic.expected_host
+                else []
+            )
 
         # -- phase 2: provider HTTP, nothing open --------------------------------
         if plan.access_token is not None:
@@ -610,6 +623,12 @@ class AnalyticsService:
                 token, property_number, start, end, period_days
             )
         organic_fetch = await self._fetch_organic_pages(token, property_number, organic, windows)
+        # Only a property whose organic report just worked has months worth asking for.
+        month_fetches = (
+            await fetch_months(self.adapter, token, property_number, organic.expected_host, months)
+            if organic.expected_host and organic_fetch.error is None
+            else []
+        )
 
         # -- phase 3: persist ----------------------------------------------------
         upserted = 0
@@ -750,6 +769,9 @@ class AnalyticsService:
             await self._persist_organic_pages(
                 session, organization_id, prop, source, organic, organic_fetch, windows, now
             )
+            await self._persist_organic_months(
+                session, organization_id, prop, source, organic, month_fetches, now
+            )
             prop.last_synced_at = now
             prop.freshness_status = "fresh"
             source.last_synced_at = prop.last_synced_at
@@ -872,6 +894,44 @@ class AnalyticsService:
         except Exception as exc:
             return OrganicPageFetch(error=exc, rows={})
         return OrganicPageFetch(error=None, rows=rows)
+
+    async def _persist_organic_months(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        prop: AnalyticsProperty,
+        source: InsightSource,
+        plan: OrganicPagePlan,
+        fetches: list[OrganicMonthFetch],
+        now: datetime,
+    ) -> None:
+        """Store each fetched month's Organic Search total for the monthly report.
+
+        A month that failed or did not validate is skipped and tried again by the next sync; it
+        never fails the sync or the page evidence.
+        """
+        if not fetches or plan.website_id is None or plan.expected_host is None:
+            return
+        savepoint = session.begin_nested()
+        await savepoint.start()
+        try:
+            definitions = await self._ensure_organic_landing_definitions(session)
+            for fetch in fetches:
+                await store_month(
+                    session,
+                    organization_id=organization_id,
+                    source=source,
+                    definition_id=definitions["sessions"].id,
+                    website_id=plan.website_id,
+                    location_id=plan.location_id,
+                    property_label=prop.external_property_id,
+                    hostname=plan.expected_host,
+                    fetch=fetch,
+                    today=now.date(),
+                )
+            await savepoint.commit()
+        except Exception:
+            await savepoint.rollback()
 
     async def _persist_organic_pages(
         self,

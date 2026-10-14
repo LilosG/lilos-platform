@@ -21,7 +21,7 @@ import hashlib
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -56,6 +56,11 @@ from apps.api.app.products.seo.errors import (
     SEOSearchPropertyNotFoundError,
 )
 from apps.api.app.products.seo.models import SEOSearchObservation, SEOSearchProperty, SEOWebsite
+from apps.api.app.products.seo.month_observations import (
+    MonthFetch,
+    months_to_fetch,
+    store_month,
+)
 from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
 from apps.api.app.products.seo.search_console_adapter import (
     DiscoveredSearchProperty,
@@ -65,6 +70,7 @@ from apps.api.app.products.seo.search_console_adapter import (
 from apps.api.app.reporting_periods import (
     GSC_SYNC_TAIL_EXCLUSION_DAYS,
     VALID_REPORTING_PERIODS,
+    calendar_month_window,
     comparison_window,
     format_range_label,
     provider_end_date,
@@ -418,6 +424,7 @@ class SearchConsoleService:
             plan = await self.connection.begin_token_refresh(session, settings, connection)
             external_id = property_row.external_property_id
             connection_id = connection.id
+            months = await months_to_fetch(session, property_row.id, datetime.now(UTC).date())
 
         # -- phase 2: provider HTTP, nothing open --------------------------------
         if plan.access_token is not None:
@@ -450,6 +457,7 @@ class SearchConsoleService:
             period_days: await self._fetch_period(token, external_id, start, end, period_days)
             for period_days, (start, end) in windows.items()
         }
+        month_fetches = [await self._fetch_month(token, external_id, month) for month in months]
 
         # -- phase 3: persist ----------------------------------------------------
         upserted = 0
@@ -500,6 +508,12 @@ class SearchConsoleService:
                     period_days,
                     fetched[period_days],
                 )
+            # Whole calendar months for the monthly report. A month that could not be read is
+            # simply tried again by the next sync; it never fails the rolling windows above.
+            month_rows = 0
+            for month_fetch in month_fetches:
+                if not month_fetch.failed:
+                    month_rows += await store_month(session, property_row, month_fetch, now.date())
             property_row.last_synced_at = now
             property_row.freshness_status = "fresh"
             await session.flush()
@@ -515,12 +529,14 @@ class SearchConsoleService:
                 f"{len(VALID_REPORTING_PERIODS)} periods.",
                 metadata={
                     "rows": upserted,
+                    "month_rows": month_rows,
                     "periods_synced": list(VALID_REPORTING_PERIODS),
                 },
             )
             return {
                 "search_property_id": str(property_row.id),
                 "rows_synced": upserted,
+                "month_rows_synced": month_rows,
                 "window_days": days,
                 "periods_synced": list(VALID_REPORTING_PERIODS),
                 "freshness_status": property_row.freshness_status,
@@ -615,6 +631,27 @@ class SearchConsoleService:
                 dimensions=("page", "query"),
                 row_limit=25000,
             ),
+        )
+
+    async def _fetch_month(self, token: str, external_id: str, month: date) -> MonthFetch:
+        """One whole calendar month's summary, queries and pages. Touches no database."""
+        start, following = calendar_month_window(month)
+
+        async def rows(dimensions: tuple[str, ...]) -> list[SearchAnalyticsRow] | Exception:
+            return await self._query(
+                token,
+                external_id,
+                start=start,
+                end=following,
+                dimensions=dimensions,
+                row_limit=1000,
+            )
+
+        return MonthFetch(
+            month=month,
+            summary=await rows(()),
+            queries=await rows(("query",)),
+            pages=await rows(("page",)),
         )
 
     @staticmethod

@@ -33,6 +33,7 @@ DIRECT_GENERATION_TASK_KEYS: frozenset[str] = frozenset(
         "content.draft_revision",
         "content.compose_plan",
         "gbp.generate_post",
+        "reports.narrative_draft",
     }
 )
 
