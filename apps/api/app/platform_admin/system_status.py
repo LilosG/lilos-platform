@@ -45,6 +45,9 @@ CONNECTION_NEEDS_ATTENTION = ("degraded", "reconnect_required")
 T = TypeVar("T")
 
 
+RESOLVED_RUN_STATUSES = ("completed", "cancelled")
+
+
 def dead_letter_reason(status: str | None, error_category: str | None) -> DeadLetterReason:
     """Classify a dead-lettered job by how its final attempt ended."""
     if status == "permanent_failure":
@@ -183,7 +186,19 @@ class SystemStatusService:
                     (JobAttempt.job_id == Job.id)
                     & (JobAttempt.attempt_number == Job.attempt_count),
                 )
-                .where(Job.status == "dead_lettered")
+                .outerjoin(
+                    WorkflowRun,
+                    (WorkflowRun.organization_id == Job.organization_id)
+                    & (WorkflowRun.id == Job.workflow_run_id),
+                )
+                .where(
+                    Job.status == "dead_lettered",
+                    # A dead letter whose run later completed or was settled is resolved history.
+                    or_(
+                        WorkflowRun.id.is_(None),
+                        WorkflowRun.status.notin_(RESOLVED_RUN_STATUSES),
+                    ),
+                )
                 .group_by(JobAttempt.status, JobAttempt.error_category)
             )
         ).all()

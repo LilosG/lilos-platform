@@ -401,6 +401,38 @@ async def reconcile_ambiguous_gbp_posts(
             continue
         if outcome in {"published", "not_published"}:
             settled += 1
+    settled += await _reconcile_accepted_gbp_posts(sessions, settings, service, limit=limit)
+    return settled
+
+
+async def _reconcile_accepted_gbp_posts(
+    sessions: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    service: GBPOperationsService,
+    *,
+    limit: int,
+) -> int:
+    """Re-read posts Google accepted but has not confirmed LIVE, one transaction each."""
+    async with sessions() as session:
+        candidates = await service.accepted_post_publication_ids(session, limit=limit)
+    settled = 0
+    for organization_id, publication_id in candidates:
+        try:
+            async with sessions() as session, session.begin():
+                outcome = await service.auto_reconcile_accepted_post(
+                    session, settings, organization_id, publication_id
+                )
+        except Exception:
+            logger.exception(
+                "GBP accepted post reconciliation failed",
+                extra={
+                    "event_name": "gbp.post.auto_reconcile_accepted_failed",
+                    "publication_id": str(publication_id),
+                },
+            )
+            continue
+        if outcome in {"verifying", "failed", "not_published"}:
+            settled += 1
     return settled
 
 

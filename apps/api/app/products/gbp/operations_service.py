@@ -2,11 +2,13 @@
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,9 +20,15 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.execution.models import Job, JobAttempt, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
-from apps.api.app.integrations.errors import IntegrationReconnectRequiredError
+from apps.api.app.integrations.adapter_factory import gbp_adapter
+from apps.api.app.integrations.connection_service import GBPConnectionService
+from apps.api.app.integrations.errors import (
+    IntegrationNotFoundError,
+    IntegrationReconnectRequiredError,
+)
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
+from apps.api.app.products.gbp.adapter import GBPAdapter
 from apps.api.app.products.gbp.media_upload import ImageFacts
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations import (
@@ -70,6 +78,8 @@ from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.gbp.special_hours_publish import APPROVED_STATUSES
 from apps.api.app.storage.objects import GBP_MEDIA_BUCKET, ObjectStorage
 
+logger = logging.getLogger(__name__)
+
 NOTIFICATION_TEMPLATES = {
     "gbp.suspension_case.reported": ("in_app", "A Business Profile suspension case was reported."),
     "gbp.change_set.awaiting_approval": ("in_app", "A Business Profile change set needs approval."),
@@ -97,18 +107,29 @@ AMBIGUOUS_POST_CODES = frozenset(
     }
 )
 POST_NOT_ON_GOOGLE = "POST_NOT_ON_GOOGLE"
+# Google accepted the post (it has a resource name) but has not confirmed it LIVE yet.
+POST_NOT_YET_LIVE = "POST_NOT_YET_LIVE"
+POST_NOT_LIVE_TIMEOUT = "POST_NOT_LIVE_TIMEOUT"
+POST_REJECTED_BY_PROVIDER = "POST_REJECTED_BY_PROVIDER"
+POST_RECOVERY_PROVIDER_MATCHED = "POST_RECOVERY_PROVIDER_MATCHED"
+GOOGLE_RECONNECT_REQUIRED = "GOOGLE_RECONNECT_REQUIRED"
+# A post Google accepted but never confirms LIVE is handed to a person after this long.
+POST_NOT_LIVE_DEADLINE = timedelta(hours=24)
 POST_REPOSTED = "REPOSTED_AS_NEW_REVISION"
 POST_DISCARDED = "DISCARDED_BY_OPERATOR"
 # Typed codes a publish run is settled with once its post is retired (see settle_publication_run).
 GBP_POST_NOT_PUBLISHED = "GBP_POST_NOT_PUBLISHED"
 GBP_POST_DISCARDED = "GBP_POST_DISCARDED"
 GBP_POST_REPOSTED = "GBP_POST_REPOSTED"
+GBP_POST_REJECTED = "GBP_POST_REJECTED"
 
 
 def settlement_code(status: str, safe_error_code: str | None) -> str | None:
     """The run-settlement code for a retired publication, or None when it is still live."""
     if status == "not_published":
         return GBP_POST_NOT_PUBLISHED
+    if status == "failed" and safe_error_code == POST_REJECTED_BY_PROVIDER:
+        return GBP_POST_REJECTED
     if status == "discarded":
         return GBP_POST_REPOSTED if safe_error_code == POST_REPOSTED else GBP_POST_DISCARDED
     return None
@@ -1232,7 +1253,7 @@ class GBPOperationsService:
             if len(matching_posts) == 1:
                 publication.provider_post_id = matching_posts[0].provider_post_name
                 publication.status = "reconciliation_required"
-                publication.safe_error_code = "POST_RECOVERY_PROVIDER_MATCHED"
+                publication.safe_error_code = POST_RECOVERY_PROVIDER_MATCHED
                 recovery_mode = "provider_match"
             elif len(matching_posts) > 1:
                 denial_code = "AMBIGUOUS_PROVIDER_MATCH"
@@ -1351,7 +1372,7 @@ class GBPOperationsService:
             )
         except IntegrationReconnectRequiredError:
             return await self._park_ambiguous_post(
-                session, publication, "GOOGLE_RECONNECT_REQUIRED", correlation_id
+                session, publication, GOOGLE_RECONNECT_REQUIRED, correlation_id
             )
         except Exception:
             return await self._park_ambiguous_post(
@@ -1413,6 +1434,177 @@ class GBPOperationsService:
             correlation_id=correlation_id,
             summary="Google does not show this post; it was not published.",
             metadata={"previous_code": "PROVIDER_WRITE_AMBIGUOUS"},
+        )
+        return "not_published"
+
+    async def accepted_post_publication_ids(
+        self, session: AsyncSession, *, limit: int = 50
+    ) -> list[tuple[UUID, UUID]]:
+        """Posts Google accepted but has not confirmed LIVE, whose last check is old enough.
+
+        Every check touches `updated_at`, so checks are spaced by the re-read delay and a
+        crashed tick cannot hot-loop. Oldest check first.
+        """
+        rows = await session.execute(
+            select(GBPPostPublication.organization_id, GBPPostPublication.id)
+            .where(
+                GBPPostPublication.status == "reconciliation_required",
+                GBPPostPublication.safe_error_code == POST_NOT_YET_LIVE,
+                GBPPostPublication.provider_post_id.is_not(None),
+                GBPPostPublication.updated_at <= datetime.now(UTC) - AMBIGUOUS_POST_REREAD_DELAY,
+            )
+            .order_by(GBPPostPublication.updated_at)
+            .limit(limit)
+        )
+        return [(row[0], row[1]) for row in rows.all()]
+
+    async def auto_reconcile_accepted_post(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: UUID,
+        publication_id: UUID,
+        *,
+        adapter: GBPAdapter | None = None,
+        connection: GBPConnectionService | None = None,
+    ) -> str:
+        """Read one post Google accepted and settle it once Google has decided, without a person.
+
+        The post already exists on Google, so this only ever reads it (`get_local_post`);
+        nothing here can create a post. LIVE hands it to the publish handler's own
+        verification; REJECTED fails it; a 404 means it is not on Google; any other state
+        waits for the next check until the deadline, after which a person is asked. A
+        transient read failure never parks the post. Only a post still waiting on Google is
+        touched, and every check moves `updated_at`, so a second pass does nothing.
+        """
+        now = datetime.now(UTC)
+        publication = await session.scalar(
+            select(GBPPostPublication)
+            .where(
+                GBPPostPublication.organization_id == organization_id,
+                GBPPostPublication.id == publication_id,
+                GBPPostPublication.status == "reconciliation_required",
+                GBPPostPublication.safe_error_code == POST_NOT_YET_LIVE,
+                GBPPostPublication.provider_post_id.is_not(None),
+                GBPPostPublication.updated_at <= now - AMBIGUOUS_POST_REREAD_DELAY,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if publication is None or publication.provider_post_id is None:
+            return "skipped"
+        provider_post_id = publication.provider_post_id
+        correlation_id = f"gbp.post.auto_reconcile:{publication_id}"
+        # Record this check first: a failed or crashed read is still spaced by the delay.
+        publication.updated_at = now
+        await session.flush()
+
+        connection = connection or GBPConnectionService()
+        adapter = adapter or gbp_adapter()
+        try:
+            integration = await connection.get_connection(session, organization_id)
+            token = await connection.ensure_fresh_token(session, settings, integration)
+        except (IntegrationNotFoundError, IntegrationReconnectRequiredError):
+            return await self._park_ambiguous_post(
+                session, publication, GOOGLE_RECONNECT_REQUIRED, correlation_id
+            )
+        except Exception:
+            logger.warning(
+                "GBP accepted-post token resolution failed; will check again",
+                extra={
+                    "event_name": "gbp.post.auto_reconcile_accepted_token_failed",
+                    "publication_id": str(publication_id),
+                },
+            )
+            return "read_failed"
+
+        try:
+            provider_post = await adapter.get_local_post(token, provider_post_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return await self._settle_post_not_on_google(
+                    session, publication, correlation_id
+                )
+            return "read_failed"
+        except Exception:
+            logger.warning(
+                "GBP accepted-post read failed; will check again",
+                extra={
+                    "event_name": "gbp.post.auto_reconcile_accepted_read_failed",
+                    "publication_id": str(publication_id),
+                },
+            )
+            return "read_failed"
+
+        provider_state = str(provider_post.get("state", "")).upper()
+        if provider_state == "LIVE":
+            # Verification, including its content-mismatch rules, belongs to the publish
+            # handler: resume the run so exactly one code path decides "verified".
+            publication.safe_error_code = POST_RECOVERY_PROVIDER_MATCHED
+            await self.execution.enqueue_recovery_run(
+                session,
+                organization_id,
+                publication.workflow_run_id,
+                recovery_reference=f"gbp-post-publication:{publication.id}",
+                actor_id=None,
+                correlation_id=correlation_id,
+            )
+            await self._audit(
+                session,
+                event="gbp.post.auto_reconciled_live",
+                organization_id=organization_id,
+                location_id=None,
+                actor_id=None,
+                resource_type="gbp_post_publication",
+                resource_id=publication.id,
+                correlation_id=correlation_id,
+                summary="Google shows this post as live; verification resumed.",
+                metadata={"previous_code": POST_NOT_YET_LIVE},
+            )
+            return "verifying"
+        if provider_state == "REJECTED":
+            publication.status = "failed"
+            publication.safe_error_code = POST_REJECTED_BY_PROVIDER
+            await self._settle_publication_run(session, publication)
+            await self._audit(
+                session,
+                event="gbp.post.auto_reconciled_rejected",
+                organization_id=organization_id,
+                location_id=None,
+                actor_id=None,
+                resource_type="gbp_post_publication",
+                resource_id=publication.id,
+                correlation_id=correlation_id,
+                summary="Google rejected this post.",
+                metadata={"previous_code": POST_NOT_YET_LIVE},
+                result=AuditResult.FAILED,
+            )
+            return "failed"
+
+        deadline_from = publication.dispatched_at or publication.created_at
+        if now - deadline_from >= POST_NOT_LIVE_DEADLINE:
+            return await self._park_ambiguous_post(
+                session, publication, POST_NOT_LIVE_TIMEOUT, correlation_id
+            )
+        return "waiting"
+
+    async def _settle_post_not_on_google(
+        self, session: AsyncSession, publication: GBPPostPublication, correlation_id: str
+    ) -> str:
+        previous_code = publication.safe_error_code
+        publication.status = "not_published"
+        publication.safe_error_code = POST_NOT_ON_GOOGLE
+        await self._settle_publication_run(session, publication)
+        await self._audit(
+            session,
+            event="gbp.post.auto_reconciled_not_published",
+            organization_id=publication.organization_id,
+            location_id=None,
+            actor_id=None,
+            resource_type="gbp_post_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="Google does not show this post; it was not published.",
+            metadata={"previous_code": previous_code},
         )
         return "not_published"
 

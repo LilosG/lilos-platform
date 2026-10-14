@@ -416,6 +416,34 @@ def test_system_status_reports_what_the_tables_hold(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("settled_status", ["cancelled", "completed"])
+def test_a_dead_letter_of_a_run_that_later_settled_is_no_longer_unresolved(
+    platform_administration_client: Client,
+    platform_administration_session_factory: async_sessionmaker[AsyncSession],
+    settled_status: str,
+) -> None:
+    client, _verifier, _ids = platform_administration_client
+    organization = _create_organization(client, slug=f"settled-{settled_status}")
+    _seed_machinery(platform_administration_session_factory, organization["id"])
+
+    async def settle(session: AsyncSession) -> None:
+        await session.execute(
+            text(
+                "UPDATE workflow_runs SET status = :status "
+                "WHERE organization_id = :id AND status = 'failed'"
+            ),
+            {"id": UUID(organization["id"]), "status": settled_status},
+        )
+
+    _run(platform_administration_session_factory, settle)
+    queue = client.get("/api/v1/platform/system-status", headers=HEADERS).json()["data"][
+        "worker_queue"
+    ]
+    assert queue["dead_letter_count"] == 0
+    assert queue["dead_letter_groups"] == []
+
+
+@pytest.mark.integration
 def test_a_retired_clients_work_is_not_counted_against_the_platform(
     platform_administration_client: Client,
     platform_administration_session_factory: async_sessionmaker[AsyncSession],
