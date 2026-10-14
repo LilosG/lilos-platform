@@ -9,7 +9,7 @@ import {
   responseNote,
   reviewer,
 } from "../../lib/review-view";
-import { reviewChip } from "../../lib/status";
+import { reviewChip, reviewStateOf } from "../../lib/status";
 import EmptyState from "../ui/EmptyState.astro";
 import StatusBadge from "../ui/StatusBadge.astro";
 import ReviewerAvatar from "./ReviewerAvatar.astro";
@@ -22,13 +22,19 @@ const api = `/api/organizations/${v.organization_id}/locations/${v.location_id}/
 const who = reviewer(v.review);
 const chip = reviewChip(v.review.status, v.review.response_status);
 const [latest, ...earlier] = v.responses;
-const waitingOnVerify = v.responses.some(
-  (r) =>
-    (r.status === "awaiting_approval" && !r.can_approve) ||
-    (r.status === "approved" && !r.can_publish),
-);
+// Google no longer lists it: read-only, with any earlier response kept as history.
+const gone =
+  reviewStateOf(v.review.status, v.review.response_status) ===
+  "no_longer_on_google";
+const waitingOnVerify =
+  !gone &&
+  v.responses.some(
+    (r) =>
+      (r.status === "awaiting_approval" && !r.can_approve) ||
+      (r.status === "approved" && !r.can_publish),
+  );
 const mfa = `/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`;
-const draftable = latest?.status !== "published";
+const draftable = !gone && latest?.status !== "published";
 const back = `/clients/${Astro.params.clientSlug}/reviews/`;
 ---
 
@@ -36,7 +42,9 @@ const back = `/clients/${Astro.params.clientSlug}/reviews/`;
 <div class="reviewhead detailhead">
   <ReviewerAvatar who={who} />
   <div class="reviewwho">
-    <h2 id="review-detail-title">Reply to {who.name}</h2>
+    <h2 id="review-detail-title">
+      {gone ? `Review from ${who.name}` : `Reply to ${who.name}`}
+    </h2>
     <small>
       <Stars rating={v.review.rating} />
       <time datetime={v.review.created_at}>
@@ -57,6 +65,14 @@ const back = `/clients/${Astro.params.clientSlug}/reviews/`;
   )
 }
 <p class="formstatus" role="status" aria-live="polite" data-review-status></p>
+{
+  gone && (
+    <div class="insight">
+      Google no longer lists this review, so it can’t be replied to. It may come
+      back after the next import.
+    </div>
+  )
+}
 {
   waitingOnVerify && (
     <div class="insight">
@@ -90,30 +106,32 @@ const back = `/clients/${Astro.params.clientSlug}/reviews/`;
         )}
       </div>
       <blockquote class="quote">{latest.text}</blockquote>
-      {responseNote[latest.status] && (
+      {!gone && responseNote[latest.status] && (
         <p class="hint">{responseNote[latest.status]}</p>
       )}
-      <div class="rowactions">
-        <button
-          type="button"
-          class="control primary"
-          inert
-          data-review-action={api + latest.id + "/approve/"}
-          disabled={!latest.can_approve}
-        >
-          Approve this response
-        </button>
-        <button
-          type="button"
-          class="control primary"
-          inert
-          data-review-action={api + latest.id + "/publish/"}
-          data-key={`console-review-${latest.id}`}
-          disabled={!latest.can_publish}
-        >
-          Publish to Google
-        </button>
-      </div>
+      {!gone && (
+        <div class="rowactions">
+          <button
+            type="button"
+            class="control primary"
+            inert
+            data-review-action={api + latest.id + "/approve/"}
+            disabled={!latest.can_approve}
+          >
+            Approve this response
+          </button>
+          <button
+            type="button"
+            class="control primary"
+            inert
+            data-review-action={api + latest.id + "/publish/"}
+            data-key={`console-review-${latest.id}`}
+            disabled={!latest.can_publish}
+          >
+            Publish to Google
+          </button>
+        </div>
+      )}
     </section>
   )
 }

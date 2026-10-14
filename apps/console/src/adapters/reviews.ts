@@ -48,6 +48,7 @@ const workspace = z.object({
     })
     .nullable(),
   inventory_count: z.number().int().nonnegative().nullable(),
+  removed_count: z.number().int().nonnegative().nullable(),
   average_rating: z.number().nullable(),
   open_restricted_cases: z.number().int().nonnegative().nullable(),
   awaiting_response_count: z.number().int().nonnegative().nullable(),
@@ -160,11 +161,16 @@ export const REVIEW_FILTERS = [
   ["awaiting_approval", "Awaiting approval"],
   ["published", "Published"],
 ] as const;
-export type ReviewFilter = (typeof REVIEW_FILTERS)[number][0];
+/** Reviews Google no longer lists have a chip of their own, not a tab; they are never in "All". */
+export const REMOVED_FILTER = "removed";
+export type ReviewFilter =
+  (typeof REVIEW_FILTERS)[number][0] | typeof REMOVED_FILTER;
 export const reviewFilter = (raw: string | null): ReviewFilter | null =>
   raw === null || raw === ""
     ? "all"
-    : (REVIEW_FILTERS.find(([key]) => key === raw)?.[0] ?? null);
+    : raw === REMOVED_FILTER
+      ? REMOVED_FILTER
+      : (REVIEW_FILTERS.find(([key]) => key === raw)?.[0] ?? null);
 export function metric(value: number | null): string {
   return value === null ? "Unavailable" : String(value);
 }

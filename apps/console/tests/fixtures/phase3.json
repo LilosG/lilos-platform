@@ -18,6 +18,7 @@
       "limitation": "persisted_inventory_not_provider_total"
     },
     "inventory_count": 4,
+    "removed_count": 2,
     "average_rating": 4.0,
     "open_restricted_cases": 0,
     "items": [

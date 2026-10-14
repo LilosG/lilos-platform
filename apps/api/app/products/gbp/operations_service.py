@@ -1521,9 +1521,7 @@ class GBPOperationsService:
             provider_post = await adapter.get_local_post(token, provider_post_id)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                return await self._settle_post_not_on_google(
-                    session, publication, correlation_id
-                )
+                return await self._settle_post_not_on_google(session, publication, correlation_id)
             return "read_failed"
         except Exception:
             logger.warning(

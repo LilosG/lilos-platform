@@ -20,8 +20,8 @@ from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
 from apps.api.app.products.gbp.provider_write_outcome import classify_provider_write_failure
 from apps.api.app.products.gbp.resource_names import v4_review_name
-from apps.api.app.products.reviews.models import Review, ReviewResponseRevision
 from apps.api.app.products.reviews.errors import ReviewNoLongerOnProviderError
+from apps.api.app.products.reviews.models import Review, ReviewResponseRevision
 from apps.api.app.products.reviews.service import (
     PROVIDER_REPLY_STATE_UNSPECIFIED,
     REVIEW_REMOVED,

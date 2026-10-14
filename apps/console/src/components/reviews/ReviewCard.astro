@@ -67,7 +67,13 @@ const quote = reply && item.response_text ? item.response_text : null;
   }
   <div class="rowactions">
     <a class="control" href={href}>
-      {state === "published" ? "View response" : "Respond"}
+      {
+        state === "published"
+          ? "View response"
+          : state === "no_longer_on_google"
+            ? "View review"
+            : "Respond"
+      }
       <span class="sr-only"> to {who.name}</span>
     </a>
   </div>

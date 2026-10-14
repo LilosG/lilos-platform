@@ -258,7 +258,9 @@ async def test_rejected_fails_the_post_and_settles_its_run(
         run = await session.get(WorkflowRun, run_id)
     assert run is not None
     assert (run.status, run.failure_code) == ("cancelled", "GBP_POST_REJECTED")
-    assert await _audits(workflows_session_factory, org_id, "gbp.post.auto_reconciled_rejected") == 1
+    assert (
+        await _audits(workflows_session_factory, org_id, "gbp.post.auto_reconciled_rejected") == 1
+    )
     assert await _candidates(workflows_session_factory) == []
 
 
@@ -376,7 +378,9 @@ async def test_only_posts_google_accepted_and_due_are_selected_and_tenant_scoped
     workflows_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     org_id, pub_id, _ = await _seed(workflows_session_factory)
-    other_org, other_pub, _ = await _seed(workflows_session_factory, checked_ago=timedelta(minutes=1))
+    other_org, other_pub, _ = await _seed(
+        workflows_session_factory, checked_ago=timedelta(minutes=1)
+    )
     async with workflows_session_factory.begin() as session:
         never_confirmed, *_ = await _gbp_post(session)  # ambiguous: no provider_post_id
         del never_confirmed

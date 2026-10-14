@@ -166,6 +166,7 @@ export type ReviewState =
   | "published"
   | "needs_attention"
   | "escalated"
+  | "no_longer_on_google"
   | "closed";
 export const reviewChips: Record<ReviewState, Chip> = {
   needs_response: { label: "Needs response", tone: "warn" },
@@ -176,6 +177,7 @@ export const reviewChips: Record<ReviewState, Chip> = {
   published: { label: "Published", tone: "" },
   needs_attention: { label: "Needs attention", tone: "error" },
   escalated: { label: "Escalated", tone: "error" },
+  no_longer_on_google: { label: "No longer on Google", tone: "neutral" },
   closed: { label: "Closed", tone: "neutral" },
 };
 const responseState: Record<string, ReviewState> = {
@@ -194,7 +196,6 @@ const reviewState: Record<string, ReviewState> = {
   responded: "published",
   closed: "closed",
   archived: "closed",
-  removed: "closed",
   disputed: "closed",
 };
 export function reviewStateOf(
@@ -202,6 +203,8 @@ export function reviewStateOf(
   response: string | null,
 ): ReviewState {
   const reply = response ? responseState[response] : undefined;
+  // Google no longer lists it: any reply is history, so it outranks the reply's own state.
+  if (status === "removed") return "no_longer_on_google";
   if (status === "escalated") return "escalated";
   if (reply && reply !== "needs_attention") return reply;
   return reviewState[status] ?? reply ?? "needs_response";

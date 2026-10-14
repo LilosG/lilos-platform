@@ -52,7 +52,34 @@ describe("review metrics, filters and chips", () => {
   it("accepts only typed filters", () => {
     expect(reviewFilter(null)).toBe("all");
     expect(reviewFilter("published")).toBe("published");
+    expect(reviewFilter("removed")).toBe("removed");
     expect(reviewFilter("bogus")).toBeNull();
+  });
+  it("reads a review Google no longer lists as its own state, whatever its reply was", () => {
+    for (const reply of [null, "published", "awaiting_approval"])
+      expect(reviewChip("removed", reply)).toEqual({
+        label: "No longer on Google",
+        tone: "neutral",
+      });
+    // Closed and archived keep their own reading.
+    expect(reviewChip("closed", null).label).toBe("Closed");
+    expect(reviewChip("archived", null).label).toBe("Closed");
+  });
+  it("keeps a removed count apart from the inventory total", () => {
+    expect(view.removed_count).toBe(2);
+    expect(view.inventory_count).toBe(4);
+    expect(
+      adaptReviews({ ...fixtures.workspace, removed_count: null }, org)
+        .removed_count,
+    ).toBeNull();
+  });
+  it("explains a refused reply without showing its code", () => {
+    expect(failureMessage("REVIEW_NO_LONGER_ON_PROVIDER")).toMatch(
+      /no longer lists this review/,
+    );
+    expect(failureMessage("REVIEW_NO_LONGER_ON_PROVIDER")).not.toContain(
+      "REVIEW_NO_LONGER_ON_PROVIDER",
+    );
   });
   it("derives chips from typed state", () => {
     expect(reviewChip("classified", null).label).toBe("Needs response");

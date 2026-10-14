@@ -12,6 +12,29 @@ const phase4 = JSON.parse(
 const phase5 = JSON.parse(
   readFileSync(new URL("../fixtures/phase5.json", import.meta.url), "utf8"),
 );
+const removedReviews = [
+  {
+    ...phase3.workspace.items[0],
+    id: "33333333-3333-4333-8333-3333333333a1",
+    external_review_id: "synthetic-removed-1",
+    rating: 5,
+    body: "We held our anniversary dinner here and everything was perfect.",
+    status: "removed",
+    response_status: "published",
+    response_text: "Thank you so much, and happy anniversary!",
+    reviewer_display_name: "Morgan Example",
+  },
+  {
+    ...phase3.workspace.items[1],
+    id: "33333333-3333-4333-8333-3333333333a2",
+    external_review_id: "synthetic-removed-2",
+    rating: 1,
+    body: "Terrible. I will never come back.",
+    status: "removed",
+    response_status: null,
+    response_text: null,
+  },
+];
 const leadStates = new Map();
 let leadScenario = "inventory";
 let websiteMode = "default";
@@ -53,6 +76,7 @@ import {
   notConnected,
   reset as resetBeta,
   clearMedia,
+  addWaitingPosts,
 } from "./local-search-sim.mjs";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
@@ -228,6 +252,10 @@ createServer(async (req, res) => {
     return reply({ runs: automationState.runs });
   if (url.pathname === "/test/gbp-reset") {
     resetBeta();
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/gbp-waiting-posts") {
+    addWaitingPosts();
     return reply({ ok: true });
   }
   if (url.pathname === "/test/gbp-clear-media") {
@@ -669,6 +697,7 @@ createServer(async (req, res) => {
       Object.assign(data, {
         items: [],
         inventory_count: null,
+        removed_count: null,
         average_rating: null,
         open_restricted_cases: null,
         awaiting_response_count: null,
@@ -690,7 +719,10 @@ createServer(async (req, res) => {
       published: ["published"],
     };
     const wanted = url.searchParams.get("status");
-    if (wanted) {
+    // Reviews Google stopped listing are only returned when asked for by name.
+    if (wanted === "removed") {
+      data.items = removedReviews.map((r) => structuredClone(r));
+    } else if (wanted) {
       if (!(wanted in reviewTabs)) return reply({ code: "VALIDATION" }, 422);
       data.items = data.items.filter((r) => {
         const open = r.response_status === null;
@@ -703,6 +735,30 @@ createServer(async (req, res) => {
   if (path.startsWith("command-center/reviews/locations/")) {
     const data = structuredClone(phase3.detail);
     data.organization_id = claims.sub;
+    const gone = removedReviews.find((r) => path.endsWith(`/${r.id}`));
+    if (gone) {
+      Object.assign(data, {
+        review: structuredClone(gone),
+        can_draft: false,
+        can_ai_draft: false,
+      });
+      data.responses = gone.response_status
+        ? [
+            {
+              ...data.responses[0],
+              status: "published",
+              text: gone.response_text,
+              generated_by: "user",
+              published_at: "2026-09-12T12:00:00Z",
+              can_approve: false,
+              can_publish: false,
+              history: [],
+            },
+          ]
+        : [];
+      data.history = [];
+      return reply(data);
+    }
     if (
       path !==
       `command-center/reviews/locations/${data.location_id}/${data.review.id}`

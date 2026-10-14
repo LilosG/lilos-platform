@@ -1,7 +1,7 @@
 """Reviews Google stops returning are marked removed, guarded, restored, and never replied to."""
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -11,7 +11,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.audit.models import AuditEvent
-from apps.api.app.config import Settings
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.integrations.models import (
     IntegrationConnection,
@@ -23,7 +22,6 @@ from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.reviews.errors import ReviewNoLongerOnProviderError
-from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
 from apps.api.app.products.reviews.publish_handler import handle_reviews_publish_response
 from apps.api.app.products.reviews.service import ReviewService
@@ -103,6 +101,7 @@ def test_missing_reviews_are_marked_removed_with_one_audit_each_and_it_is_idempo
     factory, organization_id, _ = setup
     everything = _raw_reviews(60)
     _sync_now(setup, postgresql_test_url, everything, "first")
+
     # Give the reviews distinct ages so "recent" and "older" mean something.
     async def age() -> None:
         async with factory.begin() as session:
@@ -423,7 +422,9 @@ def test_the_service_refuses_every_reply_step_for_a_removed_review(
         codes: list[str] = []
         async with factory.begin() as session:
             review = (
-                await session.scalars(select(Review).where(Review.organization_id == organization_id))
+                await session.scalars(
+                    select(Review).where(Review.organization_id == organization_id)
+                )
             ).one()
             revision = (
                 await session.scalars(
@@ -450,7 +451,7 @@ def test_the_service_refuses_every_reply_step_for_a_removed_review(
             review.status = "removed"
             review_id = review.id
             awaiting_id, approved_id = responses[0].id, responses[1].id
-        calls = {
+        calls: dict[str, Callable[[AsyncSession], Awaitable[object]]] = {
             "approve": lambda s: service.approve(
                 s,
                 organization_id,

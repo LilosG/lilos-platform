@@ -24,7 +24,9 @@ CODE = "REVIEW_NO_LONGER_ON_PROVIDER"
 def _remove(postgresql_test_url: str, review_id: UUID) -> None:
     async def work(session: AsyncSession) -> None:
         async with session.begin():
-            await session.execute(update(Review).where(Review.id == review_id).values(status="removed"))
+            await session.execute(
+                update(Review).where(Review.id == review_id).values(status="removed")
+            )
 
     run_db(postgresql_test_url, work)
 
