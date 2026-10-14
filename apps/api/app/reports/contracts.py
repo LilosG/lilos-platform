@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
 from apps.api.app.routes.command_center_search import TrackedCount
@@ -539,8 +539,8 @@ class ReportGenerateRequest(Model):
 
 
 class ReportNarrativeUpdate(Model):
-    what_changed: str
-    next_work: str
+    what_changed: str = Field(max_length=4000)
+    next_work: str = Field(max_length=4000)
 
 
 class ReportMarkSentRequest(Model):

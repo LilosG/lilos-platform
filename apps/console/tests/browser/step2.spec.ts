@@ -227,6 +227,8 @@ test("A verified factor forces MFA before any page or BFF call, then elevates", 
 
 const BUILT = [
   "/opportunities/",
+  "/reports/",
+  "/clients/synthetic-alpha/reports/",
   "/automations/",
   "/clients/synthetic-alpha/automations/",
   "/clients/synthetic-alpha/local-search/",

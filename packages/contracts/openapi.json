@@ -15474,10 +15474,12 @@
         "additionalProperties": false,
         "properties": {
           "next_work": {
+            "maxLength": 4000,
             "title": "Next Work",
             "type": "string"
           },
           "what_changed": {
+            "maxLength": 4000,
             "title": "What Changed",
             "type": "string"
           }

@@ -7,9 +7,32 @@ const names = {
   b: ["Synthetic Beta", "synthetic-beta"],
 };
 export const state = { clients: {}, mode: "default" };
+const words = {
+  what_changed:
+    "Your profile was viewed 1,800 times in September, up from 1,530 in August, a rise of 18%. Calls, website clicks and direction requests together came to 515.",
+  next_work:
+    "We will keep publishing weekly posts, answer every review, and watch the private events search terms.",
+  origin: "hermes",
+};
+/** "draft": alpha has a written draft. "sent": alpha's report was approved and sent. */
 export function reset(mode = "default") {
   state.mode = mode;
   state.clients = {};
+  if (mode === "draft" || mode === "sent")
+    state.clients.a = {
+      revisions: [
+        {
+          revision: 1,
+          status: mode === "sent" ? "sent" : "draft",
+          approved_at: mode === "sent" ? "2026-10-02T17:00:00Z" : null,
+          delivery:
+            mode === "sent"
+              ? { sent_on: "2026-10-03", recorded_at: "2026-10-05T17:00:00Z" }
+              : null,
+          narrative: words,
+        },
+      ],
+    };
 }
 const keyOf = (ids, id) => (id === ids.a ? "a" : id === ids.b ? "b" : null);
 const store = (key) => (state.clients[key] ??= { revisions: [] });

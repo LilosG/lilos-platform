@@ -284,6 +284,91 @@ const websiteScreens = [
 // Step 5b: the Content tab, the composer, the draft review and the approval. The reference's
 // Content tab and its content dialog stand in for them; the console shows each in the scenario
 // that exercises it.
+// Step 10: Reports. The reference's Reports screens and report dialog stand in for each console
+// screen; the console shows each in the simulator scenario that exercises it.
+const reportsScenario = (mode) => () =>
+  fetch(`${beta}/test/reports-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+const alphaReports = "/clients/synthetic-alpha/reports/";
+const referenceReports = "/clients/coco-maya/reports/";
+const referenceOpenReport = async (page) => {
+  await page.getByRole("button", { name: "Open current report" }).click();
+  await page.locator("dialog[open]").waitFor();
+};
+const referenceSummary = async (page) => {
+  await page
+    .getByRole("button", { name: /(View|Open) summary/ })
+    .first()
+    .click();
+  await page.locator("dialog[open]").waitFor();
+};
+const openApprove = async (page) => {
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await page.locator("#report-confirm[open]").waitFor();
+};
+const reportScreens = [
+  [
+    "reports-portfolio",
+    "admin",
+    "/reports/",
+    "/reports/",
+    undefined,
+    reportsScenario("draft"),
+  ],
+  [
+    "reports-client-not-generated",
+    "admin",
+    alphaReports,
+    referenceReports,
+    undefined,
+    reportsScenario("default"),
+  ],
+  [
+    "reports-client-history",
+    "admin",
+    alphaReports,
+    referenceReports,
+    undefined,
+    reportsScenario("sent"),
+  ],
+  [
+    "reports-report-page",
+    "admin",
+    `${alphaReports}2026-09/`,
+    referenceReports,
+    undefined,
+    reportsScenario("draft"),
+    referenceOpenReport,
+  ],
+  [
+    "reports-approve-confirm",
+    "admin",
+    `${alphaReports}2026-09/`,
+    referenceReports,
+    openApprove,
+    reportsScenario("draft"),
+    referenceOpenReport,
+  ],
+  [
+    "reports-summary-dialog",
+    "admin",
+    `${alphaReports}2026-09/summary/`,
+    referenceReports,
+    undefined,
+    reportsScenario("sent"),
+    referenceSummary,
+  ],
+  [
+    "reports-error",
+    "admin",
+    "/reports/",
+    "/reports/",
+    undefined,
+    reportsScenario("error"),
+  ],
+];
 const hexId = (n) =>
   `${n.toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`;
 const readyDraft = `${site}content/${hexId(0xc1)}/`;
@@ -892,31 +977,33 @@ const side = async (browser, size, left, right) => {
 const activeScreens =
   stepName === "dashboard-gbp-actions"
     ? dashboardScreens
-    : stepName === "step-9d-reconciliation"
-      ? reconciliationScreens
-      : stepName === "step-5b-followup"
-        ? contentScreens.filter(([name]) =>
-            ["content-composer", "content-draft-review"].includes(name),
-          )
-        : stepName === "step-5b"
-          ? contentScreens
-          : stepName === "step-5a"
-            ? websiteScreens
-            : stepName === "step-9c-administration-tabs"
-              ? adminTabScreens
-              : stepName === "step-9b-administration"
-                ? adminScreens
-                : stepName === "step-9-publishing"
-                  ? publishingScreens
-                  : stepName === "step-8-automations"
-                    ? automationScreens
-                    : stepName === "step-6"
-                      ? reviewScreens
-                      : stepName === "special-hours-publish"
-                        ? screens.filter(
-                            ([name]) => name === "special-hours-list",
-                          )
-                        : screens;
+    : stepName === "step-10-reports"
+      ? reportScreens
+      : stepName === "step-9d-reconciliation"
+        ? reconciliationScreens
+        : stepName === "step-5b-followup"
+          ? contentScreens.filter(([name]) =>
+              ["content-composer", "content-draft-review"].includes(name),
+            )
+          : stepName === "step-5b"
+            ? contentScreens
+            : stepName === "step-5a"
+              ? websiteScreens
+              : stepName === "step-9c-administration-tabs"
+                ? adminTabScreens
+                : stepName === "step-9b-administration"
+                  ? adminScreens
+                  : stepName === "step-9-publishing"
+                    ? publishingScreens
+                    : stepName === "step-8-automations"
+                      ? automationScreens
+                      : stepName === "step-6"
+                        ? reviewScreens
+                        : stepName === "special-hours-publish"
+                          ? screens.filter(
+                              ([name]) => name === "special-hours-list",
+                            )
+                          : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
