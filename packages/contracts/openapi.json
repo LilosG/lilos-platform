@@ -15385,6 +15385,17 @@
             "title": "Organization Id",
             "type": "string"
           },
+          "removed_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed Count"
+          },
           "source": {
             "anyOf": [
               {
@@ -15402,6 +15413,7 @@
           "location_id",
           "source",
           "inventory_count",
+          "removed_count",
           "average_rating",
           "open_restricted_cases",
           "awaiting_response_count",
@@ -21348,7 +21360,8 @@
                 "needs_response",
                 "draft",
                 "awaiting_approval",
-                "published"
+                "published",
+                "removed"
               ],
               "title": "Status",
               "type": "string"

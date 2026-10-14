@@ -10551,6 +10551,8 @@ export interface components {
              * Format: uuid
              */
             organization_id: string;
+            /** Removed Count */
+            removed_count: number | null;
             source: components["schemas"]["ReviewSource"] | null;
         };
         /** RevisionCreate */
@@ -13292,7 +13294,7 @@ export interface operations {
             query?: {
                 location_id?: string | null;
                 offset?: number;
-                status?: "all" | "needs_response" | "draft" | "awaiting_approval" | "published";
+                status?: "all" | "needs_response" | "draft" | "awaiting_approval" | "published" | "removed";
             };
             header?: never;
             path: {

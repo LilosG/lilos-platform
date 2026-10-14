@@ -578,7 +578,7 @@ async def review_summary(
             func.avg(Review.rating),
             func.count(Review.id).filter(Review.review_created_at >= start),
         )
-        .where(Review.organization_id.in_(readable))
+        .where(Review.organization_id.in_(readable), Review.status != "removed")
         .group_by(Review.organization_id)
     ):
         result[organization_id] = ReviewRead(

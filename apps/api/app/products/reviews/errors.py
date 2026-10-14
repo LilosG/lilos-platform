@@ -78,3 +78,10 @@ class ReviewIngestionUnavailableError(ConflictError):
 
     code = "REVIEW_INGESTION_UNAVAILABLE"
     public_message = "Connect and map a Google Business Profile location before importing reviews."
+
+
+class ReviewNoLongerOnProviderError(ConflictError):
+    """The review is no longer listed by Google, so no reply can be drafted, approved or sent."""
+
+    code = "REVIEW_NO_LONGER_ON_PROVIDER"
+    public_message = "Google no longer lists this review, so it cannot be replied to."

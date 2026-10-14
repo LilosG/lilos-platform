@@ -9,6 +9,7 @@ publish any reply and preserves the approval workflow before publication.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, cast
 from uuid import UUID
 
@@ -30,12 +31,28 @@ from apps.api.app.products.reviews.models import Review, ReviewResponseRevision,
 from apps.api.app.products.reviews.service import (
     PROVIDER_OBSERVED_TYPE,
     PROVIDER_REPLY_STATE_UNSPECIFIED,
+    REVIEW_ARCHIVED,
+    REVIEW_REMOVED,
     ProviderReplyObservation,
     ReviewerObservation,
     ReviewService,
     lilos_publication_confirmation_lifecycle,
     provider_reply_hash,
 )
+
+PROVIDER_KEY = "google_business_profile"
+# A sync that would remove more than this share of a location's active reviews, and more than
+# the minimum count, is far more likely a bad or partial provider answer than a real purge.
+MASS_MISSING_SHARE = 0.25
+MASS_MISSING_MINIMUM = 10
+
+
+class ReviewSyncCode(StrEnum):
+    """Typed outcomes of comparing a complete provider list with what LILOs holds."""
+
+    MASS_MISSING = "REVIEW_SYNC_MASS_MISSING"
+    REMOVED_FROM_PROVIDER = "REVIEW_REMOVED_FROM_PROVIDER"
+
 
 _STAR_RATING = {
     "STAR_RATING_UNSPECIFIED": None,
@@ -284,6 +301,7 @@ class ReviewIngestionService:
 
         ingested = 0
         updated = 0
+        seen_review_ids: set[str] = set()
         for raw in raw_reviews:
             external_review_id = str(raw.get("reviewId") or "")
             if not external_review_id:
@@ -309,7 +327,7 @@ class ReviewIngestionService:
                 location_id=location_id,
                 integration_resource_id=mapping.id,
                 external_review_id=external_review_id,
-                provider="google_business_profile",
+                provider=PROVIDER_KEY,
                 rating=rating,
                 title=None,
                 body=body,
@@ -323,6 +341,18 @@ class ReviewIngestionService:
                 ingested += 1
             else:
                 updated += 1
+            seen_review_ids.add(external_review_id)
+
+        # Reached only when every review above ingested: a raised ingest skips this entirely.
+        removed = await self._mark_missing_removed(
+            session,
+            organization_id=organization_id,
+            location_id=location_id,
+            integration_resource_id=mapping.id,
+            seen_review_ids=seen_review_ids,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
 
         await self.audit.record(
             session,
@@ -345,8 +375,100 @@ class ReviewIngestionService:
                         "total": len(raw_reviews),
                         "ingested": ingested,
                         "updated": updated,
+                        "removed": removed,
                     },
                 ),
             ),
         )
-        return {"total": len(raw_reviews), "ingested": ingested, "updated": updated}
+        return {
+            "total": len(raw_reviews),
+            "ingested": ingested,
+            "updated": updated,
+            "removed": removed,
+        }
+
+    async def _mark_missing_removed(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        location_id: UUID,
+        integration_resource_id: UUID,
+        seen_review_ids: set[str],
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> int:
+        """Mark reviews Google did not return as removed; returns how many.
+
+        The adapter fails closed on a repeated page token or the page cap, so a list that
+        arrived is complete. Only reviews of this location and mapping are considered, and
+        an operator-archived review is left alone. An empty answer, or one that would remove
+        a large share of what is held, marks nothing and is recorded for a person instead.
+        """
+        active = list(
+            await session.scalars(
+                select(Review)
+                .where(
+                    Review.organization_id == organization_id,
+                    Review.location_id == location_id,
+                    Review.integration_resource_id == integration_resource_id,
+                    Review.provider == PROVIDER_KEY,
+                    Review.status.not_in((REVIEW_REMOVED, REVIEW_ARCHIVED)),
+                )
+                .order_by(Review.review_created_at, Review.id)
+                .with_for_update()
+            )
+        )
+        missing = [review for review in active if review.external_review_id not in seen_review_ids]
+        if not missing:
+            return 0
+        if not seen_review_ids or (
+            len(missing) > MASS_MISSING_MINIMUM and len(missing) > MASS_MISSING_SHARE * len(active)
+        ):
+            await self.audit.record(
+                session,
+                AuditEventCreate(
+                    event_type="reviews.sync.mass_missing",
+                    action="reviews.sync.mass_missing",
+                    result=AuditResult.PARTIALLY_SUCCEEDED,
+                    actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+                    actor_id=actor_id,
+                    organization_id=organization_id,
+                    location_id=location_id,
+                    product_key="reviews",
+                    resource_type="location",
+                    resource_id=location_id,
+                    correlation_id=correlation_id,
+                    summary="Review sync did not mark reviews as removed.",
+                    metadata=cast(
+                        dict[str, JsonValue],
+                        {
+                            "code": ReviewSyncCode.MASS_MISSING.value,
+                            "missing": len(missing),
+                            "active": len(active),
+                            "returned": len(seen_review_ids),
+                        },
+                    ),
+                ),
+            )
+            return 0
+        for review in missing:
+            previous_status = review.status
+            review.status = REVIEW_REMOVED
+            await self.reviews._audit(
+                session,
+                event="reviews.review.removed_from_provider",
+                organization_id=organization_id,
+                location_id=location_id,
+                actor_id=actor_id,
+                resource_type="review",
+                resource_id=review.id,
+                correlation_id=correlation_id,
+                summary="Google no longer lists this review.",
+                metadata={
+                    "code": ReviewSyncCode.REMOVED_FROM_PROVIDER.value,
+                    "previous_status": previous_status,
+                },
+            )
+        await session.flush()
+        return len(missing)
