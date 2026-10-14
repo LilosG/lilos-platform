@@ -53,15 +53,23 @@ def setup(
     yield reviews_session_factory, organization_id, location_id
 
 
-def _statuses(factory: async_sessionmaker[AsyncSession], organization_id: UUID) -> dict[str, str]:
+def _statuses(
+    factory: async_sessionmaker[AsyncSession],
+    organization_id: UUID,
+    location_id: UUID | None = None,
+) -> dict[str, str]:
+    """External review id -> status. Ids repeat across locations, so pass one to scope the map."""
+
     async def read() -> dict[str, str]:
         async with factory() as session:
-            rows = await session.execute(
-                select(Review.external_review_id, Review.status).where(
-                    Review.organization_id == organization_id
-                )
+            statement = select(Review.external_review_id, Review.status).where(
+                Review.organization_id == organization_id
             )
-            return {external: status for external, status in rows.all()}
+            if location_id is not None:
+                statement = statement.where(Review.location_id == location_id)
+            return {
+                external: status for external, status in (await session.execute(statement)).all()
+            }
 
     return asyncio.run(read())
 
@@ -362,8 +370,15 @@ def test_other_locations_mappings_and_tenants_are_never_touched(
 
     sibling_states, other_states = asyncio.run(untouched())
     assert "removed" not in sibling_states | other_states
-    statuses = _statuses(factory, organization_id)
-    assert sum(1 for value in statuses.values() if value == "removed") == 3 + 0
+    synced = _statuses(factory, organization_id, location_id)
+    assert {key for key, value in synced.items() if value == "removed"} == {
+        "review-0",
+        "review-1",
+        "review-2",
+    }
+    sibling = _statuses(factory, organization_id, sibling_id)
+    assert set(sibling) == {"review-0", "review-1", "review-2"}
+    assert "removed" not in sibling.values()
 
 
 @pytest.mark.integration
