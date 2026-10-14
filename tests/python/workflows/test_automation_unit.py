@@ -107,6 +107,7 @@ def test_canonical_workflow_types_registered() -> None:
         "leads.send_communication",
         "organization.remove",
         "reviews.ingest",
+        "reports.generate_monthly",
         "reviews.publish_response",
         "seo.analyze",
         "seo.apply_site_change",

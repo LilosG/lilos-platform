@@ -194,16 +194,16 @@ async def test_dry_run_changes_nothing_and_apply_creates_each_schedule_once(
         workflows_session_factory, apply=False, organization_id=client_id, now=NOW
     )
     assert not dry.applied
-    assert [c.action for c in dry.changes] == [Action.CREATE] * 8
+    assert [c.action for c in dry.changes] == [Action.CREATE] * 9
     assert await _schedules(workflows_session_factory, client_id) == []
 
     applied = await ensure_client_schedules(
         workflows_session_factory, apply=True, organization_id=client_id, now=NOW
     )
-    assert [c.action for c in applied.changes] == [Action.CREATE] * 8
+    assert [c.action for c in applied.changes] == [Action.CREATE] * 9
     schedules = await _schedules(workflows_session_factory, client_id)
     by_key = {schedule.key: schedule for schedule in schedules}
-    assert len(by_key) == 8
+    assert len(by_key) == 9
     assert {schedule.timezone for schedule in schedules} == {"America/Los_Angeles"}
     assert {schedule.status for schedule in schedules} == {"active"}
     assert all(schedule.next_run_at > NOW for schedule in schedules)
@@ -221,6 +221,11 @@ async def test_dry_run_changes_nothing_and_apply_creates_each_schedule_once(
     assert crawl.cron_expression == "0 7 * * 1"
     # Mondays at 07:00 Pacific, i.e. the Monday after the Friday we ran on.
     assert crawl.next_run_at == datetime(2026, 10, 5, 14, 0, tzinfo=UTC)
+    # The monthly report draft: 8:00 AM Pacific on the 1st (PDT until November 1st).
+    monthly = by_key["ensure:reports.generate_monthly"]
+    assert (monthly.cron_expression, monthly.timezone) == ("0 8 1 * *", "America/Los_Angeles")
+    assert monthly.location_id is None
+    assert monthly.next_run_at == datetime(2026, 11, 1, 16, 0, tzinfo=UTC)
     async with workflows_session_factory() as session:
         audited = await session.scalar(
             select(func.count())
@@ -230,7 +235,7 @@ async def test_dry_run_changes_nothing_and_apply_creates_each_schedule_once(
                 AuditEvent.event_type == "workflow.schedule.created",
             )
         )
-    assert audited == 8
+    assert audited == 9
 
 
 @pytest.mark.integration
@@ -289,7 +294,8 @@ async def test_missing_mappings_are_skipped_and_reported_not_scheduled(
         workflows_session_factory, apply=True, organization_id=bare_id, now=NOW
     )
 
-    assert report.changes == []
+    # Only the monthly report needs no source: every active client gets its draft job.
+    assert [c.wanted.workflow_key for c in report.changes] == ["reports.generate_monthly"]
     assert {(s.workflow_key, s.reason) for s in report.skipped} == {
         ("reviews.ingest", SkipReason.NO_MAPPED_GBP_LOCATION),
         ("gbp.sync", SkipReason.NO_MAPPED_GBP_LOCATION),
@@ -298,7 +304,9 @@ async def test_missing_mappings_are_skipped_and_reported_not_scheduled(
         ("insights.sync_analytics", SkipReason.NO_MAPPED_ANALYTICS_PROPERTY),
         ("seo.crawl_or_analysis", SkipReason.NO_ACTIVE_WEBSITE),
     }
-    assert await _schedules(workflows_session_factory, bare_id) == []
+    assert [s.key for s in await _schedules(workflows_session_factory, bare_id)] == [
+        "ensure:reports.generate_monthly"
+    ]
     assert any("NO_MAPPED_GBP_LOCATION" in line for line in format_report(report))
 
 
@@ -337,7 +345,7 @@ async def test_archived_organizations_wheyland_and_foreign_schedules_are_never_t
     assert await _schedules(workflows_session_factory, archived_id) == []
     assert await _schedules(workflows_session_factory, wheyland_id) == []
     keys = [s.key for s in await _schedules(workflows_session_factory, client_id)]
-    assert "weekly-gbp-post" in keys and len(keys) == 7  # six ensure:* plus the foreign one
+    assert "weekly-gbp-post" in keys and len(keys) == 8  # seven ensure:* plus the foreign one
     async with workflows_session_factory() as session:
         untouched = await session.get(Schedule, foreign_id)
         assert untouched is not None

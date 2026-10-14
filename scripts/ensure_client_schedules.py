@@ -15,8 +15,11 @@ and reported, never given a schedule that can only fail):
 * `seo.sync_search_console`   daily, one schedule, needs a mapped Search Console property
 * `insights.sync_analytics`   daily, one schedule, needs a mapped GA4 property
 * `seo.crawl_or_analysis`     weekly on Mondays, one schedule, needs an active SEO website
+* `reports.generate_monthly`  8:00 AM Pacific on the 1st, one schedule, no source needed: it
+                              writes a draft of the monthly report for the month that just ended
 
-Schedules run in the organization's own timezone and carry the key `ensure:<workflow>` (plus
+Schedules run in the organization's own timezone (the monthly report always runs in Pacific
+time) and carry the key `ensure:<workflow>` (plus
 `:<location id>` for reviews), so a re-run finds them again: a matching schedule is left alone,
 a drifted one (cron, timezone, paused or cancelled) is corrected, a missing one is created.
 Schedules this script did not create (for example Coco Maya's `gbp.generate_post`) are never
@@ -56,6 +59,12 @@ from apps.api.app.organizations.models import Organization
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.gbp.performance_service import mapped_gbp_locations
 from apps.api.app.products.seo.models import SEOSearchProperty, SEOWebsite
+from apps.api.app.reports.schedule import (
+    REPORT_CRON,
+    REPORT_SCHEDULE_KEY,
+    REPORT_TIMEZONE_NAME,
+    REPORT_WORKFLOW_KEY,
+)
 from scripts._cli import run_script
 
 EXIT_CONFLICT = 4
@@ -70,6 +79,7 @@ class Cadence(StrEnum):
     SEARCH_CONSOLE = "30 5 * * *"
     ANALYTICS = "0 6 * * *"
     CRAWL = "0 7 * * 1"
+    REPORTS = REPORT_CRON
 
 
 class SkipReason(StrEnum):
@@ -98,6 +108,8 @@ class Wanted:
     location_id: UUID | None
     # Locations an existing schedule may already be bound to without needing a change.
     acceptable_locations: tuple[UUID | None, ...] = ()
+    # A schedule that keeps its own clock instead of the organization's.
+    timezone: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +263,18 @@ async def wanted_schedules(
         )
     else:
         skip("seo.crawl_or_analysis", SkipReason.NO_ACTIVE_WEBSITE)
+
+    # Every active client gets a monthly report draft; the job itself skips a client that has
+    # no location still running a profile.
+    wanted.append(
+        Wanted(
+            REPORT_WORKFLOW_KEY,
+            REPORT_SCHEDULE_KEY,
+            Cadence.REPORTS,
+            None,
+            timezone=REPORT_TIMEZONE_NAME,
+        )
+    )
     return wanted, skipped
 
 
@@ -268,9 +292,9 @@ async def plan_organization(
 ) -> tuple[list[Change], list[Skipped]]:
     """Compare what the organization should have with what it has. Nothing is written."""
     wanted, skipped = await wanted_schedules(session, organization)
-    timezone = _timezone(organization)
     changes: list[Change] = []
     for item in wanted:
+        timezone = item.timezone or _timezone(organization)
         existing = await session.scalar(
             select(Schedule).where(
                 Schedule.organization_id == organization.id, Schedule.key == item.key
@@ -317,8 +341,8 @@ async def _apply(
     correlation_id: str,
     now: datetime,
 ) -> None:
-    timezone = _timezone(organization)
     item = change.wanted
+    timezone = item.timezone or _timezone(organization)
     if change.action is Action.CREATE:
         await execution.create_schedule(
             session,
