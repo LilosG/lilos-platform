@@ -100,13 +100,7 @@ test("Unbuilt screens share one typed state and show no content", async ({
   page,
 }) => {
   await login(page);
-  for (const path of [
-    "/reports/",
-    "/integrations/",
-    "/activity/",
-    "/attention/",
-    "/clients/synthetic-alpha/reports/",
-  ]) {
+  for (const path of ["/integrations/", "/activity/", "/attention/"]) {
     await page.goto(path);
     await expect(page.locator("[data-not-built]")).toHaveCount(1);
     await expect(page.locator("[data-not-built]")).toContainText(
@@ -233,6 +227,8 @@ test("A verified factor forces MFA before any page or BFF call, then elevates", 
 
 const BUILT = [
   "/opportunities/",
+  "/reports/",
+  "/clients/synthetic-alpha/reports/",
   "/automations/",
   "/clients/synthetic-alpha/automations/",
   "/clients/synthetic-alpha/local-search/",

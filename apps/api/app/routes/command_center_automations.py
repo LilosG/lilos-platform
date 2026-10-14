@@ -73,6 +73,7 @@ class WorkflowTypeCode(StrEnum):
     GBP_SYNC = "gbp.sync"
     GBP_SYNC_PERFORMANCE = "gbp.sync_performance"
     REVIEWS_INGEST = "reviews.ingest"
+    REPORTS_GENERATE_MONTHLY = "reports.generate_monthly"
     AGENT_GBP = "agent.gbp"
     AGENT_SEO = "agent.seo"
     AGENT_CONTENT = "agent.content"

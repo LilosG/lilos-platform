@@ -86,7 +86,12 @@ def period_windows(
         end = min(next_month - timedelta(days=1), last_day)
         current = DateRange(month, max(end, month))
         previous_start = months_before(month, 1)
-        previous = DateRange(previous_start, previous_start + timedelta(days=current.days - 1))
+        # The same number of days, but never past the end of that month: a 31-day March is
+        # compared with the whole of February, not with February plus the start of March.
+        previous = DateRange(
+            previous_start,
+            min(previous_start + timedelta(days=current.days - 1), month - timedelta(days=1)),
+        )
         return PeriodWindows(current, previous, month)
     days = _DAYS[period]
     current = DateRange(last_day - timedelta(days=days - 1), last_day)
@@ -291,6 +296,7 @@ async def _search_terms(
     month: date | None,
     *,
     ever_synced: bool,
+    limit: int | None = TOP_SEARCH_TERMS,
 ) -> SearchTerms:
     if month is None:
         latest = await session.scalar(
@@ -339,7 +345,7 @@ async def _search_terms(
     terms.sort(
         key=lambda t: (t.value is None, -(t.value or 0), -(t.below_threshold or 0), t.keyword)
     )
-    return SearchTerms(GBPPerformanceAvailability.AVAILABLE, month, terms[:TOP_SEARCH_TERMS])
+    return SearchTerms(GBPPerformanceAvailability.AVAILABLE, month, terms[:limit])
 
 
 async def _source(
@@ -394,6 +400,7 @@ async def read_performance(
     *,
     month: date | None = None,
     now: datetime | None = None,
+    search_term_limit: int | None = TOP_SEARCH_TERMS,
 ) -> PerformanceRead:
     today = (now or datetime.now(UTC)).astimezone(UTC).date()
     windows = period_windows(period, today=today, month=month)
@@ -414,7 +421,12 @@ async def read_performance(
         ever_synced=ever_synced,
     )
     terms = await _search_terms(
-        session, organization_id, gbp_location_ids, windows.month, ever_synced=ever_synced
+        session,
+        organization_id,
+        gbp_location_ids,
+        windows.month,
+        ever_synced=ever_synced,
+        limit=search_term_limit,
     )
     return PerformanceRead(
         windows=windows,

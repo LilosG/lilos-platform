@@ -15,6 +15,10 @@ import {
   type AutomationsPage,
 } from "../server/automation-loader";
 import { dialogView, filterQuery } from "../lib/automation-view";
+import PortfolioReports from "../components/reports/PortfolioReports.astro";
+import { loadPortfolioReports } from "../server/report-loader";
+import { parsePortfolioFilter } from "../lib/report-view";
+import type { PortfolioReports as PortfolioReportsView } from "../adapters/reports";
 import Opportunities from "../components/opportunities/Opportunities.astro";
 import {
   adaptOpportunityList,
@@ -115,6 +119,17 @@ if (area === "administration" && administration) {
       if ("system" in loaded) administrationSystem = loaded.system;
     }
   }
+}
+let reportsBoard: PortfolioReportsView | undefined;
+let reportsError = false;
+const reportFilter = parsePortfolioFilter(Astro.url.searchParams.get("filter"));
+if (area === "reports") {
+  if (reportFilter === null)
+    return new Response("Invalid filter", { status: 400 });
+  const loaded = await loadPortfolioReports(Astro.locals);
+  if (loaded.kind === "unauthenticated") return Astro.redirect("/login/", 303);
+  if (loaded.kind === "ok") reportsBoard = loaded.value;
+  else reportsError = true;
 }
 const days = reportingDays(Astro.url.searchParams.get("days"));
 if (days === null) return new Response("Invalid period", { status: 400 });
@@ -248,6 +263,18 @@ const title =
             automationsPage.multi,
           )}
         />
+      </Fragment>
+    ) : reportsBoard && reportFilter ? (
+      <PortfolioReports view={reportsBoard} filter={reportFilter} />
+    ) : reportsError ? (
+      <Fragment>
+        <PageHeader
+          title="Reports"
+          subtitle="Portfolio reporting readiness, delivery, and clients with incomplete data."
+        />
+        <ErrorState title="Reports are temporarily unavailable">
+          No sample data is substituted. Reload to try again.
+        </ErrorState>
       </Fragment>
     ) : failed ? (
       <Fragment>

@@ -12,7 +12,7 @@ INCLUSIVE startDate/endDate semantics. This module guarantees:
   and SEOSearchObservation persistence model
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 GA4_SYNC_TAIL_EXCLUSION_DAYS = 1
 GSC_SYNC_TAIL_EXCLUSION_DAYS = 2
@@ -85,3 +85,31 @@ def format_range_label(
         "end": provider_end_date(window_end),
         "days": days,
     }
+
+
+def first_of_month(day: date) -> date:
+    return day.replace(day=1)
+
+
+def calendar_month_window(month: date) -> tuple[datetime, datetime]:
+    """The half-open UTC window [first midnight, next month's first midnight) of a month."""
+    start = datetime(month.year, month.month, 1, tzinfo=UTC)
+    following = datetime(month.year + (month.month == 12), month.month % 12 + 1, 1, tzinfo=UTC)
+    return start, following
+
+
+def completed_months(today: date, count: int) -> list[date]:
+    """The first days of the ``count`` most recent calendar months that have ended, newest first."""
+    months: list[date] = []
+    cursor = first_of_month(today)
+    for _ in range(count):
+        cursor = first_of_month(cursor - timedelta(days=1))
+        months.append(cursor)
+    return months
+
+
+def month_is_final(month: date, today: date, tail_exclusion_days: int) -> bool:
+    """Whether the provider has settled every day of the month, given its reporting lag."""
+    _, following = calendar_month_window(month)
+    last_day = following.date() - timedelta(days=1)
+    return last_day <= today - timedelta(days=tail_exclusion_days)

@@ -66,6 +66,12 @@ import {
 } from "../../../server/automation-loader";
 import { dialogView, filterQuery } from "../../../lib/automation-view";
 import { clientAreaSlugs } from "../../../config/routes";
+import ClientReports from "../../../components/reports/ClientReports.astro";
+import ReportPage from "../../../components/reports/ReportPage.astro";
+import ReportSummary from "../../../components/reports/ReportSummary.astro";
+import { loadClientReports, loadReport } from "../../../server/report-loader";
+import { monthFromSlug } from "../../../lib/report-view";
+import type { ReportDetail, ReportList } from "../../../adapters/reports";
 import {
   loadOverview,
   reportingDays,
@@ -128,6 +134,7 @@ const builtSections = [
   "opportunities",
   "attention",
   "automations",
+  "reports",
   "settings",
 ];
 const notBuilt = section in clientAreaSlugs;
@@ -404,33 +411,62 @@ try {
   error =
     "This source is temporarily unavailable. No sample data is substituted.";
 }
+let reportsList: ReportList | undefined;
+let reportDetail: ReportDetail | undefined;
+let reportMode: "list" | "report" | "summary" | undefined;
+let reportsFailed = false;
+if (section === "reports") {
+  const month = segments[1] ? monthFromSlug(segments[1]) : null;
+  const revision = Astro.url.searchParams.get("revision");
+  const wanted = revision === null ? null : Number(revision);
+  if (
+    segments.length > 3 ||
+    (segments[1] && !month) ||
+    (segments[2] && segments[2] !== "summary") ||
+    (wanted !== null && (!Number.isInteger(wanted) || wanted < 1))
+  )
+    return new Response("Page not found", { status: 404 });
+  reportMode = !month ? "list" : segments[2] ? "summary" : "report";
+  const loaded = month
+    ? await loadReport(Astro.locals, client.organization_id, month, wanted)
+    : await loadClientReports(Astro.locals, client.organization_id);
+  if (loaded.kind === "unauthenticated") return Astro.redirect("/login/", 303);
+  if (loaded.kind === "notfound")
+    return new Response("Page not found", { status: 404 });
+  if (loaded.kind === "error") reportsFailed = true;
+  else if (month) reportDetail = loaded.value as ReportDetail;
+  else reportsList = loaded.value as ReportList;
+}
 const title =
-  section === "automations"
-    ? "Automations"
-    : section === "settings"
-      ? "Settings"
-      : section === "website-content"
-        ? "Website & Content"
-        : section === "leads"
-          ? "Leads"
-          : section === "reviews"
-            ? "Reviews"
-            : section === "local-search"
-              ? "Local Search"
-              : section === "integrations"
-                ? "Integrations"
-                : section === "opportunities"
-                  ? "Opportunities"
-                  : section === "attention"
-                    ? "Requires attention"
-                    : section
-                      ? section.replaceAll("-", " ")
-                      : client.organization_name;
+  section === "reports"
+    ? "Reports"
+    : section === "automations"
+      ? "Automations"
+      : section === "settings"
+        ? "Settings"
+        : section === "website-content"
+          ? "Website & Content"
+          : section === "leads"
+            ? "Leads"
+            : section === "reviews"
+              ? "Reviews"
+              : section === "local-search"
+                ? "Local Search"
+                : section === "integrations"
+                  ? "Integrations"
+                  : section === "opportunities"
+                    ? "Opportunities"
+                    : section === "attention"
+                      ? "Requires attention"
+                      : section
+                        ? section.replaceAll("-", " ")
+                        : client.organization_name;
 ---
 
 <AppLayout
   reference={overview !== undefined ||
     notBuilt ||
+    section === "reports" ||
     (section === "automations" && error === undefined) ||
     (section === "integrations" && error === undefined) ||
     settingsLocations !== undefined ||
@@ -453,6 +489,42 @@ const title =
   {
     overview ? (
       <Overview overview={overview} />
+    ) : section === "reports" && reportsFailed ? (
+      <Fragment>
+        <PageHeader
+          title="Reports"
+          subtitle="Monthly performance reports for this client."
+          client
+        />
+        <ErrorState title="Reports are temporarily unavailable">
+          We could not read the saved reports, so nothing is shown rather than a
+          guess.
+          <a slot="action" class="control primary" href={Astro.url.pathname}>
+            Try again
+          </a>
+        </ErrorState>
+      </Fragment>
+    ) : reportMode === "list" && reportsList ? (
+      <Fragment>
+        <PageHeader
+          title="Reports"
+          subtitle="Monthly performance reports, saved as approved."
+          client
+        />
+        <ClientReports
+          list={reportsList}
+          slug={client.organization_slug}
+          organization={client.organization_id}
+        />
+      </Fragment>
+    ) : reportMode === "report" && reportDetail ? (
+      <ReportPage
+        report={reportDetail}
+        api={`/api/organizations/${client.organization_id}/command-center/reports/`}
+        today={new Date().toISOString().slice(0, 10)}
+      />
+    ) : reportMode === "summary" && reportDetail ? (
+      <ReportSummary report={reportDetail} />
     ) : automationsPage?.kind === "detail" ? (
       <Fragment>
         <DialogFrame

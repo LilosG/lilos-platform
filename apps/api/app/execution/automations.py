@@ -136,6 +136,8 @@ class AutomationReason(StrEnum):
     # Profile sync and reviews ingestion
     GBP_SYNC_FAILED = "GBP_SYNC_FAILED"
     REVIEWS_INGEST_FAILED = "REVIEWS_INGEST_FAILED"
+    # The monthly client report draft
+    REPORT_GENERATION_FAILED = "REPORT_GENERATION_FAILED"
     # Search Console
     SEARCH_CONSOLE_SCOPE_REQUIRED = "SEARCH_CONSOLE_SCOPE_REQUIRED"
     SEARCH_PROPERTY_NOT_FOUND = "SEARCH_PROPERTY_NOT_FOUND"
@@ -247,6 +249,7 @@ FAILURE_POLICY: Final[dict[AutomationReason, Policy]] = {
     _R.GBP_PERFORMANCE_SYNC_FAILED: _attention(),
     _R.GBP_SYNC_FAILED: _attention(),
     _R.REVIEWS_INGEST_FAILED: _attention(),
+    _R.REPORT_GENERATION_FAILED: _attention(),
     _R.SEARCH_CONSOLE_SCOPE_REQUIRED: _attention(*_SEARCH),
     _R.SEARCH_PROPERTY_NOT_FOUND: _attention(*_SEARCH),
     _R.SEARCH_PROPERTY_NOT_CONFIGURED: _attention(*_SEARCH),

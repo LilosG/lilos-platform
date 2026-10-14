@@ -932,6 +932,7 @@
           "GBP_PERFORMANCE_SYNC_FAILED",
           "GBP_SYNC_FAILED",
           "REVIEWS_INGEST_FAILED",
+          "REPORT_GENERATION_FAILED",
           "SEARCH_CONSOLE_SCOPE_REQUIRED",
           "SEARCH_PROPERTY_NOT_FOUND",
           "SEARCH_PROPERTY_NOT_CONFIGURED",
@@ -1009,6 +1010,15 @@
           "not_run_yet"
         ],
         "title": "AutomationStatus",
+        "type": "string"
+      },
+      "Availability": {
+        "enum": [
+          "available",
+          "partial",
+          "unavailable"
+        ],
+        "title": "Availability",
         "type": "string"
       },
       "BlockerResolution": {
@@ -9594,6 +9604,60 @@
         "title": "MyOrganizationsResponse",
         "type": "object"
       },
+      "NarrativeFailureCode": {
+        "description": "Why a narrative draft was not kept. The previous narrative is left exactly as it was.",
+        "enum": [
+          "draft_failed",
+          "draft_malformed",
+          "draft_empty",
+          "number_not_in_data",
+          "authorship_mentioned",
+          "causal_claim"
+        ],
+        "title": "NarrativeFailureCode",
+        "type": "string"
+      },
+      "NarrativeOrigin": {
+        "enum": [
+          "none",
+          "hermes",
+          "manual"
+        ],
+        "title": "NarrativeOrigin",
+        "type": "string"
+      },
+      "NarrativeOutcome": {
+        "enum": [
+          "drafted",
+          "not_used"
+        ],
+        "title": "NarrativeOutcome",
+        "type": "string"
+      },
+      "NoteCode": {
+        "description": "Why part of a report is missing or approximate. The console turns each into a sentence.",
+        "enum": [
+          "gbp_not_connected",
+          "gbp_month_not_synced",
+          "gbp_month_partial",
+          "gbp_sync_failed",
+          "gbp_location_not_mapped",
+          "gbp_search_terms_unavailable",
+          "gbp_previous_month_incomplete",
+          "gbp_year_ago_unavailable",
+          "reviews_not_synced",
+          "search_console_not_connected",
+          "search_console_not_synced",
+          "search_console_lag_days",
+          "search_console_previous_month_unavailable",
+          "analytics_not_connected",
+          "analytics_not_synced",
+          "analytics_organic_unavailable",
+          "analytics_previous_month_unavailable"
+        ],
+        "title": "NoteCode",
+        "type": "string"
+      },
       "OffboardingCreate": {
         "additionalProperties": false,
         "properties": {
@@ -13354,6 +13418,145 @@
         "title": "PortfolioOverview",
         "type": "object"
       },
+      "PortfolioReportCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_data": {
+            "title": "Missing Data",
+            "type": "integer"
+          },
+          "needs_attention": {
+            "title": "Needs Attention",
+            "type": "integer"
+          },
+          "not_generated": {
+            "title": "Not Generated",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ready",
+          "needs_attention",
+          "missing_data",
+          "sent",
+          "not_generated"
+        ],
+        "title": "PortfolioReportCounts",
+        "type": "object"
+      },
+      "PortfolioReportRow": {
+        "additionalProperties": false,
+        "properties": {
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "readiness": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportReadiness"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "sent_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent On"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "slug",
+          "name",
+          "month",
+          "revision",
+          "status",
+          "readiness",
+          "sent_on"
+        ],
+        "title": "PortfolioReportRow",
+        "type": "object"
+      },
+      "PortfolioReportsView": {
+        "additionalProperties": false,
+        "properties": {
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/PortfolioReportRow"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/PortfolioReportCounts"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "counts",
+          "clients"
+        ],
+        "title": "PortfolioReportsView",
+        "type": "object"
+      },
       "PortfolioTotals": {
         "additionalProperties": false,
         "properties": {
@@ -14589,6 +14792,1540 @@
         ],
         "title": "RecoveryAction",
         "type": "string"
+      },
+      "ReportActionRow": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/GBPPerformanceMetric"
+          },
+          "reported": {
+            "title": "Reported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "metric",
+          "comparison",
+          "reported"
+        ],
+        "title": "ReportActionRow",
+        "type": "object"
+      },
+      "ReportAnalyticsSection": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "organic_sessions": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "availability",
+          "organic_sessions"
+        ],
+        "title": "ReportAnalyticsSection",
+        "type": "object"
+      },
+      "ReportCountComparison": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "current": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "year_ago": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportCountFigure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "year_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Change"
+          },
+          "year_change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Change Percent"
+          }
+        },
+        "required": [
+          "current",
+          "previous"
+        ],
+        "title": "ReportCountComparison",
+        "type": "object"
+      },
+      "ReportCountFigure": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "days_covered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Covered"
+          },
+          "days_expected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Expected"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "availability"
+        ],
+        "title": "ReportCountFigure",
+        "type": "object"
+      },
+      "ReportDailyPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "views": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Views"
+          }
+        },
+        "required": [
+          "day",
+          "views",
+          "actions"
+        ],
+        "title": "ReportDailyPoint",
+        "type": "object"
+      },
+      "ReportDailySeries": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "days_expected": {
+            "title": "Days Expected",
+            "type": "integer"
+          },
+          "days_synced": {
+            "title": "Days Synced",
+            "type": "integer"
+          },
+          "missing_days": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Missing Days",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ReportDailyPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "availability",
+          "days_expected",
+          "days_synced",
+          "missing_days",
+          "points"
+        ],
+        "title": "ReportDailySeries",
+        "type": "object"
+      },
+      "ReportDataNote": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/NoteCode"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "section": {
+            "$ref": "#/components/schemas/SectionKey"
+          }
+        },
+        "required": [
+          "code",
+          "section"
+        ],
+        "title": "ReportDataNote",
+        "type": "object"
+      },
+      "ReportDeliveryView": {
+        "additionalProperties": false,
+        "properties": {
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "sent_on": {
+            "format": "date",
+            "title": "Sent On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sent_on",
+          "recorded_at"
+        ],
+        "title": "ReportDeliveryView",
+        "type": "object"
+      },
+      "ReportDetailView": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "client_slug": {
+            "title": "Client Slug",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportDeliveryView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "narrative": {
+            "$ref": "#/components/schemas/ReportNarrative"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/ReportPermissions"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/ReportReadiness"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "revision_count": {
+            "title": "Revision Count",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/ReportSnapshot"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          }
+        },
+        "required": [
+          "organization_id",
+          "client_name",
+          "client_slug",
+          "month",
+          "revision",
+          "revision_count",
+          "status",
+          "readiness",
+          "is_current",
+          "created_at",
+          "approved_at",
+          "delivery",
+          "snapshot",
+          "narrative",
+          "permissions"
+        ],
+        "title": "ReportDetailView",
+        "type": "object"
+      },
+      "ReportGbpSection": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/ReportProfileActions"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "current_range": {
+            "$ref": "#/components/schemas/ReportRange"
+          },
+          "daily": {
+            "$ref": "#/components/schemas/ReportDailySeries"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/ReportLocationRow"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "previous_range": {
+            "$ref": "#/components/schemas/ReportRange"
+          },
+          "profile_views": {
+            "$ref": "#/components/schemas/ReportProfileViews"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "search_terms": {
+            "$ref": "#/components/schemas/ReportSearchTerms"
+          },
+          "through_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Through Date"
+          },
+          "year_ago_range": {
+            "$ref": "#/components/schemas/ReportRange"
+          }
+        },
+        "required": [
+          "availability",
+          "current_range",
+          "previous_range",
+          "year_ago_range",
+          "through_date",
+          "profile_views",
+          "actions",
+          "daily",
+          "search_terms",
+          "locations"
+        ],
+        "title": "ReportGbpSection",
+        "type": "object"
+      },
+      "ReportGenerateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month"
+        ],
+        "title": "ReportGenerateRequest",
+        "type": "object"
+      },
+      "ReportGenerateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "report": {
+            "$ref": "#/components/schemas/ReportDetailView"
+          }
+        },
+        "required": [
+          "report",
+          "created"
+        ],
+        "title": "ReportGenerateResult",
+        "type": "object"
+      },
+      "ReportListView": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportRevisionRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_month": {
+            "format": "date",
+            "title": "Current Month",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ReportRevisionRow"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/ReportPermissions"
+          },
+          "upcoming": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportUpcoming"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "current_month",
+          "current",
+          "history",
+          "upcoming",
+          "permissions"
+        ],
+        "title": "ReportListView",
+        "type": "object"
+      },
+      "ReportLocationRow": {
+        "additionalProperties": false,
+        "properties": {
+          "calls": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "direction_requests": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "location_id": {
+            "format": "uuid",
+            "title": "Location Id",
+            "type": "string"
+          },
+          "mapped": {
+            "title": "Mapped",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "profile_views": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "website_clicks": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          }
+        },
+        "required": [
+          "location_id",
+          "name",
+          "mapped",
+          "profile_views",
+          "calls",
+          "website_clicks",
+          "direction_requests"
+        ],
+        "title": "ReportLocationRow",
+        "type": "object"
+      },
+      "ReportMarkSentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "sent_on": {
+            "format": "date",
+            "title": "Sent On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sent_on"
+        ],
+        "title": "ReportMarkSentRequest",
+        "type": "object"
+      },
+      "ReportNarrative": {
+        "additionalProperties": false,
+        "description": "The two prose sections. Written by a person, or drafted and then reviewed by one.",
+        "properties": {
+          "next_work": {
+            "default": "",
+            "title": "Next Work",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/NarrativeOrigin",
+            "default": "none"
+          },
+          "what_changed": {
+            "default": "",
+            "title": "What Changed",
+            "type": "string"
+          }
+        },
+        "title": "ReportNarrative",
+        "type": "object"
+      },
+      "ReportNarrativeDraftResult": {
+        "additionalProperties": false,
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NarrativeFailureCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/NarrativeOutcome"
+          },
+          "report": {
+            "$ref": "#/components/schemas/ReportDetailView"
+          }
+        },
+        "required": [
+          "report",
+          "outcome"
+        ],
+        "title": "ReportNarrativeDraftResult",
+        "type": "object"
+      },
+      "ReportNarrativeUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "next_work": {
+            "maxLength": 4000,
+            "title": "Next Work",
+            "type": "string"
+          },
+          "what_changed": {
+            "maxLength": 4000,
+            "title": "What Changed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "what_changed",
+          "next_work"
+        ],
+        "title": "ReportNarrativeUpdate",
+        "type": "object"
+      },
+      "ReportPermissions": {
+        "additionalProperties": false,
+        "properties": {
+          "can_generate": {
+            "title": "Can Generate",
+            "type": "boolean"
+          },
+          "can_publish": {
+            "title": "Can Publish",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_generate",
+          "can_publish"
+        ],
+        "title": "ReportPermissions",
+        "type": "object"
+      },
+      "ReportProfileActions": {
+        "additionalProperties": false,
+        "properties": {
+          "action_rate": {
+            "$ref": "#/components/schemas/ReportRateComparison"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ReportActionRow"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "optional": {
+            "items": {
+              "$ref": "#/components/schemas/ReportActionRow"
+            },
+            "title": "Optional",
+            "type": "array"
+          },
+          "total": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          }
+        },
+        "required": [
+          "total",
+          "action_rate",
+          "actions",
+          "optional"
+        ],
+        "title": "ReportProfileActions",
+        "type": "object"
+      },
+      "ReportProfileViews": {
+        "additionalProperties": false,
+        "properties": {
+          "desktop_mobile": {
+            "$ref": "#/components/schemas/ReportSplit"
+          },
+          "maps_search": {
+            "$ref": "#/components/schemas/ReportSplit"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSourceRow"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "total": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          }
+        },
+        "required": [
+          "total",
+          "sources",
+          "maps_search",
+          "desktop_mobile"
+        ],
+        "title": "ReportProfileViews",
+        "type": "object"
+      },
+      "ReportRange": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "days"
+        ],
+        "title": "ReportRange",
+        "type": "object"
+      },
+      "ReportRateComparison": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "current": {
+            "$ref": "#/components/schemas/ReportRateFigure"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/ReportRateFigure"
+          },
+          "year_ago": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportRateFigure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "year_change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Change"
+          }
+        },
+        "required": [
+          "current",
+          "previous"
+        ],
+        "title": "ReportRateComparison",
+        "type": "object"
+      },
+      "ReportRateFigure": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "availability"
+        ],
+        "title": "ReportRateFigure",
+        "type": "object"
+      },
+      "ReportReadiness": {
+        "enum": [
+          "ready",
+          "ready_with_note",
+          "missing_data"
+        ],
+        "title": "ReportReadiness",
+        "type": "string"
+      },
+      "ReportReviewsSection": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "average_rating_in_month": {
+            "$ref": "#/components/schemas/ReportRateFigure"
+          },
+          "average_rating_overall": {
+            "$ref": "#/components/schemas/ReportRateFigure"
+          },
+          "distribution_month": {
+            "items": {
+              "$ref": "#/components/schemas/ReportStarCount"
+            },
+            "title": "Distribution Month",
+            "type": "array"
+          },
+          "distribution_overall": {
+            "items": {
+              "$ref": "#/components/schemas/ReportStarCount"
+            },
+            "title": "Distribution Overall",
+            "type": "array"
+          },
+          "new_in_month": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "responded_to_new": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "response_rate_percent": {
+            "$ref": "#/components/schemas/ReportRateFigure"
+          },
+          "responses_published": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "total_count": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          }
+        },
+        "required": [
+          "availability",
+          "new_in_month",
+          "average_rating_in_month",
+          "average_rating_overall",
+          "total_count",
+          "responses_published",
+          "responded_to_new",
+          "response_rate_percent",
+          "distribution_overall",
+          "distribution_month"
+        ],
+        "title": "ReportReviewsSection",
+        "type": "object"
+      },
+      "ReportRevisionRow": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportDeliveryView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/ReportReadiness"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          }
+        },
+        "required": [
+          "month",
+          "revision",
+          "status",
+          "readiness",
+          "is_current",
+          "created_at",
+          "approved_at",
+          "delivery"
+        ],
+        "title": "ReportRevisionRow",
+        "type": "object"
+      },
+      "ReportSearchConsoleSection": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "average_position": {
+            "$ref": "#/components/schemas/ReportRateComparison"
+          },
+          "clicks": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "ctr_percent": {
+            "$ref": "#/components/schemas/ReportRateComparison"
+          },
+          "impressions": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "lag_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Days"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "top_pages": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSearchPageRow"
+            },
+            "title": "Top Pages",
+            "type": "array"
+          },
+          "top_queries": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSearchQueryRow"
+            },
+            "title": "Top Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "availability",
+          "clicks",
+          "impressions",
+          "ctr_percent",
+          "average_position",
+          "top_queries",
+          "top_pages"
+        ],
+        "title": "ReportSearchConsoleSection",
+        "type": "object"
+      },
+      "ReportSearchPageRow": {
+        "additionalProperties": false,
+        "properties": {
+          "clicks": {
+            "title": "Clicks",
+            "type": "integer"
+          },
+          "clicks_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Change"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "impressions": {
+            "title": "Impressions",
+            "type": "integer"
+          },
+          "page": {
+            "title": "Page",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "previous_clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Clicks"
+          }
+        },
+        "required": [
+          "page",
+          "clicks",
+          "impressions",
+          "ctr",
+          "position",
+          "previous_clicks",
+          "clicks_change"
+        ],
+        "title": "ReportSearchPageRow",
+        "type": "object"
+      },
+      "ReportSearchQueryRow": {
+        "additionalProperties": false,
+        "properties": {
+          "clicks": {
+            "title": "Clicks",
+            "type": "integer"
+          },
+          "clicks_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Change"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "impressions": {
+            "title": "Impressions",
+            "type": "integer"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "previous_clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Clicks"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "clicks",
+          "impressions",
+          "ctr",
+          "position",
+          "previous_clicks",
+          "clicks_change"
+        ],
+        "title": "ReportSearchQueryRow",
+        "type": "object"
+      },
+      "ReportSearchTerm": {
+        "additionalProperties": false,
+        "properties": {
+          "below_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Below Threshold"
+          },
+          "is_exact": {
+            "title": "Is Exact",
+            "type": "boolean"
+          },
+          "keyword": {
+            "title": "Keyword",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "keyword",
+          "value",
+          "below_threshold",
+          "is_exact"
+        ],
+        "title": "ReportSearchTerm",
+        "type": "object"
+      },
+      "ReportSearchTerms": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnavailableReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSearchTerm"
+            },
+            "title": "Terms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "availability",
+          "terms"
+        ],
+        "title": "ReportSearchTerms",
+        "type": "object"
+      },
+      "ReportSnapshot": {
+        "additionalProperties": false,
+        "description": "Everything computed for one organization and one month. Deterministic and typed.",
+        "properties": {
+          "analytics": {
+            "$ref": "#/components/schemas/ReportAnalyticsSection"
+          },
+          "gbp": {
+            "$ref": "#/components/schemas/ReportGbpSection"
+          },
+          "local_rank": {
+            "$ref": "#/components/schemas/TrackedCount"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/ReportDataNote"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/ReportReadiness"
+          },
+          "reviews": {
+            "$ref": "#/components/schemas/ReportReviewsSection"
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "search_console": {
+            "$ref": "#/components/schemas/ReportSearchConsoleSection"
+          },
+          "work": {
+            "$ref": "#/components/schemas/ReportWorkSection"
+          }
+        },
+        "required": [
+          "month",
+          "readiness",
+          "notes",
+          "gbp",
+          "reviews",
+          "search_console",
+          "analytics",
+          "local_rank",
+          "work"
+        ],
+        "title": "ReportSnapshot",
+        "type": "object"
+      },
+      "ReportSourceRow": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison": {
+            "$ref": "#/components/schemas/ReportCountComparison"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/GBPPerformanceMetric"
+          }
+        },
+        "required": [
+          "metric",
+          "comparison"
+        ],
+        "title": "ReportSourceRow",
+        "type": "object"
+      },
+      "ReportSplit": {
+        "additionalProperties": false,
+        "properties": {
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/ReportSplitPart"
+            },
+            "title": "Parts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parts"
+        ],
+        "title": "ReportSplit",
+        "type": "object"
+      },
+      "ReportSplitPart": {
+        "additionalProperties": false,
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "key": {
+            "$ref": "#/components/schemas/SplitKey"
+          },
+          "share_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Percent"
+          }
+        },
+        "required": [
+          "key",
+          "figure"
+        ],
+        "title": "ReportSplitPart",
+        "type": "object"
+      },
+      "ReportStarCount": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "stars": {
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "title": "Stars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stars",
+          "count"
+        ],
+        "title": "ReportStarCount",
+        "type": "object"
+      },
+      "ReportStatus": {
+        "description": "Where a report is in its life: written, approved by a person, or recorded as sent.",
+        "enum": [
+          "draft",
+          "ready",
+          "sent"
+        ],
+        "title": "ReportStatus",
+        "type": "string"
+      },
+      "ReportUpcoming": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/UpcomingKind"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "title": "Next Run At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "next_run_at",
+          "month"
+        ],
+        "title": "ReportUpcoming",
+        "type": "object"
+      },
+      "ReportWorkGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkKind"
+          },
+          "titles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Titles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "count",
+          "titles"
+        ],
+        "title": "ReportWorkGroup",
+        "type": "object"
+      },
+      "ReportWorkSection": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ReportWorkGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "title": "ReportWorkSection",
+        "type": "object"
       },
       "ReportingRange": {
         "properties": {
@@ -16582,6 +18319,23 @@
         "title": "SearchView",
         "type": "object"
       },
+      "SectionKey": {
+        "enum": [
+          "profile_views",
+          "profile_actions",
+          "daily_series",
+          "search_terms",
+          "locations",
+          "reviews",
+          "search_console",
+          "analytics",
+          "local_rank",
+          "work_completed",
+          "narrative"
+        ],
+        "title": "SectionKey",
+        "type": "string"
+      },
       "ServiceAssignmentCreate": {
         "additionalProperties": false,
         "properties": {
@@ -16854,6 +18608,16 @@
         ],
         "title": "SpecialHoursRetry",
         "type": "object"
+      },
+      "SplitKey": {
+        "enum": [
+          "maps",
+          "search",
+          "desktop",
+          "mobile"
+        ],
+        "title": "SplitKey",
+        "type": "string"
       },
       "StatusEvent": {
         "additionalProperties": false,
@@ -17280,6 +19044,21 @@
         "title": "TrackedCount",
         "type": "object"
       },
+      "UnavailableReason": {
+        "enum": [
+          "not_connected",
+          "not_synced",
+          "no_data",
+          "not_reported",
+          "partial_period",
+          "no_views",
+          "not_tracked",
+          "not_compared",
+          "source_unavailable"
+        ],
+        "title": "UnavailableReason",
+        "type": "string"
+      },
       "UnmappedProfile": {
         "properties": {
           "business_name": {
@@ -17339,6 +19118,13 @@
         ],
         "title": "UpcomingItem",
         "type": "object"
+      },
+      "UpcomingKind": {
+        "enum": [
+          "generate_monthly_report"
+        ],
+        "title": "UpcomingKind",
+        "type": "string"
       },
       "UserClientAccess": {
         "additionalProperties": false,
@@ -18210,6 +19996,17 @@
         "title": "WorkItem",
         "type": "object"
       },
+      "WorkKind": {
+        "enum": [
+          "gbp_post",
+          "website_content",
+          "review_response",
+          "gbp_profile_change",
+          "website_change"
+        ],
+        "title": "WorkKind",
+        "type": "string"
+      },
       "WorkerQueueComponent": {
         "additionalProperties": false,
         "properties": {
@@ -18327,6 +20124,7 @@
           "gbp.sync",
           "gbp.sync_performance",
           "reviews.ingest",
+          "reports.generate_monthly",
           "agent.gbp",
           "agent.seo",
           "agent.content",
@@ -19060,6 +20858,57 @@
           }
         },
         "summary": "Portfolio Overview",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/reports": {
+      "get": {
+        "description": "Every client the caller may read, with the latest report of one month and its status.",
+        "operationId": "portfolio_reports_api_v1_command_center_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioReportsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Reports",
         "tags": [
           "command-center"
         ]
@@ -21301,6 +23150,444 @@
           }
         },
         "summary": "Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports": {
+      "get": {
+        "description": "The client's current report, every stored revision, and the next scheduled run.",
+        "operationId": "list_reports_api_v1_organizations__organization_id__command_center_reports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportListView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reports",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/generate": {
+      "post": {
+        "description": "Compute a month from stored data. Identical data returns the existing draft.",
+        "operationId": "generate_report_api_v1_organizations__organization_id__command_center_reports_generate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportGenerateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Generate Report",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}": {
+      "get": {
+        "description": "One stored revision exactly as it was saved.",
+        "operationId": "report_detail_api_v1_organizations__organization_id__command_center_reports__month___revision__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/approve": {
+      "post": {
+        "description": "Approve the exact revision shown. Approved revisions are immutable.",
+        "operationId": "approve_report_api_v1_organizations__organization_id__command_center_reports__month___revision__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Report",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/draft-narrative": {
+      "post": {
+        "description": "Ask Hermes for a draft of the narrative. A draft that fails a check is not used.",
+        "operationId": "draft_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__draft_narrative_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportNarrativeDraftResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft Narrative",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/mark-sent": {
+      "post": {
+        "description": "Record that a person sent the approved report on the given day. Sends nothing.",
+        "operationId": "mark_report_sent_api_v1_organizations__organization_id__command_center_reports__month___revision__mark_sent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportMarkSentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Report Sent",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/narrative": {
+      "put": {
+        "description": "Replace a draft's narrative. An approved revision cannot be edited.",
+        "operationId": "update_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__narrative_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportNarrativeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Narrative",
         "tags": [
           "command-center"
         ]

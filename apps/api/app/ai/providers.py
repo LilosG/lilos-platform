@@ -17,6 +17,7 @@ from apps.api.app.ai.completion_text import (
     strip_code_fence,
 )
 from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+from apps.api.app.ai.report_prompt import build_report_narrative_prompt
 from apps.api.app.products.content.link_validation import (
     InventoryPage,
     build_inventory,
@@ -588,6 +589,10 @@ class OpenRouterProvider:
                 plan = _extract_json_object(content_text)
                 draft = json.dumps(plan, sort_keys=True)
                 content_fields["plan"] = plan
+            elif task_key == "reports.narrative_draft":
+                narrative = _extract_json_object(content_text)
+                draft = json.dumps(narrative, sort_keys=True)
+                content_fields["narrative"] = narrative
             else:
                 draft = extract_draft(content_text, subject="AI provider")
         except DraftExtractionError as error:
@@ -808,6 +813,9 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             parts.append(f"\nTASK-SPECIFIC INSTRUCTIONS:\n{instructions}")
         parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
         return "\n".join(parts)
+
+    if task_key == "reports.narrative_draft":
+        return build_report_narrative_prompt(input_document)
 
     if task_key == "content.compose_plan":
         return _build_compose_plan_prompt(input_document)

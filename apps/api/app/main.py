@@ -28,6 +28,10 @@ from apps.api.app.routes.command_center_portfolio import router as command_cente
 from apps.api.app.routes.command_center_publishing import (
     router as command_center_publishing_router,
 )
+from apps.api.app.routes.command_center_reports import (
+    portfolio_router as command_center_reports_portfolio_router,
+)
+from apps.api.app.routes.command_center_reports import router as command_center_reports_router
 from apps.api.app.routes.command_center_reviews import router as command_center_reviews_router
 from apps.api.app.routes.command_center_search import router as command_center_search_router
 from apps.api.app.routes.command_center_website import router as command_center_website_router
@@ -110,6 +114,8 @@ def create_app(
     application.include_router(command_center_website_router)
     application.include_router(command_center_automations_router)
     application.include_router(command_center_portfolio_router)
+    application.include_router(command_center_reports_router)
+    application.include_router(command_center_reports_portfolio_router)
     application.include_router(health_router)
     application.include_router(hermes_tools_router)
     application.include_router(api_v1_router)

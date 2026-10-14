@@ -207,6 +207,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/command-center/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Portfolio Reports
+         * @description Every client the caller may read, with the latest report of one month and its status.
+         */
+        get: operations["portfolio_reports_api_v1_command_center_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integrations/github/callback": {
         parameters: {
             query?: never;
@@ -915,6 +935,146 @@ export interface paths {
         /** Detail */
         get: operations["detail_api_v1_organizations__organization_id__command_center_opportunities__opportunity_id__get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reports
+         * @description The client's current report, every stored revision, and the next scheduled run.
+         */
+        get: operations["list_reports_api_v1_organizations__organization_id__command_center_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Report
+         * @description Compute a month from stored data. Identical data returns the existing draft.
+         */
+        post: operations["generate_report_api_v1_organizations__organization_id__command_center_reports_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Report Detail
+         * @description One stored revision exactly as it was saved.
+         */
+        get: operations["report_detail_api_v1_organizations__organization_id__command_center_reports__month___revision__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Report
+         * @description Approve the exact revision shown. Approved revisions are immutable.
+         */
+        post: operations["approve_report_api_v1_organizations__organization_id__command_center_reports__month___revision__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/draft-narrative": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Narrative
+         * @description Ask Hermes for a draft of the narrative. A draft that fails a check is not used.
+         */
+        post: operations["draft_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__draft_narrative_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/mark-sent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Report Sent
+         * @description Record that a person sent the approved report on the given day. Sends nothing.
+         */
+        post: operations["mark_report_sent_api_v1_organizations__organization_id__command_center_reports__month___revision__mark_sent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/narrative": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Narrative
+         * @description Replace a draft's narrative. An approved revision cannot be edited.
+         */
+        put: operations["update_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__narrative_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5828,7 +5988,7 @@ export interface components {
          *     a code this list does not know; it is never a reason to hide the run.
          * @enum {string}
          */
-        AutomationReason: "GBP_PERFORMANCE_ACCESS_DENIED" | "INTEGRATION_RECONNECT_REQUIRED" | "GBP_SCOPE_REQUIRED" | "GBP_INTEGRATION_NOT_FOUND" | "NO_CONNECTED_INTEGRATION" | "TOKEN_REFRESH_FAILED" | "SECRET_RESOLUTION_FAILED" | "TOKEN_RESOLUTION_FAILED" | "GBP_LOCATION_NOT_FOUND" | "GBP_LOCATION_AMBIGUOUS" | "GBP_LOCATION_NO_PLATFORM_LINK" | "LOCATION_ID_INVALID" | "LOCATION_ID_MISSING" | "GBP_PERFORMANCE_REQUEST_REJECTED" | "GBP_PERFORMANCE_RATE_LIMITED" | "GBP_PERFORMANCE_PROVIDER_UNAVAILABLE" | "GBP_PERFORMANCE_RESPONSE_INVALID" | "GBP_PERFORMANCE_KEYWORDS_UNAVAILABLE" | "GBP_PERFORMANCE_SYNC_FAILED" | "GBP_SYNC_FAILED" | "REVIEWS_INGEST_FAILED" | "SEARCH_CONSOLE_SCOPE_REQUIRED" | "SEARCH_PROPERTY_NOT_FOUND" | "SEARCH_PROPERTY_NOT_CONFIGURED" | "SEARCH_PROPERTY_ID_INVALID" | "SEARCH_CONSOLE_SYNC_INCOMPLETE" | "SEARCH_CONSOLE_SYNC_FAILED" | "ANALYTICS_SCOPE_REQUIRED" | "ANALYTICS_PROPERTY_NOT_FOUND" | "ANALYTICS_NOT_CONFIGURED" | "ANALYTICS_PROPERTY_ID_INVALID" | "ANALYTICS_SYNC_INCOMPLETE" | "ANALYTICS_SYNC_FAILED" | "SEO_ACTIVE_WEBSITE_MISSING" | "SEO_WEBSITE_NOT_FOUND" | "SEO_WEBSITE_NOT_ACTIVE" | "SEO_WEBSITE_SCOPE_MISMATCH" | "SEO_CRAWL_EMPTY" | "SEO_ANALYSIS_FAILED" | "SEO_CRAWL_FAILED" | "SEO_CRAWL_NOT_TERMINAL" | "SEO_CRAWL_RUN_NOT_FOUND" | "MISSING_CRAWL_RUN_ID" | "INVALID_CRAWL_RUN_ID" | "GBP_POST_GROUNDING_REQUIRED" | "GBP_POST_GENERATION_FAILED" | "GBP_POST_DELIVERY_BINDING_MISSING" | "GBP_REVIEW_SOURCE_INVALID" | "GBP_ORGANIZATION_UNAVAILABLE" | "GBP_POST_REVISION_UNAVAILABLE" | "GBP_WEBSITE_TARGET_UNAVAILABLE" | "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE" | "GBP_DRIVE_MEDIA_NOT_CONFIGURED" | "GBP_DRIVE_NO_ELIGIBLE_IMAGE" | "GBP_DRIVE_MEDIA_UNAVAILABLE" | "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE" | "GBP_DRIVE_UNREACHABLE" | "GBP_DRIVE_TEMPORARILY_UNAVAILABLE" | "HERMES_SCOPED_SESSION_BUSY" | "VERIFICATION_CONTENT_PENDING" | "VERIFICATION_REREAD_FAILED" | "WORKFLOW_VERSION_NOT_EXECUTABLE" | "WORKFLOW_HANDLER_NOT_REGISTERED" | "WORKFLOW_RUN_MISSING" | "WORKFLOW_CANCELLED" | "HANDLER_EXCEPTION" | "DATABASE_DETERMINISTIC_ERROR" | "RUN_ESCALATED" | "RUN_WAITING_APPROVAL" | "RUN_PARTIALLY_COMPLETED" | "RUN_EXPIRED" | "UNMAPPED";
+        AutomationReason: "GBP_PERFORMANCE_ACCESS_DENIED" | "INTEGRATION_RECONNECT_REQUIRED" | "GBP_SCOPE_REQUIRED" | "GBP_INTEGRATION_NOT_FOUND" | "NO_CONNECTED_INTEGRATION" | "TOKEN_REFRESH_FAILED" | "SECRET_RESOLUTION_FAILED" | "TOKEN_RESOLUTION_FAILED" | "GBP_LOCATION_NOT_FOUND" | "GBP_LOCATION_AMBIGUOUS" | "GBP_LOCATION_NO_PLATFORM_LINK" | "LOCATION_ID_INVALID" | "LOCATION_ID_MISSING" | "GBP_PERFORMANCE_REQUEST_REJECTED" | "GBP_PERFORMANCE_RATE_LIMITED" | "GBP_PERFORMANCE_PROVIDER_UNAVAILABLE" | "GBP_PERFORMANCE_RESPONSE_INVALID" | "GBP_PERFORMANCE_KEYWORDS_UNAVAILABLE" | "GBP_PERFORMANCE_SYNC_FAILED" | "GBP_SYNC_FAILED" | "REVIEWS_INGEST_FAILED" | "REPORT_GENERATION_FAILED" | "SEARCH_CONSOLE_SCOPE_REQUIRED" | "SEARCH_PROPERTY_NOT_FOUND" | "SEARCH_PROPERTY_NOT_CONFIGURED" | "SEARCH_PROPERTY_ID_INVALID" | "SEARCH_CONSOLE_SYNC_INCOMPLETE" | "SEARCH_CONSOLE_SYNC_FAILED" | "ANALYTICS_SCOPE_REQUIRED" | "ANALYTICS_PROPERTY_NOT_FOUND" | "ANALYTICS_NOT_CONFIGURED" | "ANALYTICS_PROPERTY_ID_INVALID" | "ANALYTICS_SYNC_INCOMPLETE" | "ANALYTICS_SYNC_FAILED" | "SEO_ACTIVE_WEBSITE_MISSING" | "SEO_WEBSITE_NOT_FOUND" | "SEO_WEBSITE_NOT_ACTIVE" | "SEO_WEBSITE_SCOPE_MISMATCH" | "SEO_CRAWL_EMPTY" | "SEO_ANALYSIS_FAILED" | "SEO_CRAWL_FAILED" | "SEO_CRAWL_NOT_TERMINAL" | "SEO_CRAWL_RUN_NOT_FOUND" | "MISSING_CRAWL_RUN_ID" | "INVALID_CRAWL_RUN_ID" | "GBP_POST_GROUNDING_REQUIRED" | "GBP_POST_GENERATION_FAILED" | "GBP_POST_DELIVERY_BINDING_MISSING" | "GBP_REVIEW_SOURCE_INVALID" | "GBP_ORGANIZATION_UNAVAILABLE" | "GBP_POST_REVISION_UNAVAILABLE" | "GBP_WEBSITE_TARGET_UNAVAILABLE" | "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE" | "GBP_DRIVE_MEDIA_NOT_CONFIGURED" | "GBP_DRIVE_NO_ELIGIBLE_IMAGE" | "GBP_DRIVE_MEDIA_UNAVAILABLE" | "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE" | "GBP_DRIVE_UNREACHABLE" | "GBP_DRIVE_TEMPORARILY_UNAVAILABLE" | "HERMES_SCOPED_SESSION_BUSY" | "VERIFICATION_CONTENT_PENDING" | "VERIFICATION_REREAD_FAILED" | "WORKFLOW_VERSION_NOT_EXECUTABLE" | "WORKFLOW_HANDLER_NOT_REGISTERED" | "WORKFLOW_RUN_MISSING" | "WORKFLOW_CANCELLED" | "HANDLER_EXCEPTION" | "DATABASE_DETERMINISTIC_ERROR" | "RUN_ESCALATED" | "RUN_WAITING_APPROVAL" | "RUN_PARTIALLY_COMPLETED" | "RUN_EXPIRED" | "UNMAPPED";
         /**
          * AutomationSource
          * @enum {string}
@@ -5839,6 +5999,11 @@ export interface components {
          * @enum {string}
          */
         AutomationStatus: "healthy" | "needs_attention" | "running" | "paused" | "not_run_yet";
+        /**
+         * Availability
+         * @enum {string}
+         */
+        Availability: "available" | "partial" | "unavailable";
         /**
          * BlockerResolution
          * @description Where a blocker is resolved, and by whom.
@@ -8644,6 +8809,28 @@ export interface components {
             data: components["schemas"]["MyOrganizationData"][];
             meta: components["schemas"]["ResponseMeta"];
         };
+        /**
+         * NarrativeFailureCode
+         * @description Why a narrative draft was not kept. The previous narrative is left exactly as it was.
+         * @enum {string}
+         */
+        NarrativeFailureCode: "draft_failed" | "draft_malformed" | "draft_empty" | "number_not_in_data" | "authorship_mentioned" | "causal_claim";
+        /**
+         * NarrativeOrigin
+         * @enum {string}
+         */
+        NarrativeOrigin: "none" | "hermes" | "manual";
+        /**
+         * NarrativeOutcome
+         * @enum {string}
+         */
+        NarrativeOutcome: "drafted" | "not_used";
+        /**
+         * NoteCode
+         * @description Why part of a report is missing or approximate. The console turns each into a sentence.
+         * @enum {string}
+         */
+        NoteCode: "gbp_not_connected" | "gbp_month_not_synced" | "gbp_month_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_previous_month_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_previous_month_unavailable" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_previous_month_unavailable";
         /** OffboardingCreate */
         OffboardingCreate: {
             /** Reason */
@@ -9849,6 +10036,53 @@ export interface components {
             /** Upcoming */
             upcoming: components["schemas"]["UpcomingItem"][];
         };
+        /** PortfolioReportCounts */
+        PortfolioReportCounts: {
+            /** Missing Data */
+            missing_data: number;
+            /** Needs Attention */
+            needs_attention: number;
+            /** Not Generated */
+            not_generated: number;
+            /** Ready */
+            ready: number;
+            /** Sent */
+            sent: number;
+        };
+        /** PortfolioReportRow */
+        PortfolioReportRow: {
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Name */
+            name: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            readiness: components["schemas"]["ReportReadiness"] | null;
+            /** Revision */
+            revision: number | null;
+            /** Sent On */
+            sent_on: string | null;
+            /** Slug */
+            slug: string;
+            status: components["schemas"]["ReportStatus"] | null;
+        };
+        /** PortfolioReportsView */
+        PortfolioReportsView: {
+            /** Clients */
+            clients: components["schemas"]["PortfolioReportRow"][];
+            counts: components["schemas"]["PortfolioReportCounts"];
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+        };
         /** PortfolioTotals */
         PortfolioTotals: {
             /** Average Rating */
@@ -10260,6 +10494,480 @@ export interface components {
          * @enum {string}
          */
         RecoveryAction: "reconnect_google_business_profile" | "check_analytics_connection" | "check_search_console_connection" | "connect_website" | "check_location_mapping";
+        /** ReportActionRow */
+        ReportActionRow: {
+            comparison: components["schemas"]["ReportCountComparison"];
+            metric: components["schemas"]["GBPPerformanceMetric"];
+            /** Reported */
+            reported: boolean;
+        };
+        /** ReportAnalyticsSection */
+        ReportAnalyticsSection: {
+            availability: components["schemas"]["Availability"];
+            organic_sessions: components["schemas"]["ReportCountComparison"];
+            reason?: components["schemas"]["UnavailableReason"] | null;
+        };
+        /** ReportCountComparison */
+        ReportCountComparison: {
+            /** Change */
+            change?: number | null;
+            /** Change Percent */
+            change_percent?: number | null;
+            current: components["schemas"]["ReportCountFigure"];
+            previous: components["schemas"]["ReportCountFigure"];
+            year_ago?: components["schemas"]["ReportCountFigure"] | null;
+            /** Year Change */
+            year_change?: number | null;
+            /** Year Change Percent */
+            year_change_percent?: number | null;
+        };
+        /** ReportCountFigure */
+        ReportCountFigure: {
+            availability: components["schemas"]["Availability"];
+            /** Days Covered */
+            days_covered?: number | null;
+            /** Days Expected */
+            days_expected?: number | null;
+            reason?: components["schemas"]["UnavailableReason"] | null;
+            /** Value */
+            value?: number | null;
+        };
+        /** ReportDailyPoint */
+        ReportDailyPoint: {
+            /** Actions */
+            actions: number | null;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Views */
+            views: number | null;
+        };
+        /** ReportDailySeries */
+        ReportDailySeries: {
+            availability: components["schemas"]["Availability"];
+            /** Days Expected */
+            days_expected: number;
+            /** Days Synced */
+            days_synced: number;
+            /** Missing Days */
+            missing_days: string[];
+            /** Points */
+            points: components["schemas"]["ReportDailyPoint"][];
+        };
+        /** ReportDataNote */
+        ReportDataNote: {
+            code: components["schemas"]["NoteCode"];
+            /** Count */
+            count?: number | null;
+            /** Location Id */
+            location_id?: string | null;
+            section: components["schemas"]["SectionKey"];
+        };
+        /** ReportDeliveryView */
+        ReportDeliveryView: {
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Sent On
+             * Format: date
+             */
+            sent_on: string;
+        };
+        /** ReportDetailView */
+        ReportDetailView: {
+            /** Approved At */
+            approved_at: string | null;
+            /** Client Name */
+            client_name: string;
+            /** Client Slug */
+            client_slug: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["ReportDeliveryView"] | null;
+            /** Is Current */
+            is_current: boolean;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            narrative: components["schemas"]["ReportNarrative"];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            permissions: components["schemas"]["ReportPermissions"];
+            readiness: components["schemas"]["ReportReadiness"];
+            /** Revision */
+            revision: number;
+            /** Revision Count */
+            revision_count: number;
+            snapshot: components["schemas"]["ReportSnapshot"];
+            status: components["schemas"]["ReportStatus"];
+        };
+        /** ReportGbpSection */
+        ReportGbpSection: {
+            actions: components["schemas"]["ReportProfileActions"];
+            availability: components["schemas"]["Availability"];
+            current_range: components["schemas"]["ReportRange"];
+            daily: components["schemas"]["ReportDailySeries"];
+            /** Locations */
+            locations: components["schemas"]["ReportLocationRow"][];
+            previous_range: components["schemas"]["ReportRange"];
+            profile_views: components["schemas"]["ReportProfileViews"];
+            reason?: components["schemas"]["UnavailableReason"] | null;
+            search_terms: components["schemas"]["ReportSearchTerms"];
+            /** Through Date */
+            through_date: string | null;
+            year_ago_range: components["schemas"]["ReportRange"];
+        };
+        /** ReportGenerateRequest */
+        ReportGenerateRequest: {
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+        };
+        /** ReportGenerateResult */
+        ReportGenerateResult: {
+            /** Created */
+            created: boolean;
+            report: components["schemas"]["ReportDetailView"];
+        };
+        /** ReportListView */
+        ReportListView: {
+            current: components["schemas"]["ReportRevisionRow"] | null;
+            /**
+             * Current Month
+             * Format: date
+             */
+            current_month: string;
+            /** History */
+            history: components["schemas"]["ReportRevisionRow"][];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            permissions: components["schemas"]["ReportPermissions"];
+            upcoming: components["schemas"]["ReportUpcoming"] | null;
+        };
+        /** ReportLocationRow */
+        ReportLocationRow: {
+            calls: components["schemas"]["ReportCountComparison"];
+            direction_requests: components["schemas"]["ReportCountComparison"];
+            /**
+             * Location Id
+             * Format: uuid
+             */
+            location_id: string;
+            /** Mapped */
+            mapped: boolean;
+            /** Name */
+            name: string;
+            profile_views: components["schemas"]["ReportCountComparison"];
+            website_clicks: components["schemas"]["ReportCountComparison"];
+        };
+        /** ReportMarkSentRequest */
+        ReportMarkSentRequest: {
+            /**
+             * Sent On
+             * Format: date
+             */
+            sent_on: string;
+        };
+        /**
+         * ReportNarrative
+         * @description The two prose sections. Written by a person, or drafted and then reviewed by one.
+         */
+        ReportNarrative: {
+            /**
+             * Next Work
+             * @default
+             */
+            next_work: string;
+            /** @default none */
+            origin: components["schemas"]["NarrativeOrigin"];
+            /**
+             * What Changed
+             * @default
+             */
+            what_changed: string;
+        };
+        /** ReportNarrativeDraftResult */
+        ReportNarrativeDraftResult: {
+            failure?: components["schemas"]["NarrativeFailureCode"] | null;
+            outcome: components["schemas"]["NarrativeOutcome"];
+            report: components["schemas"]["ReportDetailView"];
+        };
+        /** ReportNarrativeUpdate */
+        ReportNarrativeUpdate: {
+            /** Next Work */
+            next_work: string;
+            /** What Changed */
+            what_changed: string;
+        };
+        /** ReportPermissions */
+        ReportPermissions: {
+            /** Can Generate */
+            can_generate: boolean;
+            /** Can Publish */
+            can_publish: boolean;
+        };
+        /** ReportProfileActions */
+        ReportProfileActions: {
+            action_rate: components["schemas"]["ReportRateComparison"];
+            /** Actions */
+            actions: components["schemas"]["ReportActionRow"][];
+            /** Optional */
+            optional: components["schemas"]["ReportActionRow"][];
+            total: components["schemas"]["ReportCountComparison"];
+        };
+        /** ReportProfileViews */
+        ReportProfileViews: {
+            desktop_mobile: components["schemas"]["ReportSplit"];
+            maps_search: components["schemas"]["ReportSplit"];
+            /** Sources */
+            sources: components["schemas"]["ReportSourceRow"][];
+            total: components["schemas"]["ReportCountComparison"];
+        };
+        /** ReportRange */
+        ReportRange: {
+            /** Days */
+            days: number;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+        };
+        /** ReportRateComparison */
+        ReportRateComparison: {
+            /** Change */
+            change?: number | null;
+            current: components["schemas"]["ReportRateFigure"];
+            previous: components["schemas"]["ReportRateFigure"];
+            year_ago?: components["schemas"]["ReportRateFigure"] | null;
+            /** Year Change */
+            year_change?: number | null;
+        };
+        /** ReportRateFigure */
+        ReportRateFigure: {
+            availability: components["schemas"]["Availability"];
+            reason?: components["schemas"]["UnavailableReason"] | null;
+            /** Value */
+            value?: number | null;
+        };
+        /**
+         * ReportReadiness
+         * @enum {string}
+         */
+        ReportReadiness: "ready" | "ready_with_note" | "missing_data";
+        /** ReportReviewsSection */
+        ReportReviewsSection: {
+            availability: components["schemas"]["Availability"];
+            average_rating_in_month: components["schemas"]["ReportRateFigure"];
+            average_rating_overall: components["schemas"]["ReportRateFigure"];
+            /** Distribution Month */
+            distribution_month: components["schemas"]["ReportStarCount"][];
+            /** Distribution Overall */
+            distribution_overall: components["schemas"]["ReportStarCount"][];
+            new_in_month: components["schemas"]["ReportCountFigure"];
+            reason?: components["schemas"]["UnavailableReason"] | null;
+            responded_to_new: components["schemas"]["ReportCountFigure"];
+            response_rate_percent: components["schemas"]["ReportRateFigure"];
+            responses_published: components["schemas"]["ReportCountFigure"];
+            total_count: components["schemas"]["ReportCountFigure"];
+        };
+        /** ReportRevisionRow */
+        ReportRevisionRow: {
+            /** Approved At */
+            approved_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["ReportDeliveryView"] | null;
+            /** Is Current */
+            is_current: boolean;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            readiness: components["schemas"]["ReportReadiness"];
+            /** Revision */
+            revision: number;
+            status: components["schemas"]["ReportStatus"];
+        };
+        /** ReportSearchConsoleSection */
+        ReportSearchConsoleSection: {
+            availability: components["schemas"]["Availability"];
+            average_position: components["schemas"]["ReportRateComparison"];
+            clicks: components["schemas"]["ReportCountComparison"];
+            ctr_percent: components["schemas"]["ReportRateComparison"];
+            impressions: components["schemas"]["ReportCountComparison"];
+            /** Lag Days */
+            lag_days?: number | null;
+            reason?: components["schemas"]["UnavailableReason"] | null;
+            /** Top Pages */
+            top_pages: components["schemas"]["ReportSearchPageRow"][];
+            /** Top Queries */
+            top_queries: components["schemas"]["ReportSearchQueryRow"][];
+        };
+        /** ReportSearchPageRow */
+        ReportSearchPageRow: {
+            /** Clicks */
+            clicks: number;
+            /** Clicks Change */
+            clicks_change: number | null;
+            /** Ctr */
+            ctr: number | null;
+            /** Impressions */
+            impressions: number;
+            /** Page */
+            page: string;
+            /** Position */
+            position: number | null;
+            /** Previous Clicks */
+            previous_clicks: number | null;
+        };
+        /** ReportSearchQueryRow */
+        ReportSearchQueryRow: {
+            /** Clicks */
+            clicks: number;
+            /** Clicks Change */
+            clicks_change: number | null;
+            /** Ctr */
+            ctr: number | null;
+            /** Impressions */
+            impressions: number;
+            /** Position */
+            position: number | null;
+            /** Previous Clicks */
+            previous_clicks: number | null;
+            /** Query */
+            query: string;
+        };
+        /** ReportSearchTerm */
+        ReportSearchTerm: {
+            /** Below Threshold */
+            below_threshold: number | null;
+            /** Is Exact */
+            is_exact: boolean;
+            /** Keyword */
+            keyword: string;
+            /** Value */
+            value: number | null;
+        };
+        /** ReportSearchTerms */
+        ReportSearchTerms: {
+            availability: components["schemas"]["Availability"];
+            reason?: components["schemas"]["UnavailableReason"] | null;
+            /** Terms */
+            terms: components["schemas"]["ReportSearchTerm"][];
+        };
+        /**
+         * ReportSnapshot
+         * @description Everything computed for one organization and one month. Deterministic and typed.
+         */
+        ReportSnapshot: {
+            analytics: components["schemas"]["ReportAnalyticsSection"];
+            gbp: components["schemas"]["ReportGbpSection"];
+            local_rank: components["schemas"]["TrackedCount"];
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Notes */
+            notes: components["schemas"]["ReportDataNote"][];
+            readiness: components["schemas"]["ReportReadiness"];
+            reviews: components["schemas"]["ReportReviewsSection"];
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            search_console: components["schemas"]["ReportSearchConsoleSection"];
+            work: components["schemas"]["ReportWorkSection"];
+        };
+        /** ReportSourceRow */
+        ReportSourceRow: {
+            comparison: components["schemas"]["ReportCountComparison"];
+            metric: components["schemas"]["GBPPerformanceMetric"];
+        };
+        /** ReportSplit */
+        ReportSplit: {
+            /** Parts */
+            parts: components["schemas"]["ReportSplitPart"][];
+        };
+        /** ReportSplitPart */
+        ReportSplitPart: {
+            figure: components["schemas"]["ReportCountFigure"];
+            key: components["schemas"]["SplitKey"];
+            /** Share Percent */
+            share_percent?: number | null;
+        };
+        /** ReportStarCount */
+        ReportStarCount: {
+            /** Count */
+            count: number;
+            /**
+             * Stars
+             * @enum {integer}
+             */
+            stars: 1 | 2 | 3 | 4 | 5;
+        };
+        /**
+         * ReportStatus
+         * @description Where a report is in its life: written, approved by a person, or recorded as sent.
+         * @enum {string}
+         */
+        ReportStatus: "draft" | "ready" | "sent";
+        /** ReportUpcoming */
+        ReportUpcoming: {
+            kind: components["schemas"]["UpcomingKind"];
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /**
+             * Next Run At
+             * Format: date-time
+             */
+            next_run_at: string;
+        };
+        /** ReportWorkGroup */
+        ReportWorkGroup: {
+            /** Count */
+            count: number;
+            kind: components["schemas"]["WorkKind"];
+            /** Titles */
+            titles: string[];
+        };
+        /** ReportWorkSection */
+        ReportWorkSection: {
+            /** Groups */
+            groups: components["schemas"]["ReportWorkGroup"][];
+        };
         /** ReportingRange */
         ReportingRange: {
             /** Days */
@@ -10928,6 +11636,11 @@ export interface components {
             /** Websites */
             websites: components["schemas"]["WebsiteOption"][];
         };
+        /**
+         * SectionKey
+         * @enum {string}
+         */
+        SectionKey: "profile_views" | "profile_actions" | "daily_series" | "search_terms" | "locations" | "reviews" | "search_console" | "analytics" | "local_rank" | "work_completed" | "narrative";
         /** ServiceAssignmentCreate */
         ServiceAssignmentCreate: {
             /** Location Id */
@@ -11035,6 +11748,11 @@ export interface components {
             /** Idempotency Key */
             idempotency_key: string;
         };
+        /**
+         * SplitKey
+         * @enum {string}
+         */
+        SplitKey: "maps" | "search" | "desktop" | "mobile";
         /** StatusEvent */
         StatusEvent: {
             /** Action */
@@ -11200,6 +11918,11 @@ export interface components {
             /** Value */
             value?: number | null;
         };
+        /**
+         * UnavailableReason
+         * @enum {string}
+         */
+        UnavailableReason: "not_connected" | "not_synced" | "no_data" | "not_reported" | "partial_period" | "no_views" | "not_tracked" | "not_compared" | "source_unavailable";
         /** UnmappedProfile */
         UnmappedProfile: {
             /** Business Name */
@@ -11231,6 +11954,11 @@ export interface components {
             /** Workflow Key */
             workflow_key: string;
         };
+        /**
+         * UpcomingKind
+         * @enum {string}
+         */
+        UpcomingKind: "generate_monthly_report";
         /**
          * UserClientAccess
          * @description One client a person can reach, with how.
@@ -11520,6 +12248,11 @@ export interface components {
             /** Workflow Key */
             workflow_key: string;
         };
+        /**
+         * WorkKind
+         * @enum {string}
+         */
+        WorkKind: "gbp_post" | "website_content" | "review_response" | "gbp_profile_change" | "website_change";
         /** WorkerQueueComponent */
         WorkerQueueComponent: {
             /** Backlogged */
@@ -11553,7 +12286,7 @@ export interface components {
          * @description Every tenant workflow type that can be scheduled.
          * @enum {string}
          */
-        WorkflowTypeCode: "content.publish" | "content.draft_revision" | "content.compose" | "seo.crawl_or_analysis" | "seo.analyze" | "seo.sync_search_console" | "insights.sync_analytics" | "seo.apply_site_change" | "gbp.generate_post" | "gbp.publish_change" | "gbp.publish_post" | "gbp.upload_media" | "gbp.publish_special_hours" | "reviews.publish_response" | "leads.send_communication" | "gbp.sync" | "gbp.sync_performance" | "reviews.ingest" | "agent.gbp" | "agent.seo" | "agent.content" | "agent.reviews" | "agent.leads" | "agent.insights" | "agent.growth";
+        WorkflowTypeCode: "content.publish" | "content.draft_revision" | "content.compose" | "seo.crawl_or_analysis" | "seo.analyze" | "seo.sync_search_console" | "insights.sync_analytics" | "seo.apply_site_change" | "gbp.generate_post" | "gbp.publish_change" | "gbp.publish_post" | "gbp.upload_media" | "gbp.publish_special_hours" | "reviews.publish_response" | "leads.send_communication" | "gbp.sync" | "gbp.sync_performance" | "reviews.ingest" | "reports.generate_monthly" | "agent.gbp" | "agent.seo" | "agent.content" | "agent.reviews" | "agent.leads" | "agent.insights" | "agent.growth";
         /** AIDraftCreate */
         apps__api__app__products__content__contracts__AIDraftCreate: {
             /**
@@ -11995,6 +12728,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PortfolioOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_reports_api_v1_command_center_reports_get: {
+        parameters: {
+            query?: {
+                month?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioReportsView"];
                 };
             };
             /** @description Validation Error */
@@ -13276,6 +14040,245 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_api_v1_organizations__organization_id__command_center_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportListView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_report_api_v1_organizations__organization_id__command_center_reports_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportGenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportGenerateResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_detail_api_v1_organizations__organization_id__command_center_reports__month___revision__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                month: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_report_api_v1_organizations__organization_id__command_center_reports__month___revision__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                month: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__draft_narrative_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                month: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportNarrativeDraftResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_report_sent_api_v1_organizations__organization_id__command_center_reports__month___revision__mark_sent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                month: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportMarkSentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__narrative_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                month: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportNarrativeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDetailView"];
                 };
             };
             /** @description Validation Error */

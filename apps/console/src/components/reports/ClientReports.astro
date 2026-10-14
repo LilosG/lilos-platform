@@ -1,0 +1,152 @@
+---
+import type { ReportList } from "../../adapters/reports";
+import { currentPanel, historyRows, upcomingRows } from "../../lib/report-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  list: ReportList;
+  slug: string;
+  organization: string;
+}
+const { list, slug, organization } = Astro.props;
+const panel = currentPanel(list, slug);
+const history = historyRows(list, slug);
+const upcoming = upcomingRows(list);
+---
+
+<section class="panel currentreport" data-reports-current>
+  <SectionHeading>
+    <Fragment slot="title">{panel.title}</Fragment>
+    <Fragment slot="actions">
+      {
+        panel.status && (
+          <StatusBadge text={panel.status.label} tone={panel.status.tone} />
+        )
+      }
+      {
+        panel.readiness && (
+          <StatusBadge
+            text={panel.readiness.label}
+            tone={panel.readiness.tone}
+          />
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>{panel.heading}</h3>
+      <p>{panel.text}</p>
+    </div>
+    {
+      panel.action ? (
+        <a class="control primary" href={panel.action.href}>
+          {panel.action.label}
+        </a>
+      ) : panel.generate ? (
+        <button
+          type="button"
+          class="control primary"
+          inert
+          data-generate-report
+          data-month={list.current_month}
+          data-api={`/api/organizations/${organization}/command-center/reports/generate/`}
+          data-href={`/clients/${slug}/reports/${list.current_month.slice(0, 7)}/`}
+        >
+          Generate report
+        </button>
+      ) : null
+    }
+  </div>
+  {
+    panel.blocked && (
+      <InsightPanel class="insight">
+        Business Profile data is missing for this month. Reconnect Google in
+        <a href={`/clients/${slug}/integrations/`}> Integrations</a>, then
+        generate the report again.
+      </InsightPanel>
+    )
+  }
+  <p class="formstatus" role="status" aria-live="polite" data-report-status></p>
+</section>
+<section
+  class="panel tablewrap spaced-section"
+  role="region"
+  aria-label="Report history"
+  tabindex="0"
+>
+  <SectionHeading>
+    <Fragment slot="title">Report history</Fragment>
+  </SectionHeading>
+  {
+    history.length ? (
+      <DataTable>
+        <thead>
+          <tr>
+            <th scope="col">Period</th>
+            <th scope="col">Status</th>
+            <th scope="col">Delivered</th>
+            <th scope="col">
+              <span class="sr-only">Action</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((row) => (
+            <tr>
+              <td>
+                {row.period}
+                {row.version && <small class="muted"> · {row.version}</small>}
+              </td>
+              <td>
+                <StatusBadge text={row.status.label} tone={row.status.tone} />
+              </td>
+              <td>{row.delivered}</td>
+              <td>
+                <a class="control" href={row.href}>
+                  View summary
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    ) : (
+      <EmptyState title="No reports yet">
+        The first monthly report appears here once it has been generated.
+      </EmptyState>
+    )
+  }
+</section>
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Upcoming reporting activity</Fragment>
+  </SectionHeading>
+  {
+    upcoming.length ? (
+      upcoming.map((row) => (
+        <div class="listrow">
+          <div>
+            <h3>{row.title}</h3>
+            <p>{row.text}</p>
+          </div>
+          <StatusBadge text="Scheduled" />
+        </div>
+      ))
+    ) : (
+      <EmptyState title="Nothing is scheduled">
+        Monthly reports are drafted automatically once reporting is scheduled
+        for this client.
+        <a slot="action" class="control" href={`/clients/${slug}/automations/`}>
+          View automations
+        </a>
+      </EmptyState>
+    )
+  }
+</section>
+<script>
+  import "../../lib/report-actions";
+</script>

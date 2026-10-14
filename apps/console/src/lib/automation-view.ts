@@ -31,6 +31,7 @@ export const WORKFLOW_NAMES: Record<WorkflowTypeCode, string> = {
   "gbp.sync": "Business Profile sync",
   "gbp.sync_performance": "GBP performance refresh",
   "reviews.ingest": "Review monitoring",
+  "reports.generate_monthly": "Monthly client report",
   "agent.gbp": "Profile optimization",
   "agent.seo": "SEO analysis",
   "agent.content": "Content planning",
@@ -143,6 +144,10 @@ export const REASON_COPY: Record<AutomationReason, ReasonCopy> = {
   GBP_PERFORMANCE_SYNC_FAILED: INTERNAL,
   GBP_SYNC_FAILED: INTERNAL,
   REVIEWS_INGEST_FAILED: INTERNAL,
+  REPORT_GENERATION_FAILED: {
+    what: "The monthly report draft could not be written.",
+    next: "Open Reports and generate it from there, or wait for the next run.",
+  },
   SEARCH_CONSOLE_SCOPE_REQUIRED: {
     what: "Google access is missing Search Console permission.",
     next: SEARCH.next,
@@ -281,6 +286,7 @@ const DONE: Partial<Record<WorkflowTypeCode, string>> = {
   "gbp.sync_performance": "Profile performance refreshed",
   "gbp.sync": "Business Profile details refreshed",
   "reviews.ingest": "New reviews checked for responses",
+  "reports.generate_monthly": "Monthly report draft prepared",
   "seo.crawl_or_analysis": "Technical findings refreshed",
   "seo.sync_search_console": "Search performance refreshed",
   "insights.sync_analytics": "Website traffic refreshed",
