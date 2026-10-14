@@ -58,6 +58,7 @@ import {
   reset as resetAutomations,
   state as automationState,
 } from "./automation-sim.mjs";
+import { reports, reset as resetReports } from "./report-sim.mjs";
 import {
   handle as publishingHandle,
   modes as publishingModes,
@@ -233,6 +234,10 @@ createServer(async (req, res) => {
     resetAutomations(parsed.mode);
     return reply({ ok: true });
   }
+  if (url.pathname === "/test/reports-scenario") {
+    resetReports(parsed.mode);
+    return reply({ ok: true });
+  }
   if (url.pathname === "/test/publishing-scenario") {
     if (!publishingModes.includes(parsed.mode))
       return reply({ ok: false }, 400);
@@ -373,6 +378,8 @@ createServer(async (req, res) => {
   }
   const administration = adminHandle(req, url, claims, ids, parsed);
   if (administration) return reply(administration.body, administration.status);
+  const report = reports(req, url, claims, ids, parsed);
+  if (report) return reply(report.body, report.status);
   const automation = automations(req, url, claims, ids);
   if (automation) return reply(automation.body, automation.status);
   const feed = commandCenter(url, claims, ids);

@@ -78,9 +78,7 @@ export const portfolioRoute = (page = "dashboard") =>
 export const clientRoute = (slug: string, area: ProductArea = "Overview") =>
   `/clients/${slug}/` + (area === "Overview" ? "" : `${slugify(area)}/`);
 /** Every area that has no screen yet resolves to one typed state, never to fake content. */
-export const clientAreaSlugs: Record<string, ProductArea> = {
-  reports: "Reports",
-};
+export const clientAreaSlugs: Record<string, ProductArea> = {};
 export type NotBuilt =
   | { scope: "portfolio"; area: PortfolioArea }
   | { scope: "client"; area: keyof typeof clientAreaSlugs };

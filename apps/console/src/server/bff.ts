@@ -5,6 +5,7 @@ import { reviewRoutes } from "./review-routes";
 import { automationRoutes, idempotencyKey } from "./automation-routes";
 import { searchRoutes } from "./search-routes";
 import { adminRoutes } from "./admin-routes";
+import { reportRoutes } from "./report-routes";
 import {
   assertMutation,
   boundedBody,
@@ -45,6 +46,7 @@ export const routes = [
   ...reviewRoutes,
   ...automationRoutes,
   ...adminRoutes,
+  ...reportRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },
   {
     pattern: /^command-center\/(portfolio|clients)\/$/,
@@ -223,7 +225,7 @@ export async function forward(
       : null;
   if (idempotency !== null && !idempotencyKey.test(idempotency))
     return response("BODY_INVALID", 400);
-  if (request.method === "POST" || request.method === "DELETE") {
+  if (["POST", "PUT", "DELETE"].includes(request.method)) {
     try {
       assertMutation(
         request,
@@ -242,7 +244,7 @@ export async function forward(
         body = await boundedBytes(request, upload.maxBytes);
       } else {
         if (
-          request.method === "POST" &&
+          request.method !== "DELETE" &&
           request.headers.get("content-type")?.split(";", 1)[0] !==
             "application/json"
         )

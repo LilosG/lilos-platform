@@ -1,0 +1,83 @@
+.reportpage {
+  display: grid;
+  gap: 18px;
+}
+.reporthead h1 {
+  margin: 4px 0;
+}
+.reportactions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.printbrand {
+  display: none;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.reviewsummary {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.bigrating {
+  display: grid;
+  gap: 6px;
+}
+.bigrating strong {
+  font-size: 2.4rem;
+}
+.narrative textarea {
+  width: 100%;
+  min-height: 120px;
+  font: inherit;
+}
+.narrative p {
+  line-height: 1.6;
+}
+@media (max-width: 700px) {
+  .reviewsummary {
+    grid-template-columns: 1fr;
+  }
+}
+@media print {
+  nav,
+  aside,
+  header.appheader,
+  .sidebar,
+  .noprint,
+  .formstatus,
+  dialog {
+    display: none !important;
+  }
+  body,
+  main {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .printbrand {
+    display: block;
+    color: #235448;
+    border-bottom: 2px solid #235448;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+  }
+  .panel,
+  .metric,
+  .splitrow {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+  .reportpage {
+    gap: 12px;
+  }
+  textarea {
+    border: 0;
+    resize: none;
+  }
+}

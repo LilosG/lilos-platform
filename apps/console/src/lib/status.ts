@@ -337,3 +337,16 @@ export const onboardingChips = {
   not_started: { label: "Not started", tone: "neutral" },
   unavailable: { label: "Could not load", tone: "warn" },
 } as const satisfies Record<string, Chip>;
+
+/** A monthly report's stage; the label is ours, never the API's. */
+export const reportChips = {
+  draft: { label: "Draft", tone: "neutral" },
+  ready: { label: "Ready to send", tone: "" },
+  sent: { label: "Sent", tone: "" },
+} as const satisfies Record<string, Chip>;
+/** Whether the data behind a report is complete, partly missing, or too thin to approve. */
+export const readinessChips = {
+  ready: { label: "Data complete", tone: "" },
+  ready_with_note: { label: "Ready with data note", tone: "warn" },
+  missing_data: { label: "Missing data", tone: "error" },
+} as const satisfies Record<string, Chip>;

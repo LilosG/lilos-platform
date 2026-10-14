@@ -1,0 +1,102 @@
+---
+import type { PortfolioReports } from "../../adapters/reports";
+import {
+  portfolioFilters,
+  portfolioRows,
+  portfolioTiles,
+  type PortfolioFilter,
+} from "../../lib/report-view";
+import PageHeader from "../ui/PageHeader.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import DataTable from "../ui/DataTable.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  view: PortfolioReports;
+  filter: PortfolioFilter;
+}
+const { view, filter } = Astro.props;
+const rows = portfolioRows(view, filter);
+---
+
+<PageHeader
+  title="Reports"
+  subtitle="Portfolio reporting readiness, delivery, and clients with incomplete data."
+/>
+<MetricStrip items={portfolioTiles(view)} />
+<nav class="sectiontabs" aria-label="Filter reports">
+  {
+    portfolioFilters.map(([key, label]) => (
+      <a
+        class:list={{ active: filter === key }}
+        href={key === "all" ? "/reports/" : `/reports/?filter=${key}`}
+        aria-current={filter === key ? "page" : undefined}
+      >
+        {label}
+      </a>
+    ))
+  }
+</nav>
+<section
+  class="panel tablewrap"
+  role="region"
+  aria-label="Client reports"
+  tabindex="0"
+>
+  {
+    rows.length ? (
+      <DataTable>
+        <thead>
+          <tr>
+            <th scope="col">Client</th>
+            <th scope="col">Period</th>
+            <th scope="col">Status</th>
+            <th scope="col">Data readiness</th>
+            <th scope="col">Delivery</th>
+            <th scope="col">
+              <span class="sr-only">Action</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr data-report-client={row.slug}>
+              <td>
+                <a class="clientname" href={`/clients/${row.slug}/reports/`}>
+                  {row.name}
+                </a>
+              </td>
+              <td>{row.period}</td>
+              <td>
+                <StatusBadge text={row.status.label} tone={row.status.tone} />
+              </td>
+              <td>
+                {row.readiness ? (
+                  <StatusBadge
+                    text={row.readiness.label}
+                    tone={row.readiness.tone}
+                  />
+                ) : (
+                  "–"
+                )}
+              </td>
+              <td>{row.delivery}</td>
+              <td>
+                <a class="control" href={row.href}>
+                  {row.action}
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    ) : (
+      <EmptyState title="No reports match this view">
+        Choose another filter to see the rest of the portfolio.
+        <a slot="action" class="control" href="/reports/">
+          Show all reports
+        </a>
+      </EmptyState>
+    )
+  }
+</section>
