@@ -319,13 +319,13 @@ def test_review_ingestion_imports_90_reviews_and_is_idempotent(
 
     first, second, review_count, revision_count, summaries = asyncio.run(scenario())
 
-    assert first == {"total": 90, "ingested": 90, "updated": 0}
-    assert second == {"total": 90, "ingested": 0, "updated": 90}
+    assert first == {"total": 90, "ingested": 90, "updated": 0, "removed": 0}
+    assert second == {"total": 90, "ingested": 0, "updated": 90, "removed": 0}
     assert review_count == 90
     assert revision_count == 90
     assert summaries == [
-        {"total": 90, "ingested": 90, "updated": 0},
-        {"total": 90, "ingested": 0, "updated": 90},
+        {"total": 90, "ingested": 90, "updated": 0, "removed": 0},
+        {"total": 90, "ingested": 0, "updated": 90, "removed": 0},
     ]
 
 
@@ -1212,8 +1212,8 @@ def test_90_approved_provider_replies_keep_collection_complete_and_fully_respond
 
     first, second, response_count, summary = asyncio.run(scenario())
 
-    assert first == {"total": 90, "ingested": 90, "updated": 0}
-    assert second == {"total": 90, "ingested": 0, "updated": 90}
+    assert first == {"total": 90, "ingested": 90, "updated": 0, "removed": 0}
+    assert second == {"total": 90, "ingested": 0, "updated": 90, "removed": 0}
     assert response_count == 90
     assert summary["by_status"] == {"responded": 90}
 

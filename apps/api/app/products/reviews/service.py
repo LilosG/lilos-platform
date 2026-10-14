@@ -36,6 +36,7 @@ from apps.api.app.products.reviews.errors import (
     ResponseNotPublishEligibleError,
     RestrictedReviewCannotAutoPublishError,
     ReviewChangedAfterDraftError,
+    ReviewNoLongerOnProviderError,
     ReviewNotFoundError,
     ReviewResponseNotFoundError,
     ReviewRevisionNotFoundError,
@@ -75,6 +76,10 @@ NOTIFICATION_TEMPLATES = {
 PROVIDER_OBSERVED_TYPE = "imported"
 ACTIVE_LOCAL_RESPONSE_STATUSES = ("draft", "generated", "awaiting_approval", "approved")
 PROVIDER_REPLY_STATE_UNSPECIFIED = "REVIEW_REPLY_STATE_UNSPECIFIED"
+# Google stopped listing the review. It is kept as history and returns if Google lists it again.
+REVIEW_REMOVED = "removed"
+# An operator's archive is a decision of its own; a sync never reclassifies it.
+REVIEW_ARCHIVED = "archived"
 
 
 class ReviewClassification(TypedDict):
@@ -663,7 +668,9 @@ class ReviewService:
             )
             .with_for_update()
         )
+        reappeared = False
         if review:
+            reappeared = review.status == REVIEW_REMOVED
             review.last_synced_at = observed_at
             if reviewer is not None:
                 # Identity is not review content: updating it never starts a revision.
@@ -677,6 +684,9 @@ class ReviewService:
             )
             if current:
                 revision = current
+                if reappeared:
+                    # Unchanged content: the status the normal ingest path would have given it.
+                    self._restore_actionable_status(review, revision)
             else:
                 number = review.current_revision_number + 1
                 review.current_revision_number = number
@@ -793,6 +803,19 @@ class ReviewService:
             correlation_id=correlation_id,
         )
         await session.flush()
+        if reappeared:
+            await self._audit(
+                session,
+                event="reviews.review.restored_on_provider",
+                organization_id=organization_id,
+                location_id=location_id,
+                actor_id=None,
+                resource_type="review",
+                resource_id=review.id,
+                correlation_id=correlation_id,
+                summary="Google lists this review again.",
+                metadata={"status": review.status, "revision_number": revision.revision_number},
+            )
         return review, revision, content_changed
 
     async def draft(
@@ -821,6 +844,8 @@ class ReviewService:
         )
         if not review:
             raise ReviewNotFoundError
+        if review.status == REVIEW_REMOVED:
+            raise ReviewNoLongerOnProviderError
         review_revision = await session.scalar(
             select(ReviewRevision).where(
                 ReviewRevision.organization_id == organization_id,
@@ -927,6 +952,15 @@ class ReviewService:
         )
         if not revision:
             raise ReviewRevisionNotFoundError
+        if (
+            await session.scalar(
+                select(Review.status).where(
+                    Review.organization_id == organization_id, Review.id == review_id
+                )
+            )
+            == REVIEW_REMOVED
+        ):
+            raise ReviewNoLongerOnProviderError
 
         task = await session.scalar(
             select(AITaskDefinition).where(
@@ -1068,6 +1102,8 @@ class ReviewService:
                 Review.id == review_id,
             )
         )
+        if review is not None and review.status == REVIEW_REMOVED:
+            raise ReviewNoLongerOnProviderError
         if not review or review.current_revision_number != (
             await session.scalar(
                 select(ReviewRevision.revision_number).where(
@@ -1144,6 +1180,8 @@ class ReviewService:
                 ReviewRevision.id == item.review_revision_id,
             )
         )
+        if review is not None and review.status == REVIEW_REMOVED:
+            raise ReviewNoLongerOnProviderError
         if not review or revision_number != review.current_revision_number:
             raise ReviewChangedAfterDraftError
         if review.status == "escalated":
@@ -1226,6 +1264,9 @@ class ReviewService:
             statement = statement.where(Review.status == status_filter)
         if status_in is not None:
             statement = statement.where(Review.status.in_(status_in))
+        if REVIEW_REMOVED not in (status_in or ()) and status_filter != REVIEW_REMOVED:
+            # Reviews Google no longer lists are only shown when asked for by name.
+            statement = statement.where(Review.status != REVIEW_REMOVED)
         if rating_min is not None:
             statement = statement.where(Review.rating >= rating_min)
         if rating_max is not None:
@@ -1283,6 +1324,7 @@ class ReviewService:
                 Review.organization_id == organization_id,
                 Review.location_id == location_id,
                 Review.rating.is_not(None),
+                Review.status != REVIEW_REMOVED,
             )
         )
         restricted = await session.scalar(
@@ -1292,6 +1334,7 @@ class ReviewService:
             .where(
                 Review.organization_id == organization_id,
                 Review.location_id == location_id,
+                Review.status != REVIEW_REMOVED,
                 ReviewEscalation.status == "open",
             )
         )

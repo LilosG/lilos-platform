@@ -317,6 +317,49 @@ export function performance(org, params) {
   };
 }
 const state = { posts: [], media: [], hours: [], changes: [], seq: 100 };
+/** Posts Google accepted but has not shown yet, and ones LILOs gave up waiting on. */
+export function addWaitingPosts() {
+  const waiting = (n, code, content, recovery) => ({
+    id: uuid(60 + n),
+    post_key: uuid(70 + n),
+    revision: 1,
+    post_type: "standard",
+    content,
+    call_to_action: null,
+    event_or_offer: null,
+    status: "approved",
+    publication: {
+      id: uuid(80 + n),
+      status: "reconciliation_required",
+      scheduled_for: null,
+      dispatched_at: "2026-09-29T17:00:00Z",
+      provider_post_id: `provider-post-${n}`,
+      verified_at: null,
+      safe_error_code: code,
+      recovery_allowed: recovery,
+    },
+  });
+  state.posts.unshift(
+    waiting(
+      1,
+      "POST_NOT_YET_LIVE",
+      "Trivia night returns Thursday at 7. Teams of up to six, prizes for the top three.",
+      true,
+    ),
+    waiting(
+      2,
+      "POST_NOT_LIVE_TIMEOUT",
+      "Father's Day brunch: reserve your table on the patio before Friday.",
+      true,
+    ),
+    waiting(
+      3,
+      "GOOGLE_RECONNECT_REQUIRED",
+      "Happy hour moves indoors this weekend while the patio is repaved.",
+      true,
+    ),
+  );
+}
 /** Screenshots only: the photo list with nothing in it. */
 export function clearMedia() {
   state.media = [];
@@ -370,6 +413,7 @@ export function reset() {
         dispatched_at: "2026-09-28T17:00:00Z",
         provider_post_id: "provider-post-1",
         verified_at: "2026-09-28T17:05:00Z",
+        safe_error_code: null,
         recovery_allowed: false,
       },
     },
@@ -390,6 +434,7 @@ export function reset() {
         dispatched_at: "2026-09-20T17:00:00Z",
         provider_post_id: null,
         verified_at: null,
+        safe_error_code: null,
         recovery_allowed: false,
       },
     },
@@ -409,6 +454,7 @@ export function reset() {
         dispatched_at: null,
         provider_post_id: null,
         verified_at: null,
+        safe_error_code: null,
         recovery_allowed: false,
       },
     },
@@ -611,6 +657,7 @@ export function handle(path, method, parsed, url, org) {
         dispatched_at: null,
         provider_post_id: null,
         verified_at: null,
+        safe_error_code: null,
         recovery_allowed: false,
       };
     return ok({ data: post?.publication ?? {} }, 202);

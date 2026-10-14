@@ -13,6 +13,7 @@ import {
   hoursState,
   postChips,
   postState,
+  postStateNote,
   type Chip,
   type PostState,
 } from "./status";
@@ -263,13 +264,22 @@ export interface PostPermissions {
 }
 export function postRows(view: ProfileView, can: PostPermissions): PostRow[] {
   return view.posts.map((post) => {
-    const state = postState(post.status, post.publication?.status ?? null);
+    const state = postState(
+      post.status,
+      post.publication?.status ?? null,
+      post.publication?.safe_error_code ?? null,
+    );
     const actions: PostAction[] = [];
     if (state === "awaiting_approval" && can.canApprove)
       actions.push("approve", "reject");
     if (state === "approved" && can.canPublish && can.canWrite)
       actions.push("publish");
-    if (post.publication?.recovery_allowed && can.canPublish)
+    // A post Google is still checking resolves by itself; retrying would only add noise.
+    if (
+      post.publication?.recovery_allowed &&
+      can.canPublish &&
+      state !== "confirming"
+    )
       actions.push("recover");
     if (state === "not_published" && can.canPublish)
       actions.push("repost", "discard");
@@ -285,7 +295,8 @@ export function postRows(view: ProfileView, can: PostPermissions): PostRow[] {
         ? `Published ${dateText(publication.verified_at)}`
         : publication?.scheduled_for
           ? `Scheduled ${dateText(publication.scheduled_for)}`
-          : `Version ${post.revision}`,
+          : (postStateNote(state, publication?.safe_error_code ?? null) ??
+            `Version ${post.revision}`),
       cta: ctaOf(post.call_to_action),
       actions,
       editable: state === "awaiting_approval" || state === "rejected",

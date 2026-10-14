@@ -142,6 +142,49 @@ const reviewScreens = [
     referenceRespond,
   ],
 ];
+// Step 9d: reviews Google no longer lists, and GBP posts Google is still confirming.
+const removedDetail = `${reviewsAlpha}locations/77777777-7777-4777-8777-777777777777/33333333-3333-4333-8333-3333333333a1/`;
+const waitingPosts = async () => {
+  await reset();
+  await fetch(`${beta}/test/gbp-waiting-posts`, { method: "POST", body: "{}" });
+};
+const referencePosts = async (page) => {
+  const posts = page.getByRole("button", { name: "Posts", exact: true });
+  if (await posts.count()) await posts.first().click();
+};
+const reconciliationScreens = [
+  ["reviews-inbox-with-removed-chip", "a", reviewsAlpha, referenceReviews],
+  [
+    "reviews-no-longer-on-google",
+    "a",
+    `${reviewsAlpha}?status=removed`,
+    referenceReviews,
+  ],
+  [
+    "reviews-removed-detail",
+    "a",
+    removedDetail,
+    referenceReviews,
+    undefined,
+    undefined,
+    referenceRespond,
+  ],
+  [
+    "reviews-no-longer-on-google-empty",
+    "b",
+    "/clients/synthetic-beta/reviews/?status=removed",
+    referenceReviews,
+  ],
+  [
+    "gbp-posts-confirming-with-google",
+    "b",
+    `${gbp}?view=posts`,
+    `${coco}google-business-profile/`,
+    undefined,
+    waitingPosts,
+    referencePosts,
+  ],
+];
 // Step 5a: Website & Content. The reference's standard client stands for every tab; each console
 // screen is shown in the simulator scenario that exercises it.
 const site = "/clients/synthetic-alpha/website-content/";
@@ -849,29 +892,31 @@ const side = async (browser, size, left, right) => {
 const activeScreens =
   stepName === "dashboard-gbp-actions"
     ? dashboardScreens
-    : stepName === "step-5b-followup"
-      ? contentScreens.filter(([name]) =>
-          ["content-composer", "content-draft-review"].includes(name),
-        )
-      : stepName === "step-5b"
-        ? contentScreens
-        : stepName === "step-5a"
-          ? websiteScreens
-          : stepName === "step-9c-administration-tabs"
-            ? adminTabScreens
-            : stepName === "step-9b-administration"
-              ? adminScreens
-              : stepName === "step-9-publishing"
-                ? publishingScreens
-                : stepName === "step-8-automations"
-                  ? automationScreens
-                  : stepName === "step-6"
-                    ? reviewScreens
-                    : stepName === "special-hours-publish"
-                      ? screens.filter(
-                          ([name]) => name === "special-hours-list",
-                        )
-                      : screens;
+    : stepName === "step-9d-reconciliation"
+      ? reconciliationScreens
+      : stepName === "step-5b-followup"
+        ? contentScreens.filter(([name]) =>
+            ["content-composer", "content-draft-review"].includes(name),
+          )
+        : stepName === "step-5b"
+          ? contentScreens
+          : stepName === "step-5a"
+            ? websiteScreens
+            : stepName === "step-9c-administration-tabs"
+              ? adminTabScreens
+              : stepName === "step-9b-administration"
+                ? adminScreens
+                : stepName === "step-9-publishing"
+                  ? publishingScreens
+                  : stepName === "step-8-automations"
+                    ? automationScreens
+                    : stepName === "step-6"
+                      ? reviewScreens
+                      : stepName === "special-hours-publish"
+                        ? screens.filter(
+                            ([name]) => name === "special-hours-list",
+                          )
+                        : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

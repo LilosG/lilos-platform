@@ -15,6 +15,8 @@ export function reviewFailure(raw: unknown, status: number): string {
 const failureText: Record<string, string> = {
   AAL2_REQUIRED: "Verify your authenticator, then try again.",
   CSRF_INVALID: "Your session expired. Refresh the page and try again.",
+  REVIEW_NO_LONGER_ON_PROVIDER:
+    "Google no longer lists this review, so it cannot be replied to. Refresh to see the current state.",
 };
 /** What a person reads when an action fails; the code itself is never shown. */
 export const failureMessage = (code: string): string =>

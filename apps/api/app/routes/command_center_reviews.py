@@ -30,13 +30,17 @@ router = APIRouter(
 )
 
 
-ReviewFilter = Literal["all", "needs_response", "draft", "awaiting_approval", "published"]
+ReviewFilter = Literal[
+    "all", "needs_response", "draft", "awaiting_approval", "published", "removed"
+]
 # One typed mapping from the console's filter tabs to canonical review statuses.
 FILTER_STATUSES: dict[str, tuple[str, ...]] = {
     "needs_response": ("new", "classified", "triaged", "escalated", "publication_failed"),
     "draft": ("drafting",),
     "awaiting_approval": ("awaiting_approval", "approved", "publishing"),
     "published": ("responded",),
+    # Reviews Google no longer lists: history only, never part of any count of live work.
+    "removed": ("removed",),
 }
 
 
@@ -86,6 +90,8 @@ class ReviewsWorkspace(BaseModel):
     location_id: UUID | None
     source: ReviewSource | None
     inventory_count: int | None
+    # Reviews Google stopped listing; not part of inventory_count or any other figure here.
+    removed_count: int | None
     average_rating: float | None
     open_restricted_cases: int | None
     awaiting_response_count: int | None
@@ -285,15 +291,17 @@ async def workspace(
     )
     summary = await service.summary(session, organization_id, selected)
     by_status = TypeAdapter(dict[str, int]).validate_python(summary["by_status"])
-    count = sum(by_status.values())
+    removed = by_status.get("removed", 0)
+    count = sum(by_status.values()) - removed
     source = await source_view(session, organization_id, selected, count > 0)
-    evidence = count > 0 or source.last_ingested_at is not None
+    evidence = count > 0 or removed > 0 or source.last_ingested_at is not None
     return ReviewsWorkspace(
         organization_id=organization_id,
         locations=locations,
         location_id=selected,
         source=source,
         inventory_count=count if evidence else None,
+        removed_count=removed if evidence else None,
         average_rating=summary["average_rating"],  # type: ignore[arg-type]
         open_restricted_cases=summary["open_restricted_cases"] if evidence else None,  # type: ignore[arg-type]
         awaiting_response_count=sum(by_status.get(k, 0) for k in FILTER_STATUSES["needs_response"])
@@ -360,6 +368,8 @@ async def detail(
     can_audit = await allowed(
         session, principal, organization_id, request, "audit.read", location_id=location_id
     )
+    # A review Google no longer lists keeps its drafts and replies as history; none can proceed.
+    listed = review.status != "removed"
     responses = []
     for response in await service.list_responses(session, organization_id, review_id):
         if response.location_id != location_id:
@@ -404,9 +414,11 @@ async def detail(
                 if imported
                 else "canonical_local_response_approval",
                 can_approve=can_approve
+                and listed
                 and response.status == "awaiting_approval"
                 and current == review.current_revision_number,
                 can_publish=can_publish
+                and listed
                 and response.status == "approved"
                 and current == review.current_revision_number
                 and review.status != "escalated",
@@ -427,8 +439,8 @@ async def detail(
         review=view,
         source=await source_view(session, organization_id, location_id, True),
         has_approved_facts=has_facts,
-        can_draft=can_generate and has_facts and view.revision_id is not None,
-        can_ai_draft=can_generate and has_facts and view.revision_id is not None,
+        can_draft=can_generate and has_facts and view.revision_id is not None and listed,
+        can_ai_draft=can_generate and has_facts and view.revision_id is not None and listed,
         responses=responses,
         can_read_audit=can_audit,
         history=await history(

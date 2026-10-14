@@ -101,6 +101,8 @@ class PostPublicationData(BaseModel):
     dispatched_at: datetime | None
     provider_post_id: str | None
     verified_at: datetime | None
+    # Why the post is waiting or parked (e.g. POST_NOT_YET_LIVE); a typed code, never shown as text.
+    safe_error_code: str | None
     recovery_allowed: bool
 
 

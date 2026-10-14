@@ -13486,6 +13486,17 @@
             "title": "Recovery Allowed",
             "type": "boolean"
           },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
           "scheduled_for": {
             "anyOf": [
               {
@@ -13522,6 +13533,7 @@
           "dispatched_at",
           "provider_post_id",
           "verified_at",
+          "safe_error_code",
           "recovery_allowed"
         ],
         "title": "PostPublicationData",
@@ -15373,6 +15385,17 @@
             "title": "Organization Id",
             "type": "string"
           },
+          "removed_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed Count"
+          },
           "source": {
             "anyOf": [
               {
@@ -15390,6 +15413,7 @@
           "location_id",
           "source",
           "inventory_count",
+          "removed_count",
           "average_rating",
           "open_restricted_cases",
           "awaiting_response_count",
@@ -21336,7 +21360,8 @@
                 "needs_response",
                 "draft",
                 "awaiting_approval",
-                "published"
+                "published",
+                "removed"
               ],
               "title": "Status",
               "type": "string"

@@ -20,14 +20,18 @@ from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
 from apps.api.app.products.gbp.provider_write_outcome import classify_provider_write_failure
 from apps.api.app.products.gbp.resource_names import v4_review_name
+from apps.api.app.products.reviews.errors import ReviewNoLongerOnProviderError
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision
 from apps.api.app.products.reviews.service import (
     PROVIDER_REPLY_STATE_UNSPECIFIED,
+    REVIEW_REMOVED,
     ProviderReplyObservation,
     lilos_publication_confirmation_lifecycle,
 )
 
 logger = logging.getLogger(__name__)
+
+REVIEW_NO_LONGER_ON_PROVIDER = ReviewNoLongerOnProviderError.code
 
 # Every code in this set is emitted only after the durable dispatch boundary was
 # crossed. Retrying these states must therefore be read-only: another updateReply
@@ -227,6 +231,14 @@ async def handle_reviews_publish_response(
         response.status = "failed"
         response.safe_error_code = "REVIEW_LOCATION_SCOPE_MISMATCH"
         return JobOutcome(result="permanent_failure", safe_error="REVIEW_LOCATION_SCOPE_MISMATCH")
+
+    if review.status == REVIEW_REMOVED:
+        # Google no longer lists the review: nothing is sent or read. A response already
+        # sent keeps its history; one still waiting to be sent can never go out.
+        if initial_publish:
+            response.status = "failed"
+            response.safe_error_code = REVIEW_NO_LONGER_ON_PROVIDER
+        return JobOutcome(result="permanent_failure", safe_error=REVIEW_NO_LONGER_ON_PROVIDER)
 
     resource_mapping = await session.scalar(
         select(ProviderResourceMapping).where(

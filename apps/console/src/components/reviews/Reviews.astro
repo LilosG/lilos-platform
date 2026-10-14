@@ -1,6 +1,6 @@
 ---
 import type { ReviewsView, ReviewFilter } from "../../adapters/reviews";
-import { REVIEW_FILTERS } from "../../adapters/reviews";
+import { REMOVED_FILTER, REVIEW_FILTERS } from "../../adapters/reviews";
 import { reviewMetrics, sourceView } from "../../lib/review-view";
 import EmptyState from "../ui/EmptyState.astro";
 import MetricStrip from "../ui/MetricStrip.astro";
@@ -37,24 +37,42 @@ const source = sourceView(v.source);
 const integrations = `/clients/${slug}/integrations/`;
 const detailHref = (id: string, location: string) =>
   `${base}locations/${location}/${id}/${query({ status: null })}`;
+const removedCount = v.removed_count ?? 0;
 const tabs = [
   ...REVIEW_FILTERS.map(([key, label]) => ({
     label,
+    count: null as number | null,
     href: base + query({ status: key === "all" ? null : key }),
     current: tab === "" && filter === key,
   })),
+  // Shown once Google has dropped a review, or while looking at them.
+  ...(removedCount > 0 || filter === REMOVED_FILTER
+    ? [
+        {
+          label: "No longer on Google",
+          count: removedCount,
+          href: base + query({ status: REMOVED_FILTER }),
+          current: tab === "" && filter === REMOVED_FILTER,
+        },
+      ]
+    : []),
   {
     label: "Review requests",
+    count: null,
     href: `${base}requests/${query({ status: null })}`,
     current: tab === "requests",
   },
   {
     label: "Opportunities",
+    count: null,
     href: `${base}opportunities/${query({ status: null })}`,
     current: tab === "opportunities",
   },
 ];
-const filterLabel = REVIEW_FILTERS.find(([key]) => key === filter)![1];
+const filterLabel =
+  filter === REMOVED_FILTER
+    ? "No longer on Google"
+    : REVIEW_FILTERS.find(([key]) => key === filter)![1];
 ---
 
 <PageHeader title="Reviews" subtitle={clientName} client>
@@ -102,6 +120,7 @@ const filterLabel = REVIEW_FILTERS.find(([key]) => key === filter)![1];
         aria-current={t.current ? "page" : undefined}
       >
         {t.label}
+        {t.count !== null && <span class="count">{t.count}</span>}
       </a>
     ))
   }
@@ -153,6 +172,18 @@ const filterLabel = REVIEW_FILTERS.find(([key]) => key === filter)![1];
             now={now}
           />
         ))
+      ) : filter === REMOVED_FILTER ? (
+        <EmptyState title="Nothing has been dropped by Google">
+          Every review we hold is still listed on Google. A review appears here
+          if Google stops listing it.
+          <a
+            slot="action"
+            class="control"
+            href={base + query({ status: null })}
+          >
+            Show all reviews
+          </a>
+        </EmptyState>
       ) : filter !== "all" ? (
         <EmptyState title="Nothing in this view">
           No reviews match “{filterLabel}” right now.

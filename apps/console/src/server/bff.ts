@@ -156,7 +156,14 @@ const enumQuery: Record<string, readonly string[]> = {
   kind: ["seo", "content", "growth"],
   priority: ["high", "medium", "low"],
   state: ["open", "done"],
-  status: ["all", "needs_response", "draft", "awaiting_approval", "published"],
+  status: [
+    "all",
+    "needs_response",
+    "draft",
+    "awaiting_approval",
+    "published",
+    "removed",
+  ],
 };
 /** One typed rule per query key; anything unlisted fails closed. */
 function queryValid(key: string, value: string): boolean {

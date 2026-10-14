@@ -73,7 +73,10 @@ class InsightsService:
         gbp_publications = await self._status_counts(
             session, GBPPublication, scoped(GBPPublication)
         )
-        reviews = await self._status_counts(session, Review, scoped(Review))
+        # Reviews Google no longer lists are history, never counted as live work.
+        reviews = await self._status_counts(
+            session, Review, and_(scoped(Review), Review.status != "removed")
+        )
         scoped_content_items = select(ContentItem.id).where(
             ContentItem.organization_id == organization_id,
             or_(ContentItem.location_id == location_id, ContentItem.location_id.is_(None))
