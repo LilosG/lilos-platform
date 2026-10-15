@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,15 +14,19 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
-from apps.api.app.products.reviews.contracts import AIDraftCreate, DraftCreate, PublishResponse
-from apps.api.app.products.reviews.errors import (
-    ReviewIngestionUnavailableError,
-    ReviewNotFoundError,
+from apps.api.app.execution.automations import RunStatus
+from apps.api.app.execution.service import ExecutionService
+from apps.api.app.products.reviews.contracts import (
+    AIDraftCreate,
+    DraftCreate,
+    PublishResponse,
+    ReviewIngestResult,
+    ReviewIngestRun,
+    ReviewIngestStatus,
 )
-from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
+from apps.api.app.products.reviews.errors import ReviewNotFoundError
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
 from apps.api.app.products.reviews.service import ReviewService
-from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/locations/{location_id}/reviews",
@@ -30,6 +34,19 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = ReviewService()
+execution = ExecutionService()
+INGEST_WORKFLOW = "reviews.ingest"
+# The handler's code for a Google authorization that has to be redone by a person.
+RECONNECT_FAILURE_CODE = "TOKEN_REFRESH_FAILED"
+FINISHED_STATUSES = frozenset(
+    {
+        RunStatus.PARTIALLY_COMPLETED,
+        RunStatus.CANCELLED,
+        RunStatus.EXPIRED,
+        RunStatus.FAILED,
+        RunStatus.ESCALATED,
+    }
+)
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -354,7 +371,8 @@ async def publish(
 
 @router.post(
     "/ingest",
-    status_code=status.HTTP_200_OK,
+    response_model=ReviewIngestRun,
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(no_store)],
 )
 async def ingest_reviews(
@@ -363,22 +381,57 @@ async def ingest_reviews(
     location_id: UUID,
     session: Session,
     principal: Authenticated,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=64)],
     _: Annotated[AuthorizationDecision, policy("reviews.generate_response")],
-) -> dict[str, object]:
-    """Pull reviews from the connected GBP location and ingest them.
+) -> ReviewIngestRun:
+    """Queue a review import for the location; the worker pulls the reviews from Google.
 
+    Returns the run to poll. A queued or running import for the location is returned as is.
     Does not publish any response; preserves the approval workflow.
     """
-    ingestion = ReviewIngestionService()
-    try:
-        summary = await ingestion.ingest_for_location(
-            session,
-            settings_from_request(request),
-            organization_id,
-            location_id,
-            actor_id=principal.platform_user_id,
-            correlation_id=request_correlation_id(request),
-        )
-    except LookupError:
-        raise ReviewIngestionUnavailableError from None
-    return {"data": summary, "meta": meta(request)}
+    run, _created = await execution.run_now_for_location(
+        session,
+        organization_id,
+        location_id,
+        INGEST_WORKFLOW,
+        idempotency_key,
+        correlation_id=str(request_correlation_id(request)),
+        actor_id=principal.platform_user_id,
+    )
+    return ReviewIngestRun(run_id=run.id, run_status=RunStatus(run.status))
+
+
+@router.get(
+    "/ingest/{run_id}",
+    response_model=ReviewIngestStatus,
+    dependencies=[Depends(no_store)],
+)
+async def ingest_reviews_status(
+    organization_id: UUID,
+    location_id: UUID,
+    run_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("reviews.generate_response")],
+) -> ReviewIngestStatus:
+    """Where a manual review import stands, with a typed result once it has finished."""
+    run = await execution.find_location_run(
+        session, organization_id, location_id, INGEST_WORKFLOW, run_id
+    )
+    run_status = RunStatus(run.status)
+    return ReviewIngestStatus(
+        run_id=run.id, run_status=run_status, result=ingest_result(run_status, run.failure_code)
+    )
+
+
+def ingest_result(run_status: RunStatus, failure_code: str | None) -> ReviewIngestResult | None:
+    """The typed outcome of an import, or None while it is still going to finish."""
+    if run_status is RunStatus.COMPLETED:
+        return ReviewIngestResult.SUCCEEDED
+    if failure_code == RECONNECT_FAILURE_CODE and (
+        run_status is RunStatus.RETRY_SCHEDULED or run_status in FINISHED_STATUSES
+    ):
+        # Retrying cannot fix a lost Google authorization, so say so straight away.
+        return ReviewIngestResult.RECONNECT_REQUIRED
+    if run_status in FINISHED_STATUSES:
+        return ReviewIngestResult.FAILED
+    return None

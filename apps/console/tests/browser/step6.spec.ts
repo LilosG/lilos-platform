@@ -169,6 +169,24 @@ test("a source with no reviews shows a dash, never zero, and offers to import", 
   await noSystemText(page);
   await clean(page);
 });
+test("Import reviews queues the import, says it is working, then reloads when it finishes", async ({
+  page,
+}) => {
+  await login(page, beta, "b");
+  const button = page.getByRole("button", { name: "Import reviews" }).first();
+  const queued = page.waitForRequest(
+    (r) => r.method() === "POST" && r.url().endsWith("/reviews/ingest/"),
+  );
+  await button.click();
+  expect((await queued).headers()["idempotency-key"]).toMatch(/^[\w-]{8,64}$/);
+  const status = page.locator("[data-review-status]");
+  await expect(status).toHaveText("Importing reviews. This can take a minute.");
+  await expect(button).toBeDisabled();
+  await noSystemText(page);
+  // The status is read through the BFF until the run finishes, then the page reloads.
+  await page.waitForEvent("load");
+  await expect(page.locator("h1")).toHaveText("Reviews");
+});
 test("the response dialog drafts, edits, approves and publishes in the reference style", async ({
   page,
 }) => {

@@ -121,7 +121,7 @@ test("Reviews authenticated reads enforce tenant, location, CSRF and private cac
     (
       await page.request.post(
         `/api/organizations/${org}/locations/${fixtures.workspace.location_id}/reviews/ingest/`,
-        { data: {} },
+        { data: {}, headers: { "Idempotency-Key": "import-key-1" } },
       )
     ).status(),
   ).toBe(403);

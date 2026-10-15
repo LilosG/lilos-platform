@@ -39,6 +39,8 @@ const leadStates = new Map();
 let leadScenario = "inventory";
 let websiteMode = "default";
 const contentStates = new Map();
+const ingestRun = "33333333-3333-4333-8333-333333333333";
+const ingestPolls = new Map();
 const reviewStates = new Map();
 const growthStates = new Map();
 const contentOpportunityStates = new Map();
@@ -781,6 +783,20 @@ createServer(async (req, res) => {
       r.workflow_id = data.review.id;
     }
     return reply(data);
+  }
+  if (/\/reviews\/ingest$/.test(path) && req.method === "POST") {
+    ingestPolls.set(claims.session_id, 0);
+    return reply({ run_id: ingestRun, run_status: "queued" }, 202);
+  }
+  if (path.endsWith(`/reviews/ingest/${ingestRun}`) && req.method === "GET") {
+    // The first poll finds the import still going; the next finds it finished.
+    const polls = (ingestPolls.get(claims.session_id) ?? 0) + 1;
+    ingestPolls.set(claims.session_id, polls);
+    return reply({
+      run_id: ingestRun,
+      run_status: polls < 2 ? "running" : "completed",
+      result: polls < 2 ? null : "SUCCEEDED",
+    });
   }
   if (path.includes("/reviews/") && req.method === "POST") {
     if (path.endsWith("/approve") || path.endsWith("/publish")) {

@@ -3506,11 +3506,32 @@ export interface paths {
         put?: never;
         /**
          * Ingest Reviews
-         * @description Pull reviews from the connected GBP location and ingest them.
+         * @description Queue a review import for the location; the worker pulls the reviews from Google.
          *
+         *     Returns the run to poll. A queued or running import for the location is returned as is.
          *     Does not publish any response; preserves the approval workflow.
          */
         post: operations["ingest_reviews_api_v1_organizations__organization_id__locations__location_id__reviews_ingest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/reviews/ingest/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ingest Reviews Status
+         * @description Where a manual review import stands, with a typed result once it has finished.
+         */
+        get: operations["ingest_reviews_status_api_v1_organizations__organization_id__locations__location_id__reviews_ingest__run_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11114,6 +11135,37 @@ export interface components {
             result: string;
             /** Summary */
             summary: string;
+        };
+        /**
+         * ReviewIngestResult
+         * @description How a finished manual review import ended.
+         * @enum {string}
+         */
+        ReviewIngestResult: "SUCCEEDED" | "RECONNECT_REQUIRED" | "FAILED";
+        /**
+         * ReviewIngestRun
+         * @description A queued or running manual review import.
+         */
+        ReviewIngestRun: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            run_status: components["schemas"]["RunStatus"];
+        };
+        /**
+         * ReviewIngestStatus
+         * @description A manual review import; ``result`` is set only once it has finished.
+         */
+        ReviewIngestStatus: {
+            result: components["schemas"]["ReviewIngestResult"] | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            run_status: components["schemas"]["RunStatus"];
         };
         /** ReviewInventoryItem */
         ReviewInventoryItem: {
@@ -20029,10 +20081,45 @@ export interface operations {
     ingest_reviews_api_v1_organizations__organization_id__locations__location_id__reviews_ingest_post: {
         parameters: {
             query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                organization_id: string;
+                location_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewIngestRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_reviews_status_api_v1_organizations__organization_id__locations__location_id__reviews_ingest__run_id__get: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 organization_id: string;
                 location_id: string;
+                run_id: string;
             };
             cookie?: never;
         };
@@ -20044,9 +20131,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ReviewIngestStatus"];
                 };
             };
             /** @description Validation Error */

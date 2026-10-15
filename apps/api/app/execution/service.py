@@ -485,6 +485,115 @@ class ExecutionService:
         )
         return run, True
 
+    async def run_now_for_location(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        workflow_key: str,
+        idempotency_key: str,
+        *,
+        correlation_id: str,
+        actor_id: UUID | None,
+    ) -> tuple[WorkflowRun, bool]:
+        """Run one read-only workflow now for a location, with no schedule row required.
+
+        Goes through the same run-creation path as ``run_schedule_now``. The same key returns
+        the same run, and a queued or running run of this workflow for the location is
+        returned instead of starting another, so a double click imports once. Returns
+        ``(run, created)``.
+        """
+        if workflow_key not in RUN_NOW_WORKFLOWS:
+            raise AutomationRunNotAllowedError
+        status = await session.scalar(
+            select(Location.status).where(
+                Location.organization_id == organization_id, Location.id == location_id
+            )
+        )
+        if status is None:
+            raise WorkflowLocationScopeError
+        if status in RETIRED_LOCATIONS:
+            raise AutomationLocationRetiredError
+        # Serialise concurrent clicks for this location so only one run is created.
+        await session.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtextextended(f"{workflow_key}:{location_id}", 0)
+                )
+            )
+        )
+        run_key = f"run-now:{workflow_key}:{location_id}:{idempotency_key}"
+        replay = await session.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.idempotency_key == run_key,
+            )
+        )
+        if replay is not None:
+            return replay, False
+        busy = await session.scalar(
+            select(WorkflowRun)
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
+            .where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowDefinition.key == workflow_key,
+                WorkflowRun.location_id == location_id,
+                WorkflowRun.status.in_(BLOCKING_STATUSES),
+            )
+            .order_by(WorkflowRun.created_at.desc())
+            .limit(1)
+        )
+        if busy is not None:
+            return busy, False
+        run = await self.start_named(
+            session,
+            organization_id,
+            workflow_key,
+            run_key,
+            location_id=location_id,
+            input_document={"trigger": "run_now"},
+            correlation_id=correlation_id,
+            actor_id=actor_id,
+        )
+        await self._audit(
+            session,
+            event="workflow.run_now.requested",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="workflow_run",
+            resource_id=run.id,
+            correlation_id=correlation_id,
+            summary=f"Run now requested: {workflow_key}.",
+            metadata={"workflow_key": workflow_key, "workflow_run_id": str(run.id)},
+        )
+        return run, True
+
+    async def find_location_run(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        workflow_key: str,
+        run_id: UUID,
+    ) -> WorkflowRun:
+        """One run of a workflow for a location; anything else is not found."""
+        run = await session.scalar(
+            select(WorkflowRun)
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
+            .where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.id == run_id,
+                WorkflowRun.location_id == location_id,
+                WorkflowDefinition.key == workflow_key,
+            )
+        )
+        if run is None:
+            raise WorkflowRunNotFoundError
+        return run
+
     async def start_named(
         self,
         session: AsyncSession,

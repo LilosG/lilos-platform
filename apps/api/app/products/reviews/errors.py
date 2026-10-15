@@ -73,13 +73,6 @@ class InvalidReviewQueryError(ConflictError):
     public_message = "The review query parameters are invalid."
 
 
-class ReviewIngestionUnavailableError(ConflictError):
-    """Review import was requested before a GBP location is connected and mapped."""
-
-    code = "REVIEW_INGESTION_UNAVAILABLE"
-    public_message = "Connect and map a Google Business Profile location before importing reviews."
-
-
 class ReviewNoLongerOnProviderError(ConflictError):
     """The review is no longer listed by Google, so no reply can be drafted, approved or sent."""
 

@@ -23,7 +23,11 @@ export const reviewRoutes = [
     "status",
   ]),
   route(`${org}/command-center/reviews/locations/${uuid}/${uuid}`, "GET"),
-  route(`${reviews}/ingest`, "POST", z.object({}).strict()),
+  {
+    ...route(`${reviews}/ingest`, "POST", z.object({}).strict()),
+    idempotency: true,
+  },
+  route(`${reviews}/ingest/${uuid}`, "GET"),
   route(
     `${reviews}/${uuid}/responses`,
     "POST",
