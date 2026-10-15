@@ -199,6 +199,18 @@ export const directionOf = (
       : change < 0
         ? "down"
         : "flat";
+export type Better = "higher" | "lower";
+export type Tone = "good" | "bad" | "neutral";
+/** Whether a change helped: the arrow follows the number, the colour follows what is better. */
+export const toneOf = (
+  direction: "up" | "down" | "flat" | "none",
+  better: Better = "higher",
+): Tone =>
+  direction === "up" || direction === "down"
+    ? (direction === "up") === (better === "higher")
+      ? "good"
+      : "bad"
+    : "neutral";
 const round = (value: number | null | undefined) =>
   value === null || value === undefined ? null : Math.round(value);
 /** A tile for one count against its comparison; a missing figure is a muted tile, never 0. */
@@ -277,6 +289,7 @@ export interface HeadlineCard {
   /** "+20.0% vs February – April 2026". */
   change: string;
   direction: "up" | "down" | "flat";
+  tone: Tone;
   /** What the figure is, in one plain sentence. */
   line: string;
 }
@@ -325,6 +338,7 @@ export function headlineCards(snapshot: ReportSnapshot): HeadlineCard[] {
           value: fmt(count.current.value as number),
           change: `${signed(count.change_percent ?? null, 1) ?? absoluteChange(count.change as number)} vs ${against(count.compared_as)}`,
           direction: directionOf(count.change) as "up" | "down" | "flat",
+          tone: toneOf(directionOf(count.change)),
           line: copy.line,
         },
       ];
@@ -343,6 +357,7 @@ export function headlineCards(snapshot: ReportSnapshot): HeadlineCard[] {
         value: ratingText(rate.current.value as number),
         change: `${pointsText(rate.change, "stars")} vs ${against("total")}`,
         direction: directionOf(rate.change) as "up" | "down" | "flat",
+        tone: toneOf(directionOf(rate.change)),
         line: copy.line,
       },
     ];

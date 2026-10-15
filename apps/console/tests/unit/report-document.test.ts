@@ -3,6 +3,7 @@ import * as fixture from "../fixtures/report.mjs";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const detail = fixture.detail as (overrides?: object) => any;
 import { adaptReportDetail } from "../../src/adapters/reports";
+import { toneOf } from "../../src/lib/report-view";
 import {
   documentView,
   monthlyChart,
@@ -18,7 +19,7 @@ const report = (options = {}, comparison: object = fixture.PREVIOUS) =>
     organization: fixture.ORG,
   });
 // What a person reads: every string except the machine fields that only choose a style.
-const MACHINE = new Set(["key", "id", "direction", "group", "class"]);
+const MACHINE = new Set(["key", "id", "direction", "tone", "group", "class"]);
 const strings = (value: unknown): string[] =>
   typeof value === "string"
     ? [value]
@@ -229,5 +230,25 @@ describe("sections", () => {
     const terms = view.notes.definitions.map((item) => item.term);
     expect(terms).toContain("Branded searches");
     expect(terms).toContain("Compared as monthly averages");
+  });
+});
+
+describe("tone of a change", () => {
+  const rows = () =>
+    scorecard(report().snapshot).groups.flatMap((group) => group.rows);
+  it("treats a lower average position as good", () => {
+    expect(toneOf("down", "lower")).toBe("good");
+    expect(toneOf("up", "lower")).toBe("bad");
+    const row = rows().find((r) => r.label.startsWith("Average position"));
+    expect(row?.direction).toBe("down");
+    expect(row?.tone).toBe("good");
+  });
+  it("treats more views as good and fewer as bad", () => {
+    expect(toneOf("up")).toBe("good");
+    expect(toneOf("down")).toBe("bad");
+  });
+  it("leaves no change and no comparison neutral", () => {
+    expect(toneOf("flat")).toBe("neutral");
+    expect(toneOf("none", "lower")).toBe("neutral");
   });
 });

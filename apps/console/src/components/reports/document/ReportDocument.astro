@@ -74,7 +74,7 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
             <div class="card" data-headline={card.key}>
               <p class="cardlabel">{card.label}</p>
               <p class="cardvalue">{card.value}</p>
-              <p class:list={["cardchange", card.direction]}>
+              <p class:list={["cardchange", card.tone]}>
                 <span aria-hidden="true">{arrow[card.direction]}</span>
                 {card.change}
               </p>
@@ -128,7 +128,7 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
                     <th scope="row">{row.label}</th>
                     <td class="num strong">{row.current}</td>
                     <td class="num">{row.compared}</td>
-                    <td class:list={["num", "change", row.direction]}>
+                    <td class:list={["num", "change", row.tone]}>
                       {arrow[row.direction] && (
                         <span aria-hidden="true">{arrow[row.direction]} </span>
                       )}

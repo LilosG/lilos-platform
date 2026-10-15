@@ -38,7 +38,10 @@ import {
   present,
   ratingText,
   rateText,
+  toneOf,
+  type Better,
   type HeadlineCard,
+  type Tone,
 } from "./report-view";
 import { DISPLAY_TIME_ZONE, dateText, fmt, positionText } from "./present";
 import { monthsOf } from "./report-period";
@@ -60,6 +63,7 @@ export interface ScoreRow {
   compared: string;
   change: string;
   direction: Direction;
+  tone: Tone;
   /** The same period a year earlier, with its change; null when this row has none to show. */
   year: string | null;
   partial: boolean;
@@ -121,6 +125,7 @@ function countRow(label: string, comparison: CountComparison): ScoreRow | null {
     compared,
     change: change ?? (partial ? "Not comparable" : "No comparison"),
     direction: directionOf(comparison.change),
+    tone: toneOf(directionOf(comparison.change)),
     year: yearCell(comparison),
     partial: isPartial(comparison.current),
   };
@@ -130,6 +135,7 @@ function rateRow(
   comparison: RateComparison,
   format: (value: number) => string,
   unit: string,
+  better: Better = "higher",
 ): ScoreRow | null {
   if (!present(comparison.current)) return null;
   const point = (change: number | null | undefined) =>
@@ -148,6 +154,7 @@ function rateRow(
       point(comparison.change) ??
       (partial ? "Not comparable" : "No comparison"),
     direction: directionOf(comparison.change),
+    tone: toneOf(directionOf(comparison.change), better),
     year:
       year === null || year === undefined
         ? null
@@ -186,6 +193,7 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
             gapText(row.comparison.compared),
           change: "Not comparable",
           direction: "none",
+          tone: "neutral",
           year: null,
           partial: false,
         },
@@ -223,6 +231,7 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
           search.average_position,
           positionText,
           "places",
+          "lower",
         ),
       ]),
     });

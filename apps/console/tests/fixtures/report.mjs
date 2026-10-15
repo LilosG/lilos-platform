@@ -261,6 +261,9 @@ export function snapshot(period, spec, options = {}) {
     partial: options.partial,
   };
   const total = views.current.value;
+  const actionRateNow = Math.round((actions.current.value / total) * 1000) / 10;
+  const actionRateBefore =
+    Math.round((actions.compared.value / views.compared.value) * 1000) / 10;
   const share = (n) => Math.round((n / total) * 1000) / 10;
   const maps = Math.round(total * 0.5);
   const desktop = Math.round(total * 0.28);
@@ -396,15 +399,10 @@ export function snapshot(period, spec, options = {}) {
       actions: {
         total: actions,
         action_rate: {
-          current: rate(
-            Math.round((actions.current.value / total) * 1000) / 10,
-          ),
-          compared: rate(
-            Math.round((actions.compared.value / views.compared.value) * 1000) /
-              10,
-          ),
+          current: rate(actionRateNow),
+          compared: rate(actionRateBefore),
           year_ago: null,
-          change: -1.2,
+          change: Math.round((actionRateNow - actionRateBefore) * 10) / 10,
           year_change: null,
         },
         actions: [
