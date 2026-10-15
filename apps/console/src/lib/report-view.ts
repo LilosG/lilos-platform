@@ -1,10 +1,13 @@
 import type {
+  ComparisonBasis,
   CountComparison,
   CountFigure,
+  HeadlineKey,
   NarrativeFailureCode,
   NoteCode,
   PortfolioReportRow,
   PortfolioReports,
+  RateComparison,
   RateFigure,
   ReportDetail,
   ReportList,
@@ -14,19 +17,19 @@ import type {
   ReportSnapshot,
   SectionKey,
   UnavailableReason,
-  WorkKind,
 } from "../adapters/reports";
 import type { GbpMetric } from "../adapters/gbp";
-import { chartModel, type ChartModel, type Tile } from "./local-search-view";
+import type { Tile } from "./local-search-view";
+import { DISPLAY_TIME_ZONE, clockText, dateText, fmt, signed } from "./present";
 import {
-  DISPLAY_TIME_ZONE,
-  clockText,
-  ctrText,
-  dateText,
-  fmt,
-  positionText,
-  signed,
-} from "./present";
+  PREVIOUS,
+  addMonths,
+  comparisonOfSpec,
+  reportHref,
+  samePeriod,
+  type PeriodErrorCode,
+  type PeriodRef,
+} from "./report-period";
 import { reportChips, readinessChips, type Chip } from "./status";
 const MONTHS = [
   "January",
@@ -46,32 +49,79 @@ const parts = (month: string) => {
   const [year, number] = month.split("-").map(Number);
   return { year, number };
 };
-const previousOf = (month: string) => {
-  const { year, number } = parts(month);
-  return number === 1
-    ? `${year - 1}-12-01`
-    : `${year}-${String(number - 1).padStart(2, "0")}-01`;
-};
 /** "September" from "2026-09-01". */
 export const monthName = (month: string) => MONTHS[parts(month).number - 1];
 /** "September 2026" from "2026-09-01". */
 export const monthLabel = (month: string) =>
   `${monthName(month)} ${parts(month).year}`;
-/** "September 1–30, 2026": the whole calendar month a report covers. */
-export function monthRange(month: string): string {
-  const { year, number } = parts(month);
-  const last = new Date(Date.UTC(year, number, 0)).getUTCDate();
-  return `${monthName(month)} 1–${last}, ${year}`;
+/** "Sep" from "2026-09-01": a month in a chart or a narrow table column. */
+export const monthShort = (month: string) => monthName(month).slice(0, 3);
+/** "September 2026", "May – September 2026", or "November 2025 – February 2026". */
+export function periodLabel(period: PeriodRef): string {
+  if (period.start === period.end) return monthLabel(period.start);
+  const first = parts(period.start);
+  const last = parts(period.end);
+  return first.year === last.year
+    ? `${monthName(period.start)} – ${monthLabel(period.end)}`
+    : `${monthLabel(period.start)} – ${monthLabel(period.end)}`;
 }
-/** "2026-09" from "2026-09-01": how a month appears in an address. */
-export const monthSlug = (month: string) => month.slice(0, 7);
-/** "2026-09-01" from "2026-09", or null when it is not a month. */
-export const monthFromSlug = (slug: string): string | null =>
-  /^\d{4}-(0[1-9]|1[0-2])$/.test(slug) ? `${slug}-01` : null;
-export const reportHref = (slug: string, month: string, revision?: number) =>
-  `/clients/${slug}/reports/${monthSlug(month)}/${revision ? `?revision=${revision}` : ""}`;
-export const summaryHref = (slug: string, month: string, revision?: number) =>
-  `/clients/${slug}/reports/${monthSlug(month)}/summary/${revision ? `?revision=${revision}` : ""}`;
+/** "September 1–30, 2026" or "May 1 – September 30, 2026": the days a report covers. */
+export function periodRange(period: PeriodRef): string {
+  const { year, number } = parts(period.end);
+  const last = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  if (period.start === period.end)
+    return `${monthName(period.end)} 1–${last}, ${year}`;
+  const first = parts(period.start);
+  return first.year === year
+    ? `${monthName(period.start)} 1 – ${monthName(period.end)} ${last}, ${year}`
+    : `${monthName(period.start)} 1, ${first.year} – ${monthName(period.end)} ${last}, ${year}`;
+}
+export const periodOf = (view: {
+  start_month: string;
+  end_month: string;
+}): PeriodRef => ({ start: view.start_month, end: view.end_month });
+/** The months a report was compared with, in words: "February – April 2026". */
+export const comparedLabel = (snapshot: ReportSnapshot) =>
+  periodLabel(periodOf(snapshot.comparison.compared));
+/** What the comparison is, for the cover and the document's first page. */
+export function comparisonText(snapshot: ReportSnapshot): string {
+  const { comparison, period } = snapshot;
+  const compared = periodLabel(periodOf(comparison.compared));
+  const single = period.start_month === period.end_month;
+  if (comparison.basis === "previous_period")
+    return `${single ? "the month before" : "the months before"} (${compared})`;
+  if (comparison.basis === "same_period_last_year")
+    return `${single ? "the same month last year" : "the same months last year"} (${compared})`;
+  return `${compared}, a baseline of ${comparison.compared_as === "monthly_average" ? "a different length, as monthly averages" : "the same length"}`;
+}
+/** "the monthly average of February – April 2026", or just the months, as a change is worded. */
+export function comparedPhrase(comparison: {
+  compared_as: "total" | "monthly_average";
+  compared: PeriodRef;
+}): string {
+  const label = periodLabel(comparison.compared);
+  return comparison.compared_as === "monthly_average"
+    ? `the monthly average of ${label}`
+    : label;
+}
+/** What each "Compare with" choice means, shown under the choice. */
+export const compareHelp = {
+  previous: "The same number of months immediately before the report.",
+  "year-ago": "The same months one year earlier.",
+  baseline:
+    "Months you choose, ending before the report starts. A baseline of another length is compared as monthly averages.",
+} as const;
+export const basisText: Record<ComparisonBasis, string> = {
+  previous_period: "Previous period",
+  same_period_last_year: "Same period last year",
+  custom_baseline: "A baseline period",
+};
+/** The comparison a stored report names, in a few words for lists and chips. */
+export function comparisonName(spec: ReportRevisionRow["comparison"]): string {
+  if (spec.basis === "previous_period") return "vs previous period";
+  if (spec.basis === "same_period_last_year") return "vs same period last year";
+  return `vs ${periodLabel({ start: spec.baseline_start ?? "", end: spec.baseline_end ?? "" })}`;
+}
 export const reportChip = (status: keyof typeof reportChips): Chip =>
   reportChips[status];
 export const readinessChip = (readiness: ReportReadiness): Chip =>
@@ -82,43 +132,92 @@ export const reasonText: Record<UnavailableReason, string> = {
   not_synced: "Not synced yet",
   no_data: "No data reported",
   not_reported: "Not reported by Google",
-  partial_period: "Only part of the month",
+  partial_period: "Only part of the period",
   no_views: "No profile views",
   not_tracked: "Not tracked yet",
   not_compared: "No comparison",
   source_unavailable: "Unavailable",
 };
-const MISSING = "–";
-const present = (figure: CountFigure | RateFigure) =>
+/** A figure that can be stated: available or partial, with a value. */
+export const present = (figure: CountFigure | RateFigure | null | undefined) =>
+  !!figure &&
   figure.availability !== "unavailable" &&
   figure.value !== null &&
   figure.value !== undefined;
-/** A count, or a dash. A missing figure is never shown as 0. */
-export const figureText = (figure: CountFigure | null | undefined): string =>
-  figure && present(figure) ? fmt(figure.value as number) : MISSING;
+export const isPartial = (
+  figure: CountFigure | RateFigure | null | undefined,
+) => !!figure && figure.availability === "partial";
+/** A count, with an asterisk when it covers only part of the period; null when there is none. */
+export const countText = (
+  figure: CountFigure | null | undefined,
+): string | null =>
+  figure && present(figure)
+    ? `${fmt(figure.value as number)}${isPartial(figure) ? "*" : ""}`
+    : null;
 export const rateText = (
   figure: RateFigure | null | undefined,
   format: (value: number) => string,
-): string =>
-  figure && present(figure) ? format(figure.value as number) : MISSING;
-const percentText = (value: number) => `${value.toFixed(1)}%`;
-const pointsText = (value: number | null | undefined, unit: string) =>
-  value === null || value === undefined
-    ? MISSING
-    : `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)} ${unit}`;
-const absoluteChange = (change: number | null | undefined) =>
+): string | null =>
+  figure && present(figure)
+    ? `${format(figure.value as number)}${isPartial(figure) ? "*" : ""}`
+    : null;
+/** The words for a figure that has no number: its reason, or a plain fallback. */
+export const gapText = (
+  figure: CountFigure | RateFigure | null | undefined,
+): string => (figure?.reason ? reasonText[figure.reason] : "Not available");
+export const percentText = (value: number) => `${value.toFixed(1)}%`;
+export const ratingText = (value: number) => value.toFixed(1);
+const pointsText = (value: number, unit: string) =>
+  `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)} ${unit}`;
+const absoluteChange = (change: number) =>
+  `${change > 0 ? "+" : change < 0 ? "−" : ""}${fmt(Math.abs(change))}`;
+/** "+244 (+20.0%)": a count's change, or null when no change can be stated. */
+export function changeText(
+  comparison: CountComparison,
+  versus: "compared" | "year" = "compared",
+): string | null {
+  const change = versus === "year" ? comparison.year_change : comparison.change;
+  const percent =
+    versus === "year"
+      ? comparison.year_change_percent
+      : comparison.change_percent;
+  if (change === null || change === undefined) return null;
+  const share =
+    percent === null || percent === undefined ? null : signed(percent, 1);
+  return share
+    ? `${absoluteChange(change)} (${share})`
+    : absoluteChange(change);
+}
+/** Up, down or flat, for colouring a change. */
+export const directionOf = (
+  change: number | null | undefined,
+): "up" | "down" | "flat" | "none" =>
   change === null || change === undefined
-    ? null
-    : `${change > 0 ? "+" : change < 0 ? "−" : ""}${fmt(Math.abs(change))}`;
+    ? "none"
+    : change > 0
+      ? "up"
+      : change < 0
+        ? "down"
+        : "flat";
+export type Better = "higher" | "lower";
+export type Tone = "good" | "bad" | "neutral";
+/** Whether a change helped: the arrow follows the number, the colour follows what is better. */
+export const toneOf = (
+  direction: "up" | "down" | "flat" | "none",
+  better: Better = "higher",
+): Tone =>
+  direction === "up" || direction === "down"
+    ? (direction === "up") === (better === "higher")
+      ? "good"
+      : "bad"
+    : "neutral";
 const round = (value: number | null | undefined) =>
   value === null || value === undefined ? null : Math.round(value);
-const gap = (figure: CountFigure | RateFigure): string =>
-  figure.reason ? reasonText[figure.reason] : "Unavailable";
-/** A tile for one figure compared with the month before and the same month a year earlier. */
+/** A tile for one count against its comparison; a missing figure is a muted tile, never 0. */
 export function comparisonTile(
   label: string,
   comparison: CountComparison,
-  month: string,
+  snapshot: ReportSnapshot,
   format: (value: number) => string = fmt,
 ): Tile {
   const current = comparison.current;
@@ -126,42 +225,47 @@ export function comparisonTile(
     return {
       label,
       value: "Unavailable",
-      description: gap(current),
+      description: gapText(current),
       trend: null,
       missing: true,
     };
   const value = format(current.value as number);
-  if (current.availability === "partial")
+  if (isPartial(current))
     return {
       label,
-      value,
-      description:
-        current.days_covered != null && current.days_expected != null
-          ? `Partial month · ${current.days_covered} of ${current.days_expected} days synced`
-          : "Partial month",
+      value: `${value}*`,
+      description: partialText(current),
       trend: null,
       missing: false,
     };
-  const previous = monthName(previousOf(month));
-  const year = comparison.year_change_percent;
-  const earlier =
-    comparison.change_percent === null ||
-    comparison.change_percent === undefined
-      ? comparison.previous.availability === "unavailable"
-        ? `No ${previous} to compare`
-        : `Same as ${previous}`
-      : `vs ${previous}`;
+  const against = comparedPhrase({
+    compared_as: comparison.compared_as,
+    compared: periodOf(snapshot.comparison.compared),
+  });
   return {
     label,
     value,
     description:
-      year === null || year === undefined
-        ? earlier
-        : `${earlier} · ${signed(year, 0)} vs last year`,
+      comparison.change_percent === null ||
+      comparison.change_percent === undefined
+        ? present(comparison.compared)
+          ? `Same as ${against}`
+          : `No ${against} to compare`
+        : `vs ${against}`,
     trend: round(comparison.change_percent),
     missing: false,
   };
 }
+/** How much of the period a partial figure covers, in words. */
+export function partialText(figure: CountFigure | RateFigure): string {
+  const count = figure as CountFigure;
+  if (count.months_covered != null && count.months_expected != null)
+    return `Partial · ${count.months_covered} of ${count.months_expected} months synced`;
+  if (count.days_covered != null && count.days_expected != null)
+    return `Partial · ${count.days_covered} of ${count.days_expected} days synced`;
+  return "Partial period";
+}
+export const metricLabel = (metric: GbpMetric) => METRIC_LABEL[metric];
 const METRIC_LABEL: Record<GbpMetric, string> = {
   BUSINESS_IMPRESSIONS_DESKTOP_MAPS: "Google Maps on desktop",
   BUSINESS_IMPRESSIONS_DESKTOP_SEARCH: "Google Search on desktop",
@@ -175,437 +279,98 @@ const METRIC_LABEL: Record<GbpMetric, string> = {
   BUSINESS_FOOD_ORDERS: "Food orders",
   BUSINESS_FOOD_MENU_CLICKS: "Menu clicks",
 };
-export const metricLabel = (metric: GbpMetric) => METRIC_LABEL[metric];
-export interface ReportTiles {
-  headline: Tile[];
-  optional: Tile[];
-  rate: Tile;
-}
-/** Views, calls, website clicks and directions with their trend; optional tiles only when reported. */
-export function profileTiles(snapshot: ReportSnapshot): ReportTiles {
-  const { gbp, month } = snapshot;
-  const action = (metric: GbpMetric) =>
-    gbp.actions.actions.find((row) => row.metric === metric)!;
-  const rate = gbp.actions.action_rate;
-  const rateTile: Tile = !present(rate.current)
-    ? {
-        label: "Action rate",
-        value: "Unavailable",
-        description: gap(rate.current),
-        trend: null,
-        missing: true,
-      }
-    : {
-        label: "Action rate",
-        value: percentText(rate.current.value as number),
-        description: "Actions per profile view",
-        trend: null,
-        missing: false,
-      };
-  return {
-    headline: [
-      comparisonTile("Profile views", gbp.profile_views.total, month),
-      ...(
-        [
-          "CALL_CLICKS",
-          "WEBSITE_CLICKS",
-          "BUSINESS_DIRECTION_REQUESTS",
-        ] as const
-      ).map((metric) =>
-        comparisonTile(metricLabel(metric), action(metric).comparison, month),
-      ),
-    ],
-    optional: gbp.actions.optional.map((row) =>
-      comparisonTile(metricLabel(row.metric), row.comparison, month),
-    ),
-    rate: rateTile,
-  };
-}
-export interface SplitRow {
+/** Lower-case form of a figure's name, for use inside a sentence. */
+export const metricSentenceName = (metric: GbpMetric) =>
+  metricLabel(metric).toLowerCase();
+export interface HeadlineCard {
+  key: HeadlineKey;
   label: string;
   value: string;
-  share: number;
+  /** "+20.0% vs February – April 2026". */
+  change: string;
+  direction: "up" | "down" | "flat";
+  tone: Tone;
+  /** What the figure is, in one plain sentence. */
+  line: string;
 }
-export interface SplitView {
-  title: string;
-  rows: SplitRow[];
-}
-const SPLIT_LABEL = {
-  maps: "Google Maps",
-  search: "Google Search",
-  desktop: "Desktop",
-  mobile: "Mobile",
-} as const;
-/** Maps/Search and Desktop/Mobile. A split is drawn only when every part is known. */
-export function splitViews(snapshot: ReportSnapshot): {
-  splits: SplitView[];
-  complete: boolean;
-} {
-  const build = (
-    title: string,
-    split: ReportSnapshot["gbp"]["profile_views"]["maps_search"],
-  ): SplitView | null => {
-    const known = split.parts.every(
-      (part) =>
-        part.figure.availability === "available" &&
-        part.share_percent !== null &&
-        part.share_percent !== undefined,
-    );
-    return known
-      ? {
-          title,
-          rows: split.parts.map((part) => ({
-            label: SPLIT_LABEL[part.key],
-            value: figureText(part.figure),
-            share: Math.round(part.share_percent as number),
-          })),
-        }
-      : null;
-  };
-  const splits = [
-    build("Google Maps and Search", snapshot.gbp.profile_views.maps_search),
-    build("Desktop and mobile", snapshot.gbp.profile_views.desktop_mobile),
-  ].filter((item): item is SplitView => item !== null);
-  return { splits, complete: splits.length === 2 };
-}
-/** The four places a profile view came from, each with its share of all views. */
-export function sourceRows(snapshot: ReportSnapshot): SplitRow[] {
-  const total = snapshot.gbp.profile_views.total.current;
-  return snapshot.gbp.profile_views.sources.flatMap((row) => {
-    const current = row.comparison.current;
-    if (!present(current)) return [];
-    const share =
-      total.availability === "available" && total.value
-        ? Math.round(((current.value as number) / total.value) * 100)
-        : 0;
+const HEADLINE: Record<HeadlineKey, { label: string; line: string }> = {
+  profile_views: {
+    label: "Profile views",
+    line: "Times people saw your business on Google Search and Google Maps.",
+  },
+  profile_actions: {
+    label: "Profile actions",
+    line: "Calls, website clicks and direction requests from your Google profile.",
+  },
+  website_search_clicks: {
+    label: "Website search clicks",
+    line: "Times people clicked through to your website from Google Search.",
+  },
+  organic_sessions: {
+    label: "Visits from search",
+    line: "Website visits that began with an unpaid Google search.",
+  },
+  new_reviews: {
+    label: "New reviews",
+    line: "Google reviews customers wrote during this period.",
+  },
+  average_rating: {
+    label: "Average rating",
+    line: "Your average Google star rating across all reviews.",
+  },
+};
+/** The headline cards, from the figures the API chose. Words only; no number is computed here. */
+export function headlineCards(snapshot: ReportSnapshot): HeadlineCard[] {
+  const against = (as: "total" | "monthly_average") =>
+    comparedPhrase({
+      compared_as: as,
+      compared: periodOf(snapshot.comparison.compared),
+    });
+  return snapshot.headlines.flatMap((item): HeadlineCard[] => {
+    const copy = HEADLINE[item.key];
+    if (item.count) {
+      const { count } = item;
+      if (!present(count.current) || count.change === null) return [];
+      return [
+        {
+          key: item.key,
+          label: copy.label,
+          value: fmt(count.current.value as number),
+          change: `${signed(count.change_percent ?? null, 1) ?? absoluteChange(count.change as number)} vs ${against(count.compared_as)}`,
+          direction: directionOf(count.change) as "up" | "down" | "flat",
+          tone: toneOf(directionOf(count.change)),
+          line: copy.line,
+        },
+      ];
+    }
+    const rate = item.rate as RateComparison;
+    if (
+      !present(rate.current) ||
+      rate.change === null ||
+      rate.change === undefined
+    )
+      return [];
     return [
       {
-        label: metricLabel(row.metric),
-        value: fmt(current.value as number),
-        share,
+        key: item.key,
+        label: copy.label,
+        value: ratingText(rate.current.value as number),
+        change: `${pointsText(rate.change, "stars")} vs ${against("total")}`,
+        direction: directionOf(rate.change) as "up" | "down" | "flat",
+        tone: toneOf(directionOf(rate.change)),
+        line: copy.line,
       },
     ];
   });
 }
-export interface DailyCharts {
-  views: ChartModel | null;
-  actions: ChartModel | null;
-  note: string | null;
-}
-/** Per-day charts from the days that were synced; a day with no data is a gap, not zero. */
-export function dailyCharts(snapshot: ReportSnapshot): DailyCharts {
-  const { points, missing_days: missing } = snapshot.gbp.daily;
-  const series = (key: "views" | "actions") =>
-    points.flatMap((point) =>
-      point[key] === null ? [] : [{ day: point.day, value: point[key] }],
-    );
-  return {
-    views: chartModel(series("views")),
-    actions: chartModel(series("actions")),
-    note: missing.length
-      ? `${missing.length} ${missing.length === 1 ? "day was" : "days were"} not synced yet and ${missing.length === 1 ? "is" : "are"} left out.`
-      : null,
-  };
-}
-export interface TermRow {
-  keyword: string;
-  value: string;
-  bounded: boolean;
-}
-/** Google reports only "fewer than N" for rare searches; that is shown as "< N", never as 0. */
-export function termRows(snapshot: ReportSnapshot): TermRow[] {
-  return snapshot.gbp.search_terms.terms.map((term) => ({
-    keyword: term.keyword,
-    value:
-      term.value === null
-        ? term.below_threshold === null
-          ? MISSING
-          : `< ${fmt(term.below_threshold)}`
-        : term.below_threshold === null
-          ? fmt(term.value)
-          : `${fmt(term.value)}+`,
-    bounded: !term.is_exact,
-  }));
-}
-export interface ComparisonRow {
-  label: string;
-  current: string;
-  previous: string;
-  change: string;
-  year: string;
-  yearChange: string;
-  partial: boolean;
-}
-const changeText = (comparison: CountComparison, year: boolean): string => {
-  const absolute = absoluteChange(
-    year ? comparison.year_change : comparison.change,
-  );
-  const percent = signed(
-    (year ? comparison.year_change_percent : comparison.change_percent) ?? null,
-    1,
-  );
-  return absolute === null
-    ? MISSING
-    : percent
-      ? `${absolute} (${percent})`
-      : absolute;
-};
-const countRow = (
-  label: string,
-  comparison: CountComparison,
-): ComparisonRow => ({
-  label,
-  current: figureText(comparison.current),
-  previous: figureText(comparison.previous),
-  change: changeText(comparison, false),
-  year: figureText(comparison.year_ago),
-  yearChange: changeText(comparison, true),
-  partial: comparison.current.availability === "partial",
-});
-/** Every Business Profile figure beside last month and last year: the data behind the tiles. */
-export function comparisonRows(snapshot: ReportSnapshot): ComparisonRow[] {
-  const { gbp } = snapshot;
-  const rate = gbp.actions.action_rate;
-  return [
-    countRow("Profile views", gbp.profile_views.total),
-    ...gbp.profile_views.sources.map((row) =>
-      countRow(metricLabel(row.metric), row.comparison),
-    ),
-    countRow("Actions (calls, website clicks, directions)", gbp.actions.total),
-    ...gbp.actions.actions.map((row) =>
-      countRow(metricLabel(row.metric), row.comparison),
-    ),
-    ...gbp.actions.optional.map((row) =>
-      countRow(metricLabel(row.metric), row.comparison),
-    ),
-    {
-      label: "Action rate",
-      current: rateText(rate.current, percentText),
-      previous: rateText(rate.previous, percentText),
-      change: pointsText(rate.change, "pts"),
-      year: rateText(rate.year_ago, percentText),
-      yearChange: pointsText(rate.year_change, "pts"),
-      partial: rate.current.availability === "partial",
-    },
-  ];
-}
-export interface LocationRow {
-  name: string;
-  mapped: boolean;
-  views: string;
-  calls: string;
-  website: string;
-  directions: string;
-  change: string;
-}
-/** One row per location, only for a client with more than one active location. */
-export function locationRows(snapshot: ReportSnapshot): LocationRow[] {
-  return snapshot.gbp.locations.map((row) => ({
-    name: row.name,
-    mapped: row.mapped,
-    views: figureText(row.profile_views.current),
-    calls: figureText(row.calls.current),
-    website: figureText(row.website_clicks.current),
-    directions: figureText(row.direction_requests.current),
-    change: changeText(row.profile_views, false),
-  }));
-}
-export interface ReviewsView {
-  available: boolean;
-  gap: string;
-  rating: number | null;
-  ratingText: string;
-  stats: Tile[];
-  distribution: { stars: number; count: number; share: number }[];
-  total: number;
-}
-export function reviewsView(snapshot: ReportSnapshot): ReviewsView {
-  const reviews = snapshot.reviews;
-  if (reviews.availability === "unavailable")
-    return {
-      available: false,
-      gap: reviews.reason ? reasonText[reviews.reason] : "Unavailable",
-      rating: null,
-      ratingText: MISSING,
-      stats: [],
-      distribution: [],
-      total: 0,
-    };
-  const total = reviews.distribution_overall.reduce(
-    (n, row) => n + row.count,
-    0,
-  );
-  const tile = (label: string, value: string, description: string): Tile => ({
-    label,
-    value,
-    description,
+export const headlineTiles = (snapshot: ReportSnapshot): Tile[] =>
+  headlineCards(snapshot).map((card) => ({
+    label: card.label,
+    value: card.value,
+    description: card.change,
     trend: null,
-    missing: value === MISSING,
-  });
-  return {
-    available: true,
-    gap: "",
-    rating: present(reviews.average_rating_overall)
-      ? (reviews.average_rating_overall.value as number)
-      : null,
-    ratingText: rateText(reviews.average_rating_overall, (n) => n.toFixed(1)),
-    stats: [
-      tile(
-        "New reviews",
-        figureText(reviews.new_in_month),
-        "Received this month",
-      ),
-      tile(
-        "Average rating this month",
-        rateText(reviews.average_rating_in_month, (n) => n.toFixed(1)),
-        "Reviews received this month",
-      ),
-      tile(
-        "Responses published",
-        figureText(reviews.responses_published),
-        "Replies posted this month",
-      ),
-      tile(
-        "Response rate",
-        rateText(reviews.response_rate_percent, (n) => `${Math.round(n)}%`),
-        "Of this month’s new reviews",
-      ),
-    ],
-    distribution: [...reviews.distribution_overall]
-      .sort((a, b) => b.stars - a.stars)
-      .map((row) => ({
-        stars: row.stars,
-        count: row.count,
-        share: total ? Math.round((row.count / total) * 100) : 0,
-      })),
-    total,
-  };
-}
-export interface SearchView {
-  available: boolean;
-  gap: string;
-  tiles: Tile[];
-  queries: SearchRow[];
-  pages: SearchRow[];
-  partialNote: string | null;
-}
-export interface SearchRow {
-  label: string;
-  clicks: string;
-  impressions: string;
-  ctr: string;
-  position: string;
-  change: string;
-}
-type SearchNumbers = Omit<
-  ReportSnapshot["search_console"]["top_queries"][number],
-  "query"
->;
-const searchRow = (label: string, row: SearchNumbers): SearchRow => ({
-  label,
-  clicks: fmt(row.clicks),
-  impressions: fmt(row.impressions),
-  ctr: row.ctr === null ? MISSING : ctrText(row.ctr),
-  position: positionText(row.position),
-  change: absoluteChange(row.clicks_change) ?? MISSING,
-});
-export function searchView(snapshot: ReportSnapshot): SearchView {
-  const search = snapshot.search_console;
-  const month = snapshot.month;
-  if (search.availability === "unavailable")
-    return {
-      available: false,
-      gap: search.reason ? reasonText[search.reason] : "Unavailable",
-      tiles: [],
-      queries: [],
-      pages: [],
-      partialNote: null,
-    };
-  const position = search.average_position;
-  const ctr = search.ctr_percent;
-  const positionTile: Tile = !present(position.current)
-    ? {
-        label: "Average position",
-        value: "Unavailable",
-        description: gap(position.current),
-        trend: null,
-        missing: true,
-      }
-    : {
-        label: "Average position",
-        value: positionText(position.current.value as number),
-        description:
-          position.change === null || position.change === undefined
-            ? "No earlier month"
-            : `${position.change < 0 ? "Moved up" : position.change > 0 ? "Moved down" : "Unchanged"} vs ${monthName(previousOf(month))}`,
-        trend: null,
-        missing: false,
-      };
-  return {
-    available: true,
-    gap: "",
-    tiles: [
-      comparisonTile("Search clicks", search.clicks, month),
-      comparisonTile("Search impressions", search.impressions, month),
-      {
-        label: "Click-through rate",
-        value: rateText(ctr.current, (n) => `${n.toFixed(1)}%`),
-        description: "Clicks per impression",
-        trend: null,
-        missing: !present(ctr.current),
-      },
-      positionTile,
-    ],
-    queries: search.top_queries.map((row) => searchRow(row.query, row)),
-    pages: search.top_pages.map((row) => searchRow(pageLabel(row.page), row)),
-    partialNote:
-      search.lag_days != null
-        ? `Google is still finalizing the last ${search.lag_days} ${search.lag_days === 1 ? "day" : "days"} of the month.`
-        : null,
-  };
-}
-/** A page address without its scheme and host: "/menu/", or "Home page". */
-export function pageLabel(url: string): string {
-  try {
-    const { pathname } = new URL(url);
-    return pathname === "/" ? "Home page" : pathname;
-  } catch {
-    return url;
-  }
-}
-export interface AnalyticsView {
-  tile: Tile;
-}
-export function analyticsView(snapshot: ReportSnapshot): AnalyticsView {
-  const analytics = snapshot.analytics;
-  return {
-    tile: comparisonTile(
-      "Organic website visits",
-      analytics.organic_sessions,
-      snapshot.month,
-    ),
-  };
-}
-export const WORK_LABEL: Record<WorkKind, string> = {
-  gbp_post: "Business Profile posts published",
-  website_content: "Website content published",
-  review_response: "Review responses published",
-  gbp_profile_change: "Business Profile changes applied",
-  website_change: "Website changes applied",
-};
-export interface WorkRow {
-  label: string;
-  count: string;
-  titles: string[];
-}
-export const workRows = (snapshot: ReportSnapshot): WorkRow[] =>
-  snapshot.work.groups.map((group) => ({
-    label: WORK_LABEL[group.kind],
-    count: fmt(group.count),
-    titles: group.titles,
+    missing: false,
   }));
-export const workTotal = (snapshot: ReportSnapshot): number =>
-  snapshot.work.groups.reduce((total, group) => total + group.count, 0);
 const SECTION_LABEL: Record<SectionKey, string> = {
   profile_views: "Profile views",
   profile_actions: "Profile actions",
@@ -619,45 +384,57 @@ const SECTION_LABEL: Record<SectionKey, string> = {
   work_completed: "Work completed",
   narrative: "Narrative",
 };
+const plural = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
 const NOTE_TEXT: Record<NoteCode, (note: ReportNote) => string> = {
   gbp_not_connected: () =>
     "Google Business Profile is not connected, so this report has no profile data.",
-  gbp_month_not_synced: () =>
-    "No day of this month has been synced from Google Business Profile yet.",
-  gbp_month_partial: (note) =>
+  gbp_period_not_synced: () =>
+    "No day of this period has been synced from Google Business Profile yet.",
+  gbp_period_partial: (note) =>
     note.count
-      ? `${note.count} ${note.count === 1 ? "day" : "days"} of this month ${note.count === 1 ? "has" : "have"} not synced from Google yet, so profile totals cover part of the month.`
-      : "Part of this month has not synced from Google yet, so profile totals cover part of the month.",
+      ? `${plural(note.count, "day", "days")} of this period ${note.count === 1 ? "has" : "have"} not synced from Google yet, so profile totals cover part of the period.`
+      : "Part of this period has not synced from Google yet, so profile totals cover part of the period.",
   gbp_sync_failed: () =>
     "The last Business Profile sync did not finish, so some days may be missing.",
   gbp_location_not_mapped: () =>
     "A location is not connected to a Business Profile, so it is not in these totals.",
   gbp_search_terms_unavailable: () =>
-    "Google has not published this month’s search terms yet.",
-  gbp_previous_month_incomplete: () =>
-    "The month before is not fully synced, so changes against it are not shown.",
+    "Google has not published this period’s search terms yet.",
+  gbp_compared_period_incomplete: () =>
+    "The comparison period is not fully synced, so changes against it are not shown.",
   gbp_year_ago_unavailable: () =>
-    "The same month last year is not fully synced, so the yearly comparison is not shown.",
+    "The same months last year are not fully synced, so the yearly comparison is not shown.",
   reviews_not_synced: () =>
     "Reviews have not been synced yet, so review figures are not shown.",
   search_console_not_connected: () =>
     "Search Console is not connected, so search clicks and queries are not shown.",
   search_console_not_synced: () =>
-    "Search Console has not delivered this month yet.",
+    "Search Console has not delivered this period yet.",
   search_console_lag_days: (note) =>
     note.count
-      ? `Google is still finalizing the last ${note.count} ${note.count === 1 ? "day" : "days"} of search data, so those figures may rise.`
+      ? `Google is still finalizing the last ${plural(note.count, "day", "days")} of search data, so those figures may rise.`
       : "Google is still finalizing the last days of search data, so those figures may rise.",
-  search_console_previous_month_unavailable: () =>
-    "Search Console data for the month before is not final, so changes are not shown.",
+  search_console_months_missing: (note) =>
+    note.count
+      ? `${plural(note.count, "month", "months")} of search data ${note.count === 1 ? "has" : "have"} not synced yet and ${note.count === 1 ? "is" : "are"} left out of the totals.`
+      : "Some months of search data have not synced yet and are left out of the totals.",
+  search_console_compared_period_unavailable: () =>
+    "Search Console data for the comparison period is not complete, so changes are not shown.",
   analytics_not_connected: () =>
     "Google Analytics is not connected, so website visits are not shown.",
   analytics_not_synced: () =>
-    "Google Analytics has not delivered this month yet.",
+    "Google Analytics has not delivered this period yet.",
   analytics_organic_unavailable: () =>
     "Google Analytics cannot report search visits for this website.",
-  analytics_previous_month_unavailable: () =>
-    "Analytics data for the month before is not available, so changes are not shown.",
+  analytics_months_missing: (note) =>
+    note.count
+      ? `${plural(note.count, "month", "months")} of website visits ${note.count === 1 ? "has" : "have"} not synced yet and ${note.count === 1 ? "is" : "are"} left out of the totals.`
+      : "Some months of website visits have not synced yet and are left out of the totals.",
+  analytics_compared_period_unavailable: () =>
+    "Analytics data for the comparison period is not complete, so changes are not shown.",
+  optional_figure_not_reported: (note) =>
+    `Google reported no ${note.metric ? metricSentenceName(note.metric) : "figure"} this period${note.count != null ? ` (${fmt(note.count)} in the comparison period)` : ""}. This can reflect a change in how Google reports it, not lower demand.`,
 };
 export const noteText = (note: ReportNote): string =>
   NOTE_TEXT[note.code](note);
@@ -694,12 +471,27 @@ export const draftFailureText: Record<NarrativeFailureCode, string> = {
     "The draft did not come back in the expected form, so it was not used.",
   draft_empty: "The draft was empty, so it was not used.",
   number_not_in_data:
-    "The draft mentioned a number that is not in this month’s data, so it was not used.",
+    "The draft mentioned a number that is not in this report’s data, so it was not used.",
   authorship_mentioned: "The draft mentioned who wrote it, so it was not used.",
   causal_claim:
     "The draft claimed one thing caused another, which the data cannot show, so it was not used.",
 };
+/** Why a period or comparison was refused, in words a person can act on. */
+export const periodErrorText: Record<PeriodErrorCode, string> = {
+  REPORT_MONTH_NOT_ENDED: "A report covers months that have ended.",
+  REPORT_PERIOD_ORDER: "The last month cannot be before the first month.",
+  REPORT_PERIOD_TOO_LONG: "A report covers 1 to 12 whole months.",
+  REPORT_BASELINE_OVERLAPS:
+    "The baseline must end before the report period starts.",
+};
 const FAILURES: Record<string, string> = {
+  ...periodErrorText,
+  REPORT_MONTH_NOT_FIRST: "A report covers whole calendar months.",
+  REPORT_PERIOD_INVALID: "That period is not one this report covers.",
+  REPORT_COMPARISON_INVALID: "That comparison is not one this report offers.",
+  REPORT_BASELINE_REQUIRED:
+    "Choose the first and last month of the baseline period.",
+  REPORT_BASELINE_UNEXPECTED: "Baseline months only go with a baseline period.",
   REPORT_NARRATIVE_EMPTY: "Write both narrative sections before approving.",
   REPORT_DATA_MISSING:
     "This report is missing the Business Profile data it needs. Reconnect Google, then generate it again.",
@@ -710,8 +502,7 @@ const FAILURES: Record<string, string> = {
     "This report is already approved and the data has not changed.",
   REPORT_NOT_APPROVED: "Approve the report before recording it as sent.",
   REPORT_SENT_DATE_INVALID:
-    "Choose a day after the month ended and not in the future.",
-  REPORT_MONTH_NOT_ENDED: "A report covers a month that has ended.",
+    "Choose a day after the last month ended and not in the future.",
   REPORT_SCOPE_NOT_READABLE:
     "A report covers every active location, and you cannot read all of them.",
   REPORT_NOT_FOUND: "That report no longer exists. Reload the page.",
@@ -732,6 +523,7 @@ const paragraphs = (text: string) =>
     .split(/\n{2,}/)
     .map((part) => part.trim())
     .filter(Boolean);
+export const narrativeParagraphs = paragraphs;
 export function narrativeView(report: ReportDetail): NarrativeView {
   const narrative = report.narrative;
   return {
@@ -777,7 +569,7 @@ export function reportActions(report: ReportDetail): ReportActions {
           : !report.is_current
             ? "A newer version of this report exists."
             : report.readiness === "missing_data"
-              ? "Business Profile data is missing for this month."
+              ? "Business Profile data is missing for this period."
               : narrativeView(report).empty
                 ? "Write both narrative sections first."
                 : null,
@@ -792,19 +584,24 @@ export function reportActions(report: ReportDetail): ReportActions {
     },
   };
 }
+/** The report's period and comparison, as they appear in its address. */
+export const reportRef = (report: ReportDetail) => ({
+  period: periodOf(report.period),
+  comparison: comparisonOfSpec(report.comparison),
+});
 export const headline = (report: ReportDetail) =>
-  `${monthLabel(report.month)} performance report`;
+  `${periodLabel(periodOf(report.period))} performance report`;
 export interface Confirm {
   title: string;
   lines: string[];
   accept: string;
 }
 /** The exact period and client an approval or a send applies to. */
-export function approveCopy(client: string, month: string): Confirm {
+export function approveCopy(client: string, period: PeriodRef): Confirm {
   return {
     title: "Approve this report?",
     lines: [
-      `${client} · ${monthLabel(month)} (${monthRange(month)}).`,
+      `${client} · ${periodLabel(period)} (${periodRange(period)}).`,
       "Once approved, its numbers and wording are locked. If the data changes later, a new draft is made and this one stays as approved.",
       "Approving does not send anything to the client.",
     ],
@@ -813,18 +610,20 @@ export function approveCopy(client: string, month: string): Confirm {
 }
 export function sendCopy(
   client: string,
-  month: string,
+  period: PeriodRef,
   sentOn: string,
 ): Confirm {
   return {
     title: "Record this report as sent?",
     lines: [
-      `${client} · ${monthLabel(month)} (${monthRange(month)}).`,
+      `${client} · ${periodLabel(period)} (${periodRange(period)}).`,
       `You are recording that you sent it to the client on ${dateText(sentOn)}. LILOs does not email the report.`,
     ],
     accept: "Record as sent",
   };
 }
+/** The first day a report can be recorded as sent: the day after its last month ends. */
+export const earliestSendDay = (period: PeriodRef) => addMonths(period.end, 1);
 export const portfolioFilters = [
   ["all", "All reports"],
   ["needs_attention", "Needs attention"],
@@ -876,10 +675,10 @@ export function portfolioRows(
       delivery: row.sent_on
         ? `Sent ${dateText(row.sent_on)}`
         : row.status === null
-          ? MISSING
+          ? "Not generated"
           : "Not sent yet",
       href: row.status
-        ? reportHref(row.slug, row.month)
+        ? reportHref(row.slug, { start: row.month, end: row.month }, PREVIOUS)
         : `/clients/${row.slug}/reports/`,
       action: row.status ? "View report" : "Open reports",
     }));
@@ -931,6 +730,7 @@ export function runText(iso: string): string {
 }
 export interface HistoryRowView {
   period: string;
+  comparison: string;
   version: string | null;
   status: Chip;
   readiness: Chip;
@@ -938,19 +738,27 @@ export interface HistoryRowView {
   href: string;
   current: boolean;
 }
-/** Every stored revision, newest month first. A month with several shows which version it is. */
+/** Every stored revision, newest period first. A report with several shows which version it is. */
 export function historyRows(list: ReportList, slug: string): HistoryRowView[] {
-  const perMonth = new Map<string, number>();
+  const key = (row: ReportRevisionRow) =>
+    `${row.period.start_month}|${row.period.end_month}|${row.comparison.basis}|${row.comparison.baseline_start ?? ""}`;
+  const perReport = new Map<string, number>();
   for (const row of list.history)
-    perMonth.set(row.month, (perMonth.get(row.month) ?? 0) + 1);
+    perReport.set(key(row), (perReport.get(key(row)) ?? 0) + 1);
   return list.history.map((row: ReportRevisionRow) => ({
-    period: monthLabel(row.month),
+    period: periodLabel(periodOf(row.period)),
+    comparison: comparisonName(row.comparison),
     version:
-      (perMonth.get(row.month) ?? 0) > 1 ? `Version ${row.revision}` : null,
+      (perReport.get(key(row)) ?? 0) > 1 ? `Version ${row.revision}` : null,
     status: reportChip(row.status),
     readiness: readinessChip(row.readiness),
-    delivered: row.delivery ? dateText(row.delivery.sent_on) : MISSING,
-    href: summaryHref(slug, row.month, row.revision),
+    delivered: row.delivery ? dateText(row.delivery.sent_on) : "Not sent yet",
+    href: reportHref(
+      slug,
+      periodOf(row.period),
+      comparisonOfSpec(row.comparison),
+      { revision: row.revision },
+    ),
     current: row.is_current,
   }));
 }
@@ -1002,7 +810,9 @@ export function currentPanel(list: ReportList, slug: string): CurrentPanel {
     readiness: readinessChip(current.readiness),
     action: {
       label: "Open current report",
-      href: reportHref(slug, current.month),
+      href: reportHref(slug, periodOf(current.period), PREVIOUS, {
+        revision: current.revision,
+      }),
     },
     generate: false,
     blocked: current.readiness === "missing_data",
@@ -1024,3 +834,4 @@ export function upcomingRows(list: ReportList): UpcomingRow[] {
     },
   ];
 }
+export { samePeriod };

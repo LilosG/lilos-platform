@@ -1,0 +1,60 @@
+---
+import DocumentLayout from "../../../../../layouts/DocumentLayout.astro";
+import ReportDocument from "../../../../../components/reports/document/ReportDocument.astro";
+import ErrorState from "../../../../../components/ui/ErrorState.astro";
+import { loadReport } from "../../../../../server/report-loader";
+import { organizations, resolveSlug } from "../../../../../server/context";
+import {
+  comparisonFromQuery,
+  periodFromSlug,
+} from "../../../../../lib/report-period";
+import { periodLabel } from "../../../../../lib/report-view";
+// The client document: no app header, navigation or buttons, only the report on a Letter page.
+const rows = await organizations(Astro.locals);
+let client;
+try {
+  client = resolveSlug(rows, Astro.params.clientSlug ?? "");
+} catch {
+  return new Response("Client not found", { status: 404 });
+}
+const period = periodFromSlug(Astro.params.period ?? "");
+const comparison = comparisonFromQuery(Astro.url.searchParams.get("vs"));
+const revision = Astro.url.searchParams.get("revision");
+const wanted = revision === null ? null : Number(revision);
+if (
+  !period ||
+  !comparison ||
+  (wanted !== null && (!Number.isInteger(wanted) || wanted < 1))
+)
+  return new Response("Page not found", { status: 404 });
+const loaded = await loadReport(
+  Astro.locals,
+  client.organization_id,
+  period,
+  comparison,
+  wanted,
+);
+if (loaded.kind === "unauthenticated") return Astro.redirect("/login/", 303);
+if (loaded.kind === "notfound")
+  return new Response("Page not found", { status: 404 });
+const report = loaded.kind === "ok" ? loaded.value : null;
+const title = `${client.organization_name} performance report ${periodLabel(period)}`;
+---
+
+<DocumentLayout title={title}>
+  {
+    report ? (
+      <ReportDocument report={report} />
+    ) : (
+      <div class="doc">
+        <ErrorState title="The report is temporarily unavailable">
+          We could not read the saved report, so nothing is shown rather than a
+          guess.
+          <a slot="action" class="control primary" href={Astro.url.pathname}>
+            Try again
+          </a>
+        </ErrorState>
+      </div>
+    )
+  }
+</DocumentLayout>

@@ -113,3 +113,13 @@ def month_is_final(month: date, today: date, tail_exclusion_days: int) -> bool:
     _, following = calendar_month_window(month)
     last_day = following.date() - timedelta(days=1)
     return last_day <= today - timedelta(days=tail_exclusion_days)
+
+
+def month_range(start: date, end: date) -> list[date]:
+    """The first days of every calendar month from ``start`` to ``end``, both included."""
+    months: list[date] = []
+    cursor = first_of_month(start)
+    while cursor <= end:
+        months.append(cursor)
+        cursor = calendar_month_window(cursor)[1].date()
+    return months

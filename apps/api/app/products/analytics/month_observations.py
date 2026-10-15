@@ -33,6 +33,8 @@ from apps.api.app.reporting_periods import (
 ORGANIC_MONTH_TOTAL = "organic_month_total"
 ORGANIC_SESSIONS_KEY = "ga4.organicLanding.sessions"
 MONTHS_KEPT = 2
+# A one-time backfill reaches back this far, for reports over a long period and its comparison.
+BACKFILL_MONTHS = 16
 PARTIAL_STATE = "partial"
 
 
@@ -53,10 +55,21 @@ class OrganicMonthFetch:
 
 
 async def months_to_fetch(
-    session: AsyncSession, organization_id: UUID, external_property_id: str, today: date
+    session: AsyncSession,
+    organization_id: UUID,
+    external_property_id: str,
+    today: date,
+    *,
+    backfill: bool = False,
 ) -> list[date]:
-    """Recent months with no total yet, or one stored before the provider settled the month."""
-    months = completed_months(today, MONTHS_KEPT)
+    """Recent months with no total yet, or one stored before the provider settled the month.
+
+    A backfill looks 16 months back and asks only for months the provider has settled; months it
+    already stored are left alone, so running it again fetches only what failed before.
+    """
+    months = completed_months(today, BACKFILL_MONTHS if backfill else MONTHS_KEPT)
+    if backfill:
+        months = [m for m in months if month_is_final(m, today, GA4_SYNC_TAIL_EXCLUSION_DAYS)]
     source_id = await session.scalar(
         select(InsightSource.id).where(
             InsightSource.organization_id == organization_id,

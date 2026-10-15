@@ -389,8 +389,12 @@ class SearchConsoleService:
         actor_id: UUID | None,
         correlation_id: str,
         days: int = DEFAULT_SYNC_WINDOW_DAYS,
+        backfill_months: bool = False,
     ) -> dict[str, object]:
         """Pull real Search Console metrics into ``SEOSearchObservation``.
+
+        ``backfill_months`` also stores up to 16 settled months for long reports: a one-time run
+        per property (``scripts/backfill_report_months.py``). The sync keeps its 2-month cadence.
 
         Syncs all supported reporting periods (7/28/90 days) so the reporting
         selector is populated by a single governed sync. For each period it
@@ -424,7 +428,9 @@ class SearchConsoleService:
             plan = await self.connection.begin_token_refresh(session, settings, connection)
             external_id = property_row.external_property_id
             connection_id = connection.id
-            months = await months_to_fetch(session, property_row.id, datetime.now(UTC).date())
+            months = await months_to_fetch(
+                session, property_row.id, datetime.now(UTC).date(), backfill=backfill_months
+            )
 
         # -- phase 2: provider HTTP, nothing open --------------------------------
         if plan.access_token is not None:

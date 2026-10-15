@@ -1,5 +1,12 @@
 import { z } from "zod";
 import type { components } from "@lilos/contracts/api";
+import {
+  comparisonOfSpec,
+  sameComparison,
+  samePeriod,
+  type ComparisonRef,
+  type PeriodRef,
+} from "../lib/report-period";
 type Schemas = components["schemas"];
 export type ReportStatus = Schemas["ReportStatus"];
 export type ReportReadiness = Schemas["ReportReadiness"];
@@ -9,6 +16,10 @@ export type UnavailableReason = Schemas["UnavailableReason"];
 export type SplitKey = Schemas["SplitKey"];
 export type WorkKind = Schemas["WorkKind"];
 export type NarrativeFailureCode = Schemas["NarrativeFailureCode"];
+export type ComparisonBasis = Schemas["ComparisonBasis"];
+export type ComparedAs = Schemas["ComparedAs"];
+export type HeadlineKey = Schemas["HeadlineKey"];
+export type SeriesKey = Schemas["SeriesKey"];
 /** Compile-time proof that a list of codes is exactly the contract's enum. */
 type Exact<Contract extends string, Listed extends string> = [
   Contract,
@@ -24,22 +35,25 @@ function codes<Contract extends string>() {
 }
 export const NOTE_CODES = [
   "gbp_not_connected",
-  "gbp_month_not_synced",
-  "gbp_month_partial",
+  "gbp_period_not_synced",
+  "gbp_period_partial",
   "gbp_sync_failed",
   "gbp_location_not_mapped",
   "gbp_search_terms_unavailable",
-  "gbp_previous_month_incomplete",
+  "gbp_compared_period_incomplete",
   "gbp_year_ago_unavailable",
   "reviews_not_synced",
   "search_console_not_connected",
   "search_console_not_synced",
   "search_console_lag_days",
-  "search_console_previous_month_unavailable",
+  "search_console_months_missing",
+  "search_console_compared_period_unavailable",
   "analytics_not_connected",
   "analytics_not_synced",
   "analytics_organic_unavailable",
-  "analytics_previous_month_unavailable",
+  "analytics_months_missing",
+  "analytics_compared_period_unavailable",
+  "optional_figure_not_reported",
 ] as const;
 const noteCode = codes<NoteCode>()(NOTE_CODES);
 export const SECTION_KEYS = [
@@ -68,6 +82,33 @@ export const REASONS = [
   "source_unavailable",
 ] as const;
 const reason = codes<UnavailableReason>()(REASONS);
+export const HEADLINE_KEYS = [
+  "profile_views",
+  "profile_actions",
+  "website_search_clicks",
+  "organic_sessions",
+  "new_reviews",
+  "average_rating",
+] as const;
+const headlineKey = codes<HeadlineKey>()(HEADLINE_KEYS);
+export const SERIES_KEYS = [
+  "profile_views",
+  "profile_actions",
+  "calls",
+  "website_clicks",
+  "direction_requests",
+  "search_clicks",
+  "search_impressions",
+  "organic_sessions",
+  "new_reviews",
+] as const;
+const seriesKey = codes<SeriesKey>()(SERIES_KEYS);
+const comparisonBasis = codes<ComparisonBasis>()([
+  "previous_period",
+  "same_period_last_year",
+  "custom_baseline",
+]);
+const comparedAs = codes<ComparedAs>()(["total", "monthly_average"]);
 const splitKey = codes<SplitKey>()(["maps", "search", "desktop", "mobile"]);
 const workKind = codes<WorkKind>()([
   "gbp_post",
@@ -126,6 +167,8 @@ const countFigure = z
     reason: reason.nullable().optional(),
     days_covered: nullableInt.optional(),
     days_expected: nullableInt.optional(),
+    months_covered: nullableInt.optional(),
+    months_expected: nullableInt.optional(),
   })
   .strict()
   .refine(figureRules, { message: "FIGURE_MISSING_IS_NOT_A_NUMBER" });
@@ -140,7 +183,9 @@ const rateFigure = z
 const countComparison = z
   .object({
     current: countFigure,
-    previous: countFigure,
+    compared: countFigure,
+    compared_as: comparedAs,
+    current_monthly_average: nullableInt.optional(),
     year_ago: countFigure.nullable().optional(),
     change: nullableInt.optional(),
     change_percent: z.number().nullable().optional(),
@@ -151,7 +196,7 @@ const countComparison = z
 const rateComparison = z
   .object({
     current: rateFigure,
-    previous: rateFigure,
+    compared: rateFigure,
     year_ago: rateFigure.nullable().optional(),
     change: z.number().nullable().optional(),
     year_change: z.number().nullable().optional(),
@@ -165,8 +210,8 @@ const gbp = z
     availability,
     reason: reason.nullable().optional(),
     current_range: range,
-    previous_range: range,
-    year_ago_range: range,
+    compared_range: range,
+    year_ago_range: range.nullable(),
     through_date: day.nullable(),
     profile_views: z
       .object({
@@ -212,6 +257,8 @@ const gbp = z
               metric,
               comparison: countComparison,
               reported: z.boolean(),
+              comparable: z.boolean(),
+              note: noteCode.nullable().optional(),
             })
             .strict(),
         ),
@@ -221,6 +268,8 @@ const gbp = z
               metric,
               comparison: countComparison,
               reported: z.boolean(),
+              comparable: z.boolean(),
+              note: noteCode.nullable().optional(),
             })
             .strict(),
         ),
@@ -257,6 +306,9 @@ const gbp = z
             })
             .strict(),
         ),
+        total_terms: z.number().int(),
+        months_covered: nullableInt.optional(),
+        months_expected: nullableInt.optional(),
       })
       .strict(),
     locations: z.array(
@@ -292,15 +344,15 @@ const reviews = z
   .object({
     availability,
     reason: reason.nullable().optional(),
-    new_in_month: countFigure,
-    average_rating_in_month: rateFigure,
-    average_rating_overall: rateFigure,
+    new_reviews: countComparison,
+    average_rating_in_period: rateComparison,
+    average_rating_overall: rateComparison,
     total_count: countFigure,
     responses_published: countFigure,
     responded_to_new: countFigure,
-    response_rate_percent: rateFigure,
+    response_rate_percent: rateComparison,
     distribution_overall: stars,
-    distribution_month: stars,
+    distribution_period: stars,
   })
   .strict();
 const searchRow = {
@@ -308,7 +360,7 @@ const searchRow = {
   impressions: z.number().int(),
   ctr: z.number().nullable(),
   position: z.number().nullable(),
-  previous_clicks: nullableInt,
+  compared_clicks: nullableInt,
   clicks_change: nullableInt,
 };
 const searchConsole = z
@@ -320,9 +372,12 @@ const searchConsole = z
     ctr_percent: rateComparison,
     average_position: rateComparison,
     top_queries: z.array(
-      z.object({ query: z.string(), ...searchRow }).strict(),
+      z
+        .object({ query: z.string(), is_branded: z.boolean(), ...searchRow })
+        .strict(),
     ),
     top_pages: z.array(z.object({ page: z.string(), ...searchRow }).strict()),
+    branded_share_percent: z.number().nullable().optional(),
     lag_days: nullableInt.optional(),
   })
   .strict();
@@ -339,14 +394,75 @@ const note = z
     section: sectionKey,
     count: nullableInt.optional(),
     location_id: uuid.nullable().optional(),
+    metric: metric.nullable().optional(),
+  })
+  .strict();
+const month = z.string().regex(/^\d{4}-\d{2}-01$/);
+const period = z.object({ start_month: month, end_month: month }).strict();
+const comparisonSpec = z
+  .object({
+    basis: comparisonBasis,
+    baseline_start: month.nullable().optional(),
+    baseline_end: month.nullable().optional(),
+  })
+  .strict();
+const resolvedComparison = z
+  .object({
+    basis: comparisonBasis,
+    compared: period,
+    year_ago: period.nullable(),
+    compared_as: comparedAs,
+  })
+  .strict();
+const monthPoint = z
+  .object({
+    month,
+    availability,
+    value: nullableInt.optional(),
+  })
+  .strict()
+  .refine(
+    (point) =>
+      (point.availability === "unavailable") ===
+      (point.value === null || point.value === undefined),
+    { message: "FIGURE_MISSING_IS_NOT_A_NUMBER" },
+  );
+const headline = z
+  .object({
+    key: headlineKey,
+    count: countComparison.nullable().optional(),
+    rate: rateComparison.nullable().optional(),
+  })
+  .strict()
+  .refine((item) => (item.count ? 1 : 0) + (item.rate ? 1 : 0) === 1, {
+    message: "HEADLINE_HAS_ONE_FIGURE",
+  });
+const sync = z
+  .object({
+    gbp: day.nullable().optional(),
+    search_console: day.nullable().optional(),
+    analytics: day.nullable().optional(),
   })
   .strict();
 const snapshot = z
   .object({
     schema_version: z.number().int(),
-    month: day,
+    period,
+    comparison: resolvedComparison,
+    location_names: z.array(z.string()),
+    sync,
     readiness,
     notes: z.array(note),
+    headlines: z.array(headline).max(4),
+    monthly: z.array(
+      z
+        .object({
+          key: seriesKey,
+          period: z.array(monthPoint),
+          compared: z.array(monthPoint),
+        })
+        .strict(),
+    ),
     gbp,
     reviews,
     search_console: searchConsole,
@@ -385,7 +501,8 @@ const permissions = z
   .strict();
 const revisionRow = z
   .object({
-    month: day,
+    period,
+    comparison: comparisonSpec,
     revision: z.number().int().min(1),
     status,
     readiness,
@@ -417,7 +534,8 @@ const detailSchema = z
     organization_id: uuid,
     client_name: z.string(),
     client_slug: z.string(),
-    month: day,
+    period,
+    comparison: comparisonSpec,
     revision: z.number().int().min(1),
     revision_count: z.number().int().min(1),
     status,
@@ -490,17 +608,32 @@ export function adaptReportList(
     throw new Error("REPORT_SCOPE_MISMATCH");
   return view;
 }
-/** One stored revision, exactly as saved. The month, revision and client must be the ones asked for. */
+/** One stored revision, exactly as saved. Period, comparison, revision and client must be those asked for. */
 export function adaptReportDetail(
   raw: unknown,
-  want: { organization: string; month?: string; revision?: number },
+  want: {
+    organization: string;
+    period?: PeriodRef;
+    comparison?: ComparisonRef;
+    revision?: number;
+  },
 ): ReportDetail {
   const view = detailSchema.parse(raw) satisfies Schemas["ReportDetailView"];
+  const stored: PeriodRef = {
+    start: view.period.start_month,
+    end: view.period.end_month,
+  };
   if (
     view.organization_id !== want.organization ||
-    (want.month && view.month !== want.month) ||
+    (want.period && !samePeriod(want.period, stored)) ||
+    (want.comparison &&
+      !sameComparison(want.comparison, comparisonOfSpec(view.comparison))) ||
     (want.revision && view.revision !== want.revision) ||
-    view.snapshot.month !== view.month ||
+    !samePeriod(stored, {
+      start: view.snapshot.period.start_month,
+      end: view.snapshot.period.end_month,
+    }) ||
+    view.snapshot.comparison.basis !== view.comparison.basis ||
     view.snapshot.readiness !== view.readiness
   )
     throw new Error("REPORT_SCOPE_MISMATCH");

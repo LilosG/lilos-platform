@@ -30,6 +30,7 @@ from apps.api.app.products.gbp.performance_models import (
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
 from apps.api.app.products.seo.models import SEOSearchObservation, SEOSearchProperty, SEOWebsite
 from apps.api.app.reporting_periods import calendar_month_window
+from apps.api.app.reports.contracts import ComparisonSpec, ReportPeriod
 
 Factory = async_sessionmaker[AsyncSession]
 IMPRESSIONS = (
@@ -47,6 +48,8 @@ CORE = (
 # The moment the monthly report job runs: 8:00 AM Pacific on the 1st.
 OCTOBER_FIRST = datetime(2026, 10, 1, 15, 0, tzinfo=UTC)
 SEPTEMBER = date(2026, 9, 1)
+PERIOD = ReportPeriod(start_month=date(2026, 9, 1), end_month=date(2026, 9, 1))
+PREVIOUS = ComparisonSpec()
 AUGUST = date(2026, 8, 1)
 SEPTEMBER_LAST_YEAR = date(2025, 9, 1)
 

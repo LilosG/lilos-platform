@@ -35,8 +35,9 @@ class FakeSearchConsoleService(SearchConsoleService):
         actor_id: UUID | None,
         correlation_id: str,
         days: int = 28,
+        backfill_months: bool = False,
     ) -> dict[str, object]:
-        del scope, settings, organization_id, actor_id, correlation_id, days
+        del scope, settings, organization_id, actor_id, correlation_id, days, backfill_months
         self.synced_property_ids.append(str(search_property_id))
         return {"synced": True}
 
@@ -229,6 +230,7 @@ class ReconnectRequiredSearchConsole(FakeSearchConsoleService):
         actor_id: UUID | None,
         correlation_id: str,
         days: int = 28,
+        backfill_months: bool = False,
     ) -> dict[str, object]:
         if search_property_id in self.failing:
             raise IntegrationReconnectRequiredError

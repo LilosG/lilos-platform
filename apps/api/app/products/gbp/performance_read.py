@@ -43,6 +43,8 @@ class PerformancePeriod(StrEnum):
     LAST_28_DAYS = "28d"
     LAST_90_DAYS = "90d"
     MONTH = "month"
+    # Explicit windows: the range, what it is compared with, and the same range a year earlier.
+    RANGE = "range"
 
 
 _DAYS = {
@@ -65,12 +67,28 @@ class DateRange:
 @dataclass(frozen=True, slots=True)
 class PeriodWindows:
     current: DateRange
-    previous: DateRange
+    previous: DateRange  # the window compared with: the one before, or the range's comparison
     month: date | None  # the requested calendar month, for the month period
+    year_ago: DateRange | None = None  # the range period only
+    months: tuple[date, ...] = ()  # the calendar months of the current window, range period only
+
+
+@dataclass(frozen=True, slots=True)
+class RangeWindows:
+    """The windows of a ``RANGE`` read, given by the caller."""
+
+    current: DateRange
+    compared: DateRange
+    year_ago: DateRange | None
+    months: tuple[date, ...]
 
 
 def period_windows(
-    period: PerformancePeriod, *, today: date, month: date | None = None
+    period: PerformancePeriod,
+    *,
+    today: date,
+    month: date | None = None,
+    range_windows: RangeWindows | None = None,
 ) -> PeriodWindows:
     """The period and the one before it, of equal length, with no overlap.
 
@@ -78,6 +96,16 @@ def period_windows(
     month before, so a half-finished month is never set against a whole one.
     """
     last_day = today - timedelta(days=LAST_DAY_OFFSET)
+    if period is PerformancePeriod.RANGE:
+        if range_windows is None:
+            raise ValueError("a range period needs its windows")
+        return PeriodWindows(
+            range_windows.current,
+            range_windows.compared,
+            None,
+            range_windows.year_ago,
+            range_windows.months,
+        )
     if period is PerformancePeriod.MONTH:
         if month is None:
             raise ValueError("a month period needs a month")
@@ -133,6 +161,9 @@ class SearchTerms:
     availability: GBPPerformanceAvailability
     month: date | None
     terms: list[SearchTerm]
+    total_terms: int = 0  # how many distinct terms there are, however many are returned
+    months_covered: int | None = None  # range period: months with stored terms
+    months_expected: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +182,18 @@ class DailyPoint:
     actions: int | None  # calls, website clicks and direction requests; None when none was stored
 
 
+# Per calendar month and metric: (sum of values, number of stored location-days).
+MonthlySums = dict[date, dict[GBPPerformanceMetric, tuple[int, int]]]
+
+
+@dataclass(frozen=True, slots=True)
+class YearAgoTotals:
+    """The range period's totals for the same months a year earlier."""
+
+    profile_views: Total
+    metrics: dict[GBPPerformanceMetric, Total]
+
+
 @dataclass(frozen=True, slots=True)
 class PerformanceRead:
     windows: PeriodWindows
@@ -160,6 +203,10 @@ class PerformanceRead:
     search_terms: SearchTerms
     source: SourceState
     series: list[DailyPoint]
+    # Range period only.
+    year_ago: YearAgoTotals | None = None
+    monthly: MonthlySums | None = None
+    compared_monthly: MonthlySums | None = None
 
 
 def total_of(*, rows: int, expected: int, value: int, ever_synced: bool) -> Total:
@@ -289,6 +336,35 @@ async def _series(
     ]
 
 
+async def _monthly(
+    session: AsyncSession,
+    organization_id: UUID,
+    gbp_location_ids: Sequence[UUID],
+    window: DateRange,
+) -> MonthlySums:
+    """Per calendar month and metric: (sum of values, number of stored location-days)."""
+    month = func.date_trunc("month", GBPPerformanceDailyMetric.metric_date)
+    rows = await session.execute(
+        select(
+            month,
+            GBPPerformanceDailyMetric.metric,
+            func.coalesce(func.sum(GBPPerformanceDailyMetric.value), 0),
+            func.count(),
+        )
+        .where(
+            GBPPerformanceDailyMetric.organization_id == organization_id,
+            GBPPerformanceDailyMetric.gbp_location_id.in_(gbp_location_ids),
+            GBPPerformanceDailyMetric.metric_date >= window.start,
+            GBPPerformanceDailyMetric.metric_date <= window.end,
+        )
+        .group_by(month, GBPPerformanceDailyMetric.metric)
+    )
+    sums: MonthlySums = {}
+    for started, metric, total, count in rows:
+        sums.setdefault(started.date(), {})[GBPPerformanceMetric(metric)] = (int(total), int(count))
+    return sums
+
+
 async def _search_terms(
     session: AsyncSession,
     organization_id: UUID,
@@ -297,7 +373,12 @@ async def _search_terms(
     *,
     ever_synced: bool,
     limit: int | None = TOP_SEARCH_TERMS,
+    months: Sequence[date] = (),
 ) -> SearchTerms:
+    if months:
+        return await _range_search_terms(
+            session, organization_id, gbp_location_ids, months, ever_synced=ever_synced, limit=limit
+        )
     if month is None:
         latest = await session.scalar(
             select(func.max(GBPPerformanceKeywordImpression.month)).where(
@@ -345,7 +426,60 @@ async def _search_terms(
     terms.sort(
         key=lambda t: (t.value is None, -(t.value or 0), -(t.below_threshold or 0), t.keyword)
     )
-    return SearchTerms(GBPPerformanceAvailability.AVAILABLE, month, terms[:limit])
+    return SearchTerms(GBPPerformanceAvailability.AVAILABLE, month, terms[:limit], len(terms))
+
+
+async def _range_search_terms(
+    session: AsyncSession,
+    organization_id: UUID,
+    gbp_location_ids: Sequence[UUID],
+    months: Sequence[date],
+    *,
+    ever_synced: bool,
+    limit: int | None,
+) -> SearchTerms:
+    """Terms summed over the months of a range: exact counts add up, the bound is carried."""
+    keyword = GBPPerformanceKeywordImpression
+    rows = await session.execute(
+        select(keyword.keyword, func.sum(keyword.value), func.sum(keyword.threshold))
+        .where(
+            keyword.organization_id == organization_id,
+            keyword.gbp_location_id.in_(gbp_location_ids),
+            keyword.month.in_(months),
+        )
+        .group_by(keyword.keyword)
+    )
+    terms = [
+        SearchTerm(
+            name,
+            int(value) if value is not None else None,
+            int(threshold) if threshold is not None else None,
+        )
+        for name, value, threshold in rows
+    ]
+    covered = int(
+        await session.scalar(
+            select(func.count(func.distinct(keyword.month))).where(
+                keyword.organization_id == organization_id,
+                keyword.gbp_location_id.in_(gbp_location_ids),
+                keyword.month.in_(months),
+            )
+        )
+        or 0
+    )
+    if not terms:
+        state = (
+            GBPPerformanceAvailability.NO_DATA
+            if ever_synced
+            else GBPPerformanceAvailability.NOT_SYNCED
+        )
+        return SearchTerms(state, None, [], 0, 0, len(months))
+    terms.sort(
+        key=lambda t: (t.value is None, -(t.value or 0), -(t.below_threshold or 0), t.keyword)
+    )
+    return SearchTerms(
+        GBPPerformanceAvailability.AVAILABLE, None, terms[:limit], len(terms), covered, len(months)
+    )
 
 
 async def _source(
@@ -401,9 +535,10 @@ async def read_performance(
     month: date | None = None,
     now: datetime | None = None,
     search_term_limit: int | None = TOP_SEARCH_TERMS,
+    range_windows: RangeWindows | None = None,
 ) -> PerformanceRead:
     today = (now or datetime.now(UTC)).astimezone(UTC).date()
-    windows = period_windows(period, today=today, month=month)
+    windows = period_windows(period, today=today, month=month, range_windows=range_windows)
     if not gbp_location_ids:
         return not_connected(windows)
     source, ever_synced = await _source(session, organization_id, gbp_location_ids)
@@ -427,7 +562,24 @@ async def read_performance(
         windows.month,
         ever_synced=ever_synced,
         limit=search_term_limit,
+        months=windows.months,
     )
+    year_ago: YearAgoTotals | None = None
+    monthly: MonthlySums | None = None
+    compared_monthly: MonthlySums | None = None
+    if period is PerformancePeriod.RANGE:
+        if windows.year_ago is not None:
+            year_views, year_metrics = _totals(
+                await _sums(session, organization_id, gbp_location_ids, windows.year_ago),
+                windows.year_ago,
+                locations,
+                ever_synced=ever_synced,
+            )
+            year_ago = YearAgoTotals(year_views, year_metrics)
+        monthly = await _monthly(session, organization_id, gbp_location_ids, windows.current)
+        compared_monthly = await _monthly(
+            session, organization_id, gbp_location_ids, windows.previous
+        )
     return PerformanceRead(
         windows=windows,
         availability=current_views.availability,
@@ -436,6 +588,9 @@ async def read_performance(
         search_terms=terms,
         source=source,
         series=await _series(session, organization_id, gbp_location_ids, windows.current),
+        year_ago=year_ago,
+        monthly=monthly,
+        compared_monthly=compared_monthly,
     )
 
 

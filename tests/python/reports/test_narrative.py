@@ -24,7 +24,7 @@ from reports.routes_support import BASE, call
 from reports.support import Factory
 
 pytestmark = pytest.mark.integration
-SEPT = "2026-09"
+SEPT = "2026-09/previous"
 GOOD = {
     "what_changed": (
         "Your profile was viewed 720 times in September, up from 600 in August, a rise of 20%. "
@@ -75,7 +75,11 @@ def use(client: TestClient, draft: dict[str, str] | Exception) -> FakeGateway:
 
 def generate(client: TestClient, org: UUID) -> dict[str, Any]:
     body: dict[str, Any] = call(
-        client, "post", url(org, "/generate"), "manager", {"month": "2026-09-01"}
+        client,
+        "post",
+        url(org, "/generate"),
+        "manager",
+        {"start_month": "2026-09-01", "end_month": "2026-09-01"},
     ).json()
     report: dict[str, Any] = body["report"]
     return report
@@ -125,7 +129,9 @@ def test_a_draft_that_states_only_snapshot_numbers_is_kept_and_labeled(
     (request,) = gateway.requests
     assert request.task_key == AI_TASK_KEY and request.location_id is None
     evidence = request.input_document["evidence"]
-    assert evidence["month"] == "September 2026" and evidence["profile_views"]["this_month"] == 720
+    assert (
+        evidence["period"] == "September 2026" and evidence["profile_views"]["this_period"] == 720
+    )
     assert request.approved_fact_revision_ids and request.input_references
     assert result["report"]["snapshot"] == report["snapshot"]
     # It is recorded like any model call, under a retention policy.

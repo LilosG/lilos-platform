@@ -1,5 +1,7 @@
 """The monthly report job: a draft for the month that just ended, for one organization.
 
+The draft compares that month with the month before it (the previous period).
+
 Scheduled by ``scripts/ensure_client_schedules.py`` at 8:00 AM Pacific on the 1st. Deterministic:
 it reads stored data and writes one draft revision, nothing else. If Google's data lag leaves the
 month partial, the draft says so with a note code and a person can regenerate before approving.
@@ -15,6 +17,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.contracts import JobOutcome
+from apps.api.app.reports.contracts import ComparisonSpec, ReportPeriod
 from apps.api.app.reports.errors import ReportAlreadyApprovedError
 from apps.api.app.reports.reads import organization_is_reportable
 from apps.api.app.reports.service import ReportService
@@ -56,10 +59,12 @@ async def handle_monthly_report_generation(
     now = utc_now()
     month = last_ended_month(scheduled_moment(input_document, now))
     try:
+        # The scheduled report is the month that just ended against the month before it.
         stored, created = await ReportService().generate(
             session,
             organization_id,
-            month,
+            ReportPeriod(start_month=month, end_month=month),
+            ComparisonSpec(),
             actor_id=None,
             correlation_id=correlation_id,
             now=now,

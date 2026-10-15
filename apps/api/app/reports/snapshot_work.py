@@ -1,6 +1,6 @@
-"""Work completed in the month, counted from existing records only.
+"""Work completed in the period, counted from existing records only.
 
-Each group is something the platform has a record of finishing inside the month: a post Google
+Each group is something the platform has a record of finishing inside the period: a post Google
 confirmed live, website content published, a review response published, an approved profile or
 website change applied. Nothing here is inferred or invented.
 """
@@ -8,7 +8,6 @@ website change applied. Nothing here is inferred or invented.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
@@ -19,8 +18,13 @@ from apps.api.app.products.gbp.models import GBPLocation, GBPPublication
 from apps.api.app.products.gbp.operations_models import GBPPostPublication, GBPPostRevision
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision
 from apps.api.app.products.reviews.service import REVIEW_REMOVED
-from apps.api.app.reports.contracts import ReportWorkGroup, ReportWorkSection, WorkKind
-from apps.api.app.reports.snapshot_reviews import RESPONSE_PUBLISHED, month_bounds
+from apps.api.app.reports.contracts import (
+    ReportPeriod,
+    ReportWorkGroup,
+    ReportWorkSection,
+    WorkKind,
+)
+from apps.api.app.reports.snapshot_reviews import RESPONSE_PUBLISHED, period_bounds
 
 TITLE_LIMIT = 5
 TITLE_LENGTH = 80
@@ -47,9 +51,12 @@ def _titles(values: Sequence[str | None]) -> list[str]:
 
 
 async def build_work(
-    session: AsyncSession, organization_id: UUID, month: date, location_ids: Sequence[UUID]
+    session: AsyncSession,
+    organization_id: UUID,
+    period: ReportPeriod,
+    location_ids: Sequence[UUID],
 ) -> ReportWorkSection:
-    start, following = month_bounds(month)
+    start, following = period_bounds(period)
 
     posts = (
         await session.execute(

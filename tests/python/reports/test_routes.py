@@ -13,13 +13,14 @@ from reports.routes_support import BASE, call
 from reports.support import Factory
 
 pytestmark = pytest.mark.integration
-SEPT = "2026-09"
+SEPT = "2026-09/previous"
+SEPT_BODY = {"start_month": "2026-09-01", "end_month": "2026-09-01"}
 MONTH_ROUTES = [
-    ("get", "/{month}/{revision}", None),
-    ("put", "/{month}/{revision}/narrative", {"what_changed": "a", "next_work": "b"}),
-    ("post", "/{month}/{revision}/draft-narrative", None),
-    ("post", "/{month}/{revision}/approve", None),
-    ("post", "/{month}/{revision}/mark-sent", {"sent_on": "2026-10-03"}),
+    ("get", "/{period}/{revision}", None),
+    ("put", "/{period}/{revision}/narrative", {"what_changed": "a", "next_work": "b"}),
+    ("post", "/{period}/{revision}/draft-narrative", None),
+    ("post", "/{period}/{revision}/approve", None),
+    ("post", "/{period}/{revision}/mark-sent", {"sent_on": "2026-10-03"}),
 ]
 
 
@@ -47,7 +48,7 @@ def pin_the_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def generate(client: TestClient, org: UUID, role: str = "manager") -> Any:
-    return call(client, "post", url(org, "/generate"), role, {"month": "2026-09-01"})
+    return call(client, "post", url(org, "/generate"), role, SEPT_BODY)
 
 
 def test_reads_need_insights_read_and_writes_need_manage_or_publish(
@@ -82,7 +83,7 @@ def test_reads_need_insights_read_and_writes_need_manage_or_publish(
     for method, tail, body in MONTH_ROUTES[1:3]:
         assert (
             call(
-                client, method, url(org, tail.format(month=SEPT, revision=1)), "viewer", body
+                client, method, url(org, tail.format(period=SEPT, revision=1)), "viewer", body
             ).status_code
             == 403
         )
@@ -105,12 +106,10 @@ def test_another_tenants_user_can_read_and_change_nothing(
     assert generate(client, org, "owner").status_code == 200
 
     assert call(client, "get", url(org), "other").status_code in (403, 404)
-    assert call(
-        client, "post", url(org, "/generate"), "other", {"month": "2026-09-01"}
-    ).status_code in (403, 404)
+    assert call(client, "post", url(org, "/generate"), "other", SEPT_BODY).status_code in (403, 404)
     for method, tail, body in MONTH_ROUTES:
         response = call(
-            client, method, url(org, tail.format(month=SEPT, revision=1)), "other", body
+            client, method, url(org, tail.format(period=SEPT, revision=1)), "other", body
         )
         assert response.status_code in (403, 404), (method, tail, response.status_code)
     # Their own client has no such revision.
@@ -132,7 +131,8 @@ def test_generate_edit_approve_and_mark_sent_end_to_end(
     org = ids["org"]
 
     first = generate(client, org, "owner").json()["report"]
-    assert (first["month"], first["revision"], first["status"]) == ("2026-09-01", 1, "draft")
+    assert first["period"] == SEPT_BODY and first["comparison"]["basis"] == "previous_period"
+    assert (first["revision"], first["status"]) == (1, "draft")
     assert first["readiness"] == "ready" and first["is_current"] is True
     assert first["snapshot"]["local_rank"] == {"state": "not_tracked", "value": None}
     assert first["narrative"] == {"what_changed": "", "next_work": "", "origin": "none"}
@@ -185,8 +185,8 @@ def test_generate_edit_approve_and_mark_sent_end_to_end(
         listing["current"]["status"] == "sent"
         and listing["current"]["delivery"]["sent_on"] == "2026-10-03"
     )
-    assert [(r["month"], r["revision"], r["status"]) for r in listing["history"]] == [
-        ("2026-09-01", 1, "sent")
+    assert [(r["period"], r["revision"], r["status"]) for r in listing["history"]] == [
+        (SEPT_BODY, 1, "sent")
     ]
     assert listing["upcoming"] is None  # no schedule exists for this client yet
 
@@ -208,27 +208,121 @@ def test_months_that_have_not_ended_and_months_without_data_are_refused(
     client, ids, _ = reports_app
     org = ids["org"]
 
-    running = call(client, "post", url(org, "/generate"), "owner", {"month": "2026-10-01"})
+    def post(body: dict[str, Any]) -> Any:
+        return call(client, "post", url(org, "/generate"), "owner", body)
+
+    running = post({"start_month": "2026-10-01", "end_month": "2026-10-01"})
     assert (running.status_code, running.json()["error"]["code"]) == (400, "REPORT_MONTH_NOT_ENDED")
-    assert (
-        call(client, "post", url(org, "/generate"), "owner", {"month": "2026-09-15"}).status_code
-        == 422
-    )
-    assert call(client, "get", url(org, "/2026-13/1"), "owner").status_code == 422
+    assert call(client, "get", url(org, "/2026-13/previous/1"), "owner").status_code == 400
     assert call(client, "get", url(org, f"/{SEPT}/9"), "owner").status_code == 404
 
     # A month nothing was synced for is stored as missing data and cannot be approved.
-    august = call(client, "post", url(org, "/generate"), "owner", {"month": "2026-07-01"})
-    assert august.status_code == 200 and august.json()["report"]["readiness"] == "missing_data"
+    july = post({"start_month": "2026-07-01", "end_month": "2026-07-01"})
+    assert july.status_code == 200 and july.json()["report"]["readiness"] == "missing_data"
     call(
         client,
         "put",
-        url(org, "/2026-07/1/narrative"),
+        url(org, "/2026-07/previous/1/narrative"),
         "owner",
         {"what_changed": "a", "next_work": "b"},
     )
-    refused = call(client, "post", url(org, "/2026-07/1/approve"), "owner")
+    refused = call(client, "post", url(org, "/2026-07/previous/1/approve"), "owner")
     assert (refused.status_code, refused.json()["error"]["code"]) == (409, "REPORT_DATA_MISSING")
+
+
+def test_period_and_comparison_errors_are_typed_codes(
+    reports_app: tuple[TestClient, dict[str, UUID], Factory],
+) -> None:
+    client, ids, _ = reports_app
+    org = ids["org"]
+
+    def code(body: dict[str, Any]) -> tuple[int, str]:
+        response = call(client, "post", url(org, "/generate"), "owner", body)
+        return response.status_code, response.json()["error"]["code"]
+
+    sept = {"start_month": "2026-09-01", "end_month": "2026-09-01"}
+    assert code({"start_month": "2026-09-15", "end_month": "2026-09-15"}) == (
+        400,
+        "REPORT_MONTH_NOT_FIRST",
+    )
+    assert code({"start_month": "2026-09-01", "end_month": "2026-08-01"}) == (
+        400,
+        "REPORT_PERIOD_ORDER",
+    )
+    assert code({"start_month": "2025-08-01", "end_month": "2026-09-01"}) == (
+        400,
+        "REPORT_PERIOD_TOO_LONG",
+    )
+    assert code({**sept, "comparison": {"basis": "custom_baseline"}}) == (
+        400,
+        "REPORT_BASELINE_REQUIRED",
+    )
+    assert code(
+        {**sept, "comparison": {"basis": "previous_period", "baseline_start": "2026-01-01"}}
+    ) == (
+        400,
+        "REPORT_BASELINE_UNEXPECTED",
+    )
+    overlapping = {
+        "basis": "custom_baseline",
+        "baseline_start": "2026-08-01",
+        "baseline_end": "2026-09-01",
+    }
+    assert code({**sept, "comparison": overlapping}) == (400, "REPORT_BASELINE_OVERLAPS")
+    too_long = {
+        "basis": "custom_baseline",
+        "baseline_start": "2024-01-01",
+        "baseline_end": "2025-06-01",
+    }
+    assert code({**sept, "comparison": too_long}) == (400, "REPORT_PERIOD_TOO_LONG")
+    for bad in (
+        "/2026-9/previous/1",
+        "/2026-09_/previous/1",
+        "/2026-09_2026-10_2026-11/previous/1",
+    ):
+        response = call(client, "get", url(org, bad), "owner")
+        assert (response.status_code, response.json()["error"]["code"]) == (
+            400,
+            "REPORT_PERIOD_INVALID",
+        )
+    response = call(client, "get", url(org, "/2026-09/sometimes/1"), "owner")
+    assert (response.status_code, response.json()["error"]["code"]) == (
+        400,
+        "REPORT_COMPARISON_INVALID",
+    )
+
+
+def test_a_range_against_each_comparison_is_stored_and_numbered_apart(
+    reports_app: tuple[TestClient, dict[str, UUID], Factory],
+) -> None:
+    client, ids, _ = reports_app
+    org = ids["org"]
+    window = {"start_month": "2026-08-01", "end_month": "2026-09-01"}
+
+    def post(comparison: dict[str, Any] | None) -> Any:
+        body = {**window, **({"comparison": comparison} if comparison else {})}
+        return call(client, "post", url(org, "/generate"), "owner", body)
+
+    previous = post(None)
+    year_ago = post({"basis": "same_period_last_year"})
+    baseline = post(
+        {"basis": "custom_baseline", "baseline_start": "2026-01-01", "baseline_end": "2026-03-01"}
+    )
+    for response in (previous, year_ago, baseline):
+        assert response.status_code == 200, response.text
+        assert response.json()["report"]["revision"] == 1  # numbered per comparison
+    report = baseline.json()["report"]
+    assert report["snapshot"]["comparison"]["compared_as"] == "monthly_average"
+    assert report["comparison"]["baseline_start"] == "2026-01-01"
+    assert previous.json()["report"]["snapshot"]["comparison"]["year_ago"] is not None
+    assert year_ago.json()["report"]["snapshot"]["comparison"]["year_ago"] is None
+
+    fetched = call(client, "get", url(org, "/2026-08_2026-09/vs-2026-01_2026-03/1"), "owner")
+    assert fetched.status_code == 200 and fetched.json()["comparison"]["basis"] == "custom_baseline"
+    assert call(client, "get", url(org, "/2026-08_2026-09/year-ago/1"), "owner").status_code == 200
+    # The board lists only single months against the month before.
+    board = call(client, "get", "/api/v1/command-center/reports", "owner").json()
+    assert board["clients"][0]["status"] is None
 
 
 def test_reads_never_recompute_a_stored_report(
@@ -250,4 +344,4 @@ def test_reads_never_recompute_a_stored_report(
     later = call(client, "get", url(org, f"/{SEPT}/1"), "owner").json()["snapshot"]
 
     assert later == stored  # what was measured then, never the live numbers
-    assert date.fromisoformat(later["month"]) == date(2026, 9, 1)
+    assert date.fromisoformat(later["period"]["start_month"]) == date(2026, 9, 1)

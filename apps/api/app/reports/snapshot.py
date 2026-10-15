@@ -1,4 +1,4 @@
-"""Build the monthly snapshot of one organization: deterministic, typed, from stored data only.
+"""Build the snapshot of one organization and one period, deterministically from stored data.
 
 No provider is called and no model is involved. The snapshot is a pure function of what is stored,
 so the same stored data always gives the same snapshot and the same hash.
@@ -17,17 +17,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.locations.enums import LocationStatus
 from apps.api.app.locations.models import Location
+from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.performance_service import mapped_gbp_locations
 from apps.api.app.reporting_periods import first_of_month
 from apps.api.app.reports.contracts import (
     NOTE_EFFECT,
+    ComparisonSpec,
     NoteEffect,
     ReportDataNote,
+    ReportPeriod,
     ReportReadiness,
     ReportSnapshot,
+    ReportSync,
 )
 from apps.api.app.reports.errors import ReportMonthNotEndedError
-from apps.api.app.reports.snapshot_gbp import MappedLocation, build_gbp
+from apps.api.app.reports.headlines import pick_headlines
+from apps.api.app.reports.snapshot_gbp import MappedLocation, basis_of, build_gbp
 from apps.api.app.reports.snapshot_reviews import build_reviews
 from apps.api.app.reports.snapshot_search import build_analytics, build_search_console
 from apps.api.app.reports.snapshot_work import build_work
@@ -91,27 +96,47 @@ def readiness_of(notes: list[ReportDataNote]) -> ReportReadiness:
 
 
 async def build_snapshot(
-    session: AsyncSession, organization_id: UUID, month: date, *, now: datetime | None = None
+    session: AsyncSession,
+    organization_id: UUID,
+    period: ReportPeriod,
+    spec: ComparisonSpec,
+    *,
+    now: datetime | None = None,
 ) -> ReportSnapshot:
-    """The snapshot of ``month`` across every reportable location of the organization."""
+    """The snapshot of ``period`` across every reportable location of the organization."""
     now = now or datetime.now(UTC)
-    require_ended(month, now)
+    require_ended(period.end_month, now)
+    comparison = spec.resolve(period)
+    basis = basis_of(period, comparison)
+    organization = await session.get(Organization, organization_id)
     locations = await reportable_locations(session, organization_id)
     location_ids = [item.location_id for item in locations]
-    gbp = await build_gbp(session, organization_id, month, locations, now=now)
-    reviews, review_notes = await build_reviews(session, organization_id, month, location_ids)
-    search, search_notes = await build_search_console(session, organization_id, month)
-    analytics, analytics_notes = await build_analytics(session, organization_id, month)
-    work = await build_work(session, organization_id, month, location_ids)
-    notes = [*gbp.notes, *review_notes, *search_notes, *analytics_notes]
+    brand_terms = [organization.name if organization else "", *[item.name for item in locations]]
+    gbp = await build_gbp(session, organization_id, period, comparison, locations, now=now)
+    reviews = await build_reviews(session, organization_id, period, comparison, location_ids, basis)
+    search = await build_search_console(
+        session, organization_id, period, comparison, brand_terms, basis
+    )
+    analytics = await build_analytics(session, organization_id, period, comparison, basis)
+    work = await build_work(session, organization_id, period, location_ids)
+    notes = [*gbp.notes, *reviews.notes, *search.notes, *analytics.notes]
     return ReportSnapshot(
-        month=month,
+        period=period,
+        comparison=comparison,
+        location_names=[item.name for item in locations],
+        sync=ReportSync(
+            gbp=gbp.last_synced,
+            search_console=search.last_synced,
+            analytics=analytics.last_synced,
+        ),
         readiness=readiness_of(notes),
         notes=notes,
+        headlines=pick_headlines(gbp.section, search.section, analytics.section, reviews.section),
+        monthly=[*gbp.series, *search.series, *analytics.series, *reviews.series],
         gbp=gbp.section,
-        reviews=reviews,
-        search_console=search,
-        analytics=analytics,
+        reviews=reviews.section,
+        search_console=search.section,
+        analytics=analytics.section,
         local_rank=not_tracked(),
         work=work,
     )
@@ -122,5 +147,9 @@ def canonical_json(document: object) -> str:
 
 
 def data_hash(snapshot: ReportSnapshot) -> str:
-    """Identifies the computed numbers alone, so a regeneration can tell whether they changed."""
-    return hashlib.sha256(canonical_json(snapshot.model_dump(mode="json")).encode()).hexdigest()
+    """Identifies the computed numbers alone, so a regeneration can tell whether they changed.
+
+    The sync dates are left out: a sync that stores the same numbers again is not a change.
+    """
+    document = snapshot.model_dump(mode="json", exclude={"sync"})
+    return hashlib.sha256(canonical_json(document).encode()).hexdigest()

@@ -28,6 +28,8 @@ from apps.api.app.reports.schedule import (
 )
 from apps.api.app.reports.service import ReportService
 from reports.support import (
+    PERIOD,
+    PREVIOUS,
     SEPTEMBER,
     Factory,
     add_location,
@@ -204,9 +206,9 @@ async def test_a_month_google_has_not_finished_is_a_draft_with_a_note_that_can_b
 
     assert outcome.result == "succeeded"
     async with factory() as session:
-        stored = await ReportService().get(session, org, SEPTEMBER, 1)
+        stored = await ReportService().get(session, org, PERIOD, PREVIOUS, 1)
     assert stored.snapshot.readiness is ReportReadiness.READY_WITH_NOTE
-    assert NoteCode.GBP_MONTH_PARTIAL in {n.code for n in stored.snapshot.notes}
+    assert NoteCode.GBP_PERIOD_PARTIAL in {n.code for n in stored.snapshot.notes}
     # The last day arrives; a person regenerates before approving and gets the next revision.
     await store_metrics(
         factory,
@@ -224,7 +226,8 @@ async def test_a_month_google_has_not_finished_is_a_draft_with_a_note_that_can_b
         regenerated, created = await ReportService().generate(
             session,
             org,
-            SEPTEMBER,
+            PERIOD,
+            PREVIOUS,
             actor_id=None,
             correlation_id="regen",
             now=OCTOBER_FIRST + timedelta(days=2),
@@ -283,7 +286,7 @@ async def test_clients_and_locations_that_no_longer_run_are_skipped(factory: Fac
         )
     assert results["mixed"].result_reference == "report:2026-09-01:1:created"
     async with factory() as session:
-        stored = await ReportService().get(session, mixed, SEPTEMBER, 1)
+        stored = await ReportService().get(session, mixed, PERIOD, PREVIOUS, 1)
     # Only the active location counts; the archived profile's 500s never reach the report.
     assert stored.snapshot.gbp.profile_views.total.current.value == 30 * 4 * 5
     assert stored.snapshot.gbp.locations == []
@@ -302,10 +305,10 @@ async def test_an_approved_report_is_not_redrafted_and_a_failure_is_retried(
     svc = ReportService()
     async with factory.begin() as session:
         await svc.set_narrative(
-            session, org, SEPTEMBER, 1, WORDS, actor_id=person, correlation_id="c"
+            session, org, PERIOD, PREVIOUS, 1, WORDS, actor_id=person, correlation_id="c"
         )
     async with factory.begin() as session:
-        await svc.approve(session, org, SEPTEMBER, 1, actor_id=person, correlation_id="c")
+        await svc.approve(session, org, PERIOD, PREVIOUS, 1, actor_id=person, correlation_id="c")
 
     unchanged = await run_job(factory, org)
     assert unchanged.result == "succeeded"

@@ -6,6 +6,15 @@ import {
   type ReportDetail,
   type ReportList,
 } from "../adapters/reports";
+import {
+  comparisonOfSpec,
+  comparisonSlug,
+  periodSlug,
+  sameComparison,
+  samePeriod,
+  type ComparisonRef,
+  type PeriodRef,
+} from "../lib/report-period";
 import { APIError, read } from "./bff";
 export type Loaded<T> =
   | { kind: "ok"; value: T }
@@ -44,14 +53,14 @@ export const loadClientReports = (
       organization,
     ),
   );
-/** One stored revision exactly as saved; with no revision, the month's newest. */
+/** One stored revision exactly as saved; with no revision, the newest of that period and comparison. */
 export function loadReport(
   locals: App.Locals,
   organization: string,
-  month: string,
+  period: PeriodRef,
+  comparison: ComparisonRef,
   revision: number | null,
 ): Promise<Loaded<ReportDetail>> {
-  const slug = month.slice(0, 7);
   const base = `organizations/${organization}/command-center/reports`;
   return load(async () => {
     let wanted = revision;
@@ -61,15 +70,23 @@ export function loadReport(
         organization,
       );
       const newest = list.history.find(
-        (row) => row.month === month && row.is_current,
+        (row) =>
+          samePeriod(period, {
+            start: row.period.start_month,
+            end: row.period.end_month,
+          }) &&
+          sameComparison(comparison, comparisonOfSpec(row.comparison)) &&
+          row.is_current,
       );
       if (!newest) throw new APIError(404, "SOURCE_UNAVAILABLE");
       wanted = newest.revision;
     }
-    return adaptReportDetail(await read(locals, `${base}/${slug}/${wanted}/`), {
-      organization,
-      month,
-      revision: wanted,
-    });
+    return adaptReportDetail(
+      await read(
+        locals,
+        `${base}/${periodSlug(period)}/${comparisonSlug(comparison)}/${wanted}/`,
+      ),
+      { organization, period, comparison, revision: wanted },
+    );
   });
 }

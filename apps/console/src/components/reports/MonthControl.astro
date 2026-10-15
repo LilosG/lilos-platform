@@ -1,0 +1,26 @@
+---
+import { monthLabel } from "../../lib/report-view";
+interface Props {
+  /** The field's name, for the form and for the script that reads it. */
+  name: string;
+  /** What the field is, read out by a screen reader and shown above it. */
+  label: string;
+  /** First-of-month dates, newest first: only months that have ended are offered. */
+  months: readonly string[];
+  selected: string;
+}
+const { name, label, months, selected } = Astro.props;
+---
+
+<label>
+  {label}
+  <select {name} aria-label={label} data-month-control>
+    {
+      months.map((month) => (
+        <option value={month} selected={month === selected}>
+          {monthLabel(month)}
+        </option>
+      ))
+    }
+  </select>
+</label>

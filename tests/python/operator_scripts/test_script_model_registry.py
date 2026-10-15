@@ -34,6 +34,7 @@ SCRIPT_RUNS: dict[str, tuple[list[str], int]] = {
     "archive_test_records": ([], 0),
     "retire_stale_growth_work": ([], 0),
     "reevaluate_active_websites": ([], 0),
+    "backfill_report_months": ([], 0),
     "ensure_client_schedules": ([], 0),
     "ensure_storage_buckets": ([], 2),  # dry run; Supabase Storage is not configured here
     "recover_stuck_publications": ([], 0),

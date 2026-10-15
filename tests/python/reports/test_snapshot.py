@@ -9,14 +9,18 @@ import pytest
 from apps.api.app.locations.enums import LocationStatus
 from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
 from apps.api.app.reports.contracts import (
+    NOTE_EFFECT,
     Availability,
+    ComparisonSpec,
     NoteCode,
+    NoteEffect,
+    ReportPeriod,
     ReportReadiness,
     SplitKey,
     UnavailableReason,
     WorkKind,
 )
-from apps.api.app.reports.errors import ReportMonthNotEndedError
+from apps.api.app.reports.errors import ReportMonthNotEndedError, ReportMonthNotFirstError
 from apps.api.app.reports.snapshot import build_snapshot, data_hash, last_ended_month
 from reports.support import (
     AUGUST,
@@ -41,9 +45,20 @@ from reports.support import (
 pytestmark = pytest.mark.integration
 
 
-async def snapshot(factory: Factory, organization_id, month: date = SEPTEMBER, now=OCTOBER_FIRST):  # type: ignore[no-untyped-def]
+async def snapshot(  # type: ignore[no-untyped-def]
+    factory: Factory,
+    organization_id,
+    month: date = SEPTEMBER,
+    now=OCTOBER_FIRST,
+    *,
+    end: date | None = None,
+    comparison: ComparisonSpec | None = None,
+):
+    period = ReportPeriod(start_month=month, end_month=end or month)
     async with factory() as session:
-        return await build_snapshot(session, organization_id, month, now=now)
+        return await build_snapshot(
+            session, organization_id, period, comparison or ComparisonSpec(), now=now
+        )
 
 
 def codes(result) -> set[NoteCode]:  # type: ignore[no-untyped-def]
@@ -63,7 +78,7 @@ async def test_a_fully_stored_month_is_ready_and_every_figure_compares(factory: 
     assert (
         views.current.value == 30 * 4 * 6 and views.current.availability is Availability.AVAILABLE
     )
-    assert views.previous.value == 30 * 4 * 5
+    assert views.compared.value == 30 * 4 * 5
     assert views.year_ago and views.year_ago.value == 30 * 4 * 4
     assert views.change == 720 - 600 and views.year_change == 720 - 480
     assert views.change_percent == round(120 / 600 * 100, 1)
@@ -100,9 +115,9 @@ async def test_actions_and_the_action_rate_are_computed_in_code(factory: Factory
         GBPPerformanceMetric.BUSINESS_DIRECTION_REQUESTS,
     ]
     # August and last year were not synced: unavailable, never 0, and no change is claimed.
-    assert actions.total.previous.availability is Availability.UNAVAILABLE
-    assert actions.total.previous.value is None and actions.total.change is None
-    assert actions.action_rate.previous.reason is UnavailableReason.NO_DATA
+    assert actions.total.compared.availability is Availability.UNAVAILABLE
+    assert actions.total.compared.value is None and actions.total.change is None
+    assert actions.action_rate.compared.reason is UnavailableReason.NO_DATA
 
 
 @pytest.mark.anyio
@@ -133,8 +148,8 @@ async def test_a_missing_day_makes_the_month_partial_not_short(factory: Factory)
     daily = result.gbp.daily
     assert daily.availability is Availability.PARTIAL and daily.missing_days == [missing]
     assert daily.days_synced == 29 and missing not in {p.day for p in daily.points}
-    assert NoteCode.GBP_MONTH_PARTIAL in codes(result)
-    partial = next(n for n in result.notes if n.code is NoteCode.GBP_MONTH_PARTIAL)
+    assert NoteCode.GBP_PERIOD_PARTIAL in codes(result)
+    partial = next(n for n in result.notes if n.code is NoteCode.GBP_PERIOD_PARTIAL)
     assert partial.count == 1
     assert result.readiness is ReportReadiness.READY_WITH_NOTE
     # A half-synced side proves nothing about change.
@@ -142,7 +157,30 @@ async def test_a_missing_day_makes_the_month_partial_not_short(factory: Factory)
 
 
 @pytest.mark.anyio
-async def test_optional_metrics_absent_are_hidden_and_a_reported_zero_is_a_zero(
+async def test_an_optional_figure_with_no_total_in_either_period_has_no_row(
+    factory: Factory,
+) -> None:
+    org, gbp, _ = await seed_org(factory)
+    bookings = GBPPerformanceMetric.BUSINESS_BOOKINGS
+    # Google stored zeros for bookings in both months: that is nothing to report, not "0".
+    for month in (SEPTEMBER, AUGUST):
+        await store_metrics(
+            factory,
+            org,
+            gbp,
+            month,
+            lambda m, d: 4 if m is not bookings else 0,
+            metrics=(*CORE, bookings),
+        )
+
+    result = await snapshot(factory, org)
+
+    assert result.gbp.actions.optional == []
+    assert NoteCode.OPTIONAL_FIGURE_NOT_REPORTED not in codes(result)
+
+
+@pytest.mark.anyio
+async def test_an_optional_figure_that_drops_to_zero_is_not_comparable_and_says_so(
     factory: Factory,
 ) -> None:
     org, gbp, _ = await seed_org(factory)
@@ -155,15 +193,37 @@ async def test_optional_metrics_absent_are_hidden_and_a_reported_zero_is_a_zero(
         lambda m, d: 4 if m is not bookings else 0,
         metrics=(*CORE, bookings),
     )
+    await store_metrics(factory, org, gbp, AUGUST, lambda m, d: 3, metrics=(*CORE, bookings))
 
     result = await snapshot(factory, org)
 
-    optional = {row.metric: row for row in result.gbp.actions.optional}
-    assert set(optional) == {bookings}
-    assert optional[bookings].comparison.current.value == 0
-    assert optional[bookings].comparison.current.availability is Availability.AVAILABLE
-    # Conversations, food orders and menu clicks were never reported: no tile, no zero.
-    assert GBPPerformanceMetric.BUSINESS_CONVERSATIONS not in optional
+    (row,) = result.gbp.actions.optional
+    assert row.metric is bookings and row.comparable is False
+    assert row.note is NoteCode.OPTIONAL_FIGURE_NOT_REPORTED
+    assert row.comparison.change is None and row.comparison.change_percent is None
+    reported = next(n for n in result.notes if n.code is NoteCode.OPTIONAL_FIGURE_NOT_REPORTED)
+    assert reported.metric is bookings and reported.count == 3 * 30  # the first 30 days of August
+    assert NOTE_EFFECT[NoteCode.OPTIONAL_FIGURE_NOT_REPORTED] is NoteEffect.INFORMATIONAL
+    # It is never a headline.
+    assert all(h.key.value != "bookings" for h in result.headlines)
+
+
+@pytest.mark.anyio
+async def test_an_optional_figure_that_grows_from_nothing_is_a_row_without_a_percent(
+    factory: Factory,
+) -> None:
+    org, gbp, _ = await seed_org(factory)
+    bookings = GBPPerformanceMetric.BUSINESS_BOOKINGS
+    await store_metrics(factory, org, gbp, SEPTEMBER, 4, metrics=(*CORE, bookings))
+    await store_metrics(factory, org, gbp, AUGUST, 4, metrics=CORE)
+
+    result = await snapshot(factory, org)
+
+    (row,) = result.gbp.actions.optional
+    assert row.comparable and row.comparison.current.value == 4 * 30
+    assert row.comparison.change_percent is None
+    # Conversations, food orders and menu clicks were never reported: no row, no zero.
+    assert {r.metric for r in result.gbp.actions.optional} == {bookings}
 
 
 @pytest.mark.anyio
@@ -221,9 +281,9 @@ async def test_leap_year_february_has_29_days_and_compares_with_the_same_days_of
     result = await snapshot(factory, org, february, now)
 
     assert result.gbp.current_range.days == 29 and result.gbp.daily.days_expected == 29
-    assert result.gbp.previous_range.days == 29  # the same length, from January 1st
+    assert result.gbp.compared_range.days == 29  # the same length, from January 1st
     assert result.gbp.profile_views.total.current.value == 29 * 4 * 3
-    assert result.gbp.profile_views.total.previous.value == 29 * 4 * 2
+    assert result.gbp.profile_views.total.compared.value == 29 * 4 * 2
 
 
 @pytest.mark.anyio
@@ -237,13 +297,13 @@ async def test_a_31_day_month_never_reaches_into_the_next_month_for_its_comparis
 
     result = await snapshot(factory, org, march, datetime(2026, 4, 1, 16, 0, tzinfo=UTC))
 
-    previous = result.gbp.previous_range
+    previous = result.gbp.compared_range
     assert (previous.start, previous.end, previous.days) == (
         date(2026, 2, 1),
         date(2026, 2, 28),
         28,
     )
-    assert result.gbp.profile_views.total.previous.value == 28 * 4 * 2
+    assert result.gbp.profile_views.total.compared.value == 28 * 4 * 2
 
 
 @pytest.mark.anyio
@@ -255,7 +315,7 @@ async def test_only_a_month_that_has_ended_can_be_reported(factory: Factory) -> 
     for month, now in ((date(2026, 10, 1), OCTOBER_FIRST), (SEPTEMBER, just_before)):
         with pytest.raises(ReportMonthNotEndedError):
             await snapshot(factory, org, month, now)
-    with pytest.raises(ReportMonthNotEndedError):
+    with pytest.raises(ReportMonthNotFirstError):
         await snapshot(factory, org, date(2026, 9, 15), OCTOBER_FIRST)
     assert last_ended_month(OCTOBER_FIRST) == SEPTEMBER
     assert last_ended_month(just_before) == AUGUST
@@ -268,7 +328,7 @@ async def test_a_client_without_a_business_profile_is_missing_data(factory: Fact
     result = await snapshot(factory, org)
 
     assert result.readiness is ReportReadiness.MISSING_DATA
-    assert NoteCode.GBP_MONTH_NOT_SYNCED in codes(result)
+    assert NoteCode.GBP_PERIOD_NOT_SYNCED in codes(result)
     assert result.gbp.profile_views.total.current.value is None
     assert result.gbp.profile_views.total.current.reason is UnavailableReason.NOT_SYNCED
     assert result.gbp.daily.points == [] and result.gbp.daily.days_synced == 0
@@ -368,14 +428,16 @@ async def test_reviews_exclude_removed_count_once_and_measure_the_response_rate(
 
     reviews = (await snapshot(factory, org)).reviews
 
-    assert reviews.new_in_month.value == 2  # the removed review is history
-    assert reviews.average_rating_in_month.value == 4.0
-    assert reviews.responded_to_new.value == 1 and reviews.response_rate_percent.value == 50.0
+    assert reviews.new_reviews.current.value == 2  # the removed review is history
+    assert reviews.average_rating_in_period.current.value == 4.0
+    assert (
+        reviews.responded_to_new.value == 1 and reviews.response_rate_percent.current.value == 50.0
+    )
     assert reviews.responses_published.value == 2
     # As of the end of September: October's review is not part of it.
     assert reviews.total_count.value == 4
-    assert reviews.average_rating_overall.value == round((5 + 3 + 4 + 5) / 4, 2)
-    assert {s.stars: s.count for s in reviews.distribution_month} == {1: 0, 2: 0, 3: 1, 4: 0, 5: 1}
+    assert reviews.average_rating_overall.current.value == round((5 + 3 + 4 + 5) / 4, 2)
+    assert {s.stars: s.count for s in reviews.distribution_period} == {1: 0, 2: 0, 3: 1, 4: 0, 5: 1}
     assert {s.stars: s.count for s in reviews.distribution_overall} == {
         1: 0,
         2: 0,
@@ -392,8 +454,8 @@ async def test_a_client_with_no_stored_reviews_is_not_synced_never_zero(factory:
 
     result = await snapshot(factory, org)
 
-    assert result.reviews.new_in_month.value is None
-    assert result.reviews.new_in_month.reason is UnavailableReason.NOT_SYNCED
+    assert result.reviews.new_reviews.current.value is None
+    assert result.reviews.new_reviews.current.reason is UnavailableReason.NOT_SYNCED
     assert NoteCode.REVIEWS_NOT_SYNCED in codes(result)
 
 
@@ -409,7 +471,10 @@ async def test_reviews_of_an_archived_location_are_not_counted(factory: Factory)
 
     reviews = (await snapshot(factory, org)).reviews
 
-    assert reviews.new_in_month.value == 1 and reviews.average_rating_in_month.value == 5.0
+    assert (
+        reviews.new_reviews.current.value == 1
+        and reviews.average_rating_in_period.current.value == 5.0
+    )
 
 
 @pytest.mark.anyio
@@ -447,14 +512,14 @@ async def test_search_console_months_report_exact_months_with_month_over_month_c
     search = (await snapshot(factory, org)).search_console
 
     assert search.availability is Availability.AVAILABLE
-    assert (search.clicks.current.value, search.clicks.previous.value) == (120, 100)
+    assert (search.clicks.current.value, search.clicks.compared.value) == (120, 100)
     assert search.clicks.change == 20 and search.clicks.change_percent == 20.0
     assert search.ctr_percent.current.value == 4.0
     assert search.average_position.current.value == 8.4 and search.average_position.change == -0.6
     pizza = next(q for q in search.top_queries if q.query == "pizza")
-    assert (pizza.previous_clicks, pizza.clicks_change) == (50, 10)
+    assert (pizza.compared_clicks, pizza.clicks_change) == (50, 10)
     new = next(q for q in search.top_queries if q.query == "new term")
-    assert (new.previous_clicks, new.clicks_change) == (None, None)
+    assert (new.compared_clicks, new.clicks_change) == (None, None)
     assert search.top_pages[0].clicks_change == 10
 
 
@@ -542,7 +607,7 @@ async def test_google_analytics_organic_sessions_report_a_month_or_say_why_not(
     await store_organic_month(factory, org, website, AUGUST, 800)
     synced = await snapshot(factory, org)
     sessions = synced.analytics.organic_sessions
-    assert (sessions.current.value, sessions.previous.value) == (900, 800)
+    assert (sessions.current.value, sessions.compared.value) == (900, 800)
     assert sessions.change == 100 and sessions.change_percent == 12.5
 
     zero_org, zero_gbp, _ = await seed_org(factory, "Zero")

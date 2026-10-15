@@ -1,0 +1,524 @@
+---
+import type { ReportDetail } from "../../../adapters/reports";
+import { documentView } from "../../../lib/report-document";
+import BarChart from "./BarChart.astro";
+import HorizontalChart from "./HorizontalChart.astro";
+import EmptyState from "../../ui/EmptyState.astro";
+interface Props {
+  report: ReportDetail;
+}
+const { report } = Astro.props;
+const view = documentView(report);
+const { cover, scorecard: card } = view;
+// Sections are numbered in the order they appear; one with nothing to say is left out entirely.
+const sections = [
+  "glance",
+  "scorecard",
+  ...(view.gbp ? ["gbp"] : []),
+  ...(view.search ? ["search"] : []),
+  ...(view.reviews ? ["reviews"] : []),
+  "work",
+  "ahead",
+  "notes",
+] as const;
+const number = (id: (typeof sections)[number]) => sections.indexOf(id) + 1;
+const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
+---
+
+<article class="doc" data-report-document>
+  <header class="cover">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">L</span>
+      <span>Lilos Growth</span>
+    </div>
+    <div class="covertitle">
+      <p class="eyebrow">{cover.title}</p>
+      <h1>{cover.client}</h1>
+      <p class="period">{cover.period}</p>
+      <p class="range">{cover.range}</p>
+    </div>
+    <dl class="coverfacts">
+      <div>
+        <dt>Comparison</dt>
+        <dd>{cover.compared}</dd>
+      </div>
+      {
+        cover.locations.length > 0 && (
+          <div>
+            <dt>
+              {cover.locations.length === 1 ? "Location" : "Locations covered"}
+            </dt>
+            <dd>{cover.locations.join(", ")}</dd>
+          </div>
+        )
+      }
+      <div>
+        <dt>Prepared by</dt>
+        <dd>{cover.preparedBy}</dd>
+      </div>
+      <div>
+        <dt>Date</dt>
+        <dd>{cover.preparedOn}</dd>
+      </div>
+    </dl>
+  </header>
+
+  <section class="numbered" data-section="glance" aria-labelledby="s-glance">
+    <h2 id="s-glance">
+      <span>{number("glance")}</span> This period at a glance
+    </h2>
+    {
+      view.headlines.length ? (
+        <div class="cards">
+          {view.headlines.map((card) => (
+            <div class="card" data-headline={card.key}>
+              <p class="cardlabel">{card.label}</p>
+              <p class="cardvalue">{card.value}</p>
+              <p class:list={["cardchange", card.tone]}>
+                <span aria-hidden="true">{arrow[card.direction]}</span>
+                {card.change}
+              </p>
+              <p class="cardline">{card.line}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No headline figures yet">
+          None of the headline figures could be compared with the earlier
+          period. They are listed under “Not included in this report”.
+        </EmptyState>
+      )
+    }
+    <h3>What changed</h3>
+    {
+      view.whatChanged.length ? (
+        view.whatChanged.map((text) => <p class="prose">{text}</p>)
+      ) : (
+        <p class="prose muted">
+          The summary of what changed has not been written yet.
+        </p>
+      )
+    }
+  </section>
+
+  <section class="numbered" data-section="scorecard" aria-labelledby="s-score">
+    <h2 id="s-score"><span>{number("scorecard")}</span> Scorecard</h2>
+    {
+      card.groups.length ? (
+        <div class="block" role="region" tabindex="0" aria-label="Scorecard">
+          <table class="score">
+            <thead>
+              <tr>
+                <th scope="col">Measure</th>
+                <th scope="col">This period</th>
+                <th scope="col">Compared with</th>
+                <th scope="col">Change</th>
+                {card.hasYear && <th scope="col">Same period last year</th>}
+              </tr>
+            </thead>
+            {card.groups.map((group) => (
+              <tbody>
+                <tr class="group">
+                  <th scope="colgroup" colspan={card.hasYear ? 5 : 4}>
+                    {group.title}
+                  </th>
+                </tr>
+                {group.rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    <td class="num strong">{row.current}</td>
+                    <td class="num">{row.compared}</td>
+                    <td class:list={["num", "change", row.tone]}>
+                      {arrow[row.direction] && (
+                        <span aria-hidden="true">{arrow[row.direction]} </span>
+                      )}
+                      {row.change}
+                    </td>
+                    {card.hasYear && (
+                      <td class="num">{row.year ?? "No comparison"}</td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            ))}
+          </table>
+        </div>
+      ) : (
+        <EmptyState title="No figures to compare yet">
+          Nothing in this report could be stated for the period. The reasons are
+          listed under “Not included in this report”.
+        </EmptyState>
+      )
+    }
+    {card.footnotes.map((text) => <p class="footnote">{text}</p>)}
+    {card.rowNotes.map((text) => <p class="footnote">{text}</p>)}
+  </section>
+
+  {
+    view.gbp && (
+      <section class="numbered" data-section="gbp" aria-labelledby="s-gbp">
+        <h2 id="s-gbp">
+          <span>{number("gbp")}</span> Google Business Profile
+        </h2>
+        {view.gbp.charts.map((chart) => (
+          <BarChart chart={chart} />
+        ))}
+        {view.gbp.splits.length > 0 && (
+          <div class="splits">
+            {view.gbp.splits.map((split) => (
+              <HorizontalChart title={split.title} model={split.model} />
+            ))}
+          </div>
+        )}
+        {view.gbp.terms && (
+          <div
+            class="block"
+            role="region"
+            tabindex="0"
+            aria-label="Top search terms"
+          >
+            <h3>Top search terms</h3>
+            <table class="plain">
+              <thead>
+                <tr>
+                  <th scope="col">What people searched for</th>
+                  <th scope="col" class="num">
+                    Searches
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.gbp.terms.rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.keyword}</th>
+                    <td class="num">{row.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {view.gbp.terms.more > 0 && (
+              <p class="footnote">
+                and {view.gbp.terms.more.toLocaleString("en-US")} more
+              </p>
+            )}
+            {view.gbp.terms.note && (
+              <p class="footnote">{view.gbp.terms.note}</p>
+            )}
+          </div>
+        )}
+        {view.gbp.actions && (
+          <div
+            class="block"
+            role="region"
+            tabindex="0"
+            aria-label="Actions by month"
+          >
+            <h3>Actions by month</h3>
+            <table class="plain months">
+              <thead>
+                <tr>
+                  <th scope="col">Action</th>
+                  {view.gbp.actions.months.map((month) => (
+                    <th scope="col" class="num">
+                      {month}
+                    </th>
+                  ))}
+                  <th scope="col" class="num">
+                    Total
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.gbp.actions.rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    {row.cells.map((cell) => (
+                      <td class="num">{cell}</td>
+                    ))}
+                    <td class="num strong">{row.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {view.gbp.locations.length > 0 && (
+          <div
+            class="block"
+            role="region"
+            tabindex="0"
+            aria-label="By location"
+          >
+            <h3>By location</h3>
+            <table class="plain">
+              <thead>
+                <tr>
+                  <th scope="col">Location</th>
+                  <th scope="col" class="num">
+                    Profile views
+                  </th>
+                  <th scope="col" class="num">
+                    Calls
+                  </th>
+                  <th scope="col" class="num">
+                    Website clicks
+                  </th>
+                  <th scope="col" class="num">
+                    Directions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.gbp.locations.map((row) => (
+                  <tr>
+                    <th scope="row">{row.name}</th>
+                    <td class="num">{row.views}</td>
+                    <td class="num">{row.calls}</td>
+                    <td class="num">{row.website}</td>
+                    <td class="num">{row.directions}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  {
+    view.search && (
+      <section
+        class="numbered"
+        data-section="search"
+        aria-labelledby="s-search"
+      >
+        <h2 id="s-search">
+          <span>{number("search")}</span> Website search
+        </h2>
+        {view.search.charts.map((chart) => (
+          <BarChart chart={chart} />
+        ))}
+        <div class="block" role="region" tabindex="0" aria-label="Top searches">
+          <h3>Top searches that did not name {cover.client}</h3>
+          {view.search.view.queries.length ? (
+            <table class="plain">
+              <thead>
+                <tr>
+                  <th scope="col">Search</th>
+                  <th scope="col" class="num">
+                    Position
+                  </th>
+                  <th scope="col" class="num">
+                    Impressions
+                  </th>
+                  <th scope="col" class="num">
+                    Clicks
+                  </th>
+                  <th scope="col" class="num">
+                    Change in clicks
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.search.view.queries.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    <td class="num">{row.position}</td>
+                    <td class="num">{row.impressions}</td>
+                    <td class="num">{row.clicks}</td>
+                    <td class="num">{row.change}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p class="muted">
+              Google reported no searches of this kind for the period.
+            </p>
+          )}
+          {view.search.view.brandedNote && (
+            <p class="footnote">{view.search.view.brandedNote}</p>
+          )}
+          <p class="footnote">{view.search.view.topNote}</p>
+          {view.search.view.lagNote && (
+            <p class="footnote">{view.search.view.lagNote}</p>
+          )}
+        </div>
+        {view.search.view.pages.length > 0 && (
+          <div class="block" role="region" tabindex="0" aria-label="Top pages">
+            <h3>Top pages</h3>
+            <table class="plain">
+              <thead>
+                <tr>
+                  <th scope="col">Page</th>
+                  <th scope="col" class="num">
+                    Position
+                  </th>
+                  <th scope="col" class="num">
+                    Impressions
+                  </th>
+                  <th scope="col" class="num">
+                    Clicks
+                  </th>
+                  <th scope="col" class="num">
+                    Change in clicks
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.search.view.pages.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    <td class="num">{row.position}</td>
+                    <td class="num">{row.impressions}</td>
+                    <td class="num">{row.clicks}</td>
+                    <td class="num">{row.change}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  {
+    view.reviews && (
+      <section
+        class="numbered"
+        data-section="reviews"
+        aria-labelledby="s-reviews"
+      >
+        <h2 id="s-reviews">
+          <span>{number("reviews")}</span> Reviews
+        </h2>
+        <div class="reviewhead">
+          {view.reviews.rating && (
+            <div class="rating">
+              <p class="cardvalue">{view.reviews.rating}</p>
+              <p class="cardline">
+                Average Google rating
+                {view.reviews.total && ` across ${view.reviews.total} reviews`}
+              </p>
+            </div>
+          )}
+          {view.reviews.distribution && (
+            <HorizontalChart
+              title="Star ratings across all reviews"
+              model={view.reviews.distribution}
+            />
+          )}
+        </div>
+        <div class="cards three">
+          {view.reviews.stats.map((stat) => (
+            <div class="card">
+              <p class="cardlabel">{stat.label}</p>
+              <p class="cardvalue small">{stat.value}</p>
+              <p class="cardline">{stat.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  <section class="numbered" data-section="work" aria-labelledby="s-work">
+    <h2 id="s-work"><span>{number("work")}</span> Work completed</h2>
+    {
+      view.work.length ? (
+        <ul class="work">
+          {view.work.map((line) => (
+            <li>
+              <p class="worklabel">
+                <strong>{line.count}</strong> {line.label}
+              </p>
+              {line.titles.length > 0 && (
+                <ul class="titles">
+                  {line.titles.map((title) => (
+                    <li>{title}</li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p class="prose muted">
+          No finished work was recorded for this period.
+        </p>
+      )
+    }
+  </section>
+
+  <section class="numbered" data-section="ahead" aria-labelledby="s-ahead">
+    <h2 id="s-ahead"><span>{number("ahead")}</span> Looking ahead</h2>
+    {
+      view.nextWork.length ? (
+        view.nextWork.map((text) => <p class="prose">{text}</p>)
+      ) : (
+        <p class="prose muted">
+          The plan for the next period has not been written yet.
+        </p>
+      )
+    }
+  </section>
+
+  <section
+    class="numbered notes"
+    data-section="notes"
+    aria-labelledby="s-notes"
+  >
+    <h2 id="s-notes"><span>{number("notes")}</span> Notes and definitions</h2>
+    <h3>This report</h3>
+    <p class="small">{view.notes.period}</p>
+    {
+      view.notes.sync.length > 0 && (
+        <p class="small">{view.notes.sync.join(" ")}</p>
+      )
+    }
+    {
+      view.notes.definitions.length > 0 && (
+        <Fragment>
+          <h3>What the figures mean</h3>
+          <dl class="defs">
+            {view.notes.definitions.map((item) => (
+              <div>
+                <dt>{item.term}</dt>
+                <dd>{item.text}</dd>
+              </div>
+            ))}
+          </dl>
+        </Fragment>
+      )
+    }
+    {
+      (view.notes.dataNotes.length > 0 || view.notes.footnotes.length > 0) && (
+        <Fragment>
+          <h3>About the data</h3>
+          <ul class="small">
+            {view.notes.footnotes.map((text) => (
+              <li>{text}</li>
+            ))}
+            {view.notes.dataNotes.map((text) => (
+              <li>{text}</li>
+            ))}
+          </ul>
+        </Fragment>
+      )
+    }
+    <h3>Not included in this report</h3>
+    {
+      view.notes.notIncluded.length ? (
+        <ul class="small">
+          {view.notes.notIncluded.map((text) => (
+            <li>{text}</li>
+          ))}
+        </ul>
+      ) : (
+        <p class="small">Everything this report measures is included.</p>
+      )
+    }
+  </section>
+</article>

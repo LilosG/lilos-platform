@@ -31,6 +31,8 @@ MONTH_TOP_QUERY = "month_top_query"
 MONTH_TOP_PAGE = "month_top_page"
 # Months the sync keeps: the one just ended and the one before it, for the change between them.
 MONTHS_KEPT = 2
+# A one-time backfill reaches back this far, for reports over a long period and its comparison.
+BACKFILL_MONTHS = 16
 STORED_ROWS_PER_DIMENSION = 100
 
 
@@ -54,10 +56,19 @@ class MonthFetch:
         return any(isinstance(item, Exception) for item in (self.summary, self.queries, self.pages))
 
 
-async def months_to_fetch(session: AsyncSession, property_id: UUID, today: date) -> list[date]:
-    """Recent months whose summary is missing or was stored before the provider settled it."""
+async def months_to_fetch(
+    session: AsyncSession, property_id: UUID, today: date, *, backfill: bool = False
+) -> list[date]:
+    """Recent months whose summary is missing or was stored before the provider settled it.
+
+    A backfill looks 16 months back and asks only for months the provider has settled; months it
+    already stored are left alone, so running it again fetches only what failed before.
+    """
     wanted: list[date] = []
-    for month in completed_months(today, MONTHS_KEPT):
+    months = completed_months(today, BACKFILL_MONTHS if backfill else MONTHS_KEPT)
+    for month in months:
+        if backfill and not month_is_final(month, today, GSC_SYNC_TAIL_EXCLUSION_DAYS):
+            continue
         start, following = calendar_month_window(month)
         stored = await session.scalar(
             select(SEOSearchObservation.partial).where(
