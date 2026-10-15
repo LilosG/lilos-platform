@@ -1,0 +1,131 @@
+---
+import type { MonthlyChart } from "../../../lib/report-document";
+interface Props {
+  chart: MonthlyChart;
+}
+const { chart } = Astro.props;
+const { model } = chart;
+const id = `chart-${chart.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+const hasCompared = model.bars.some((bar) => bar.group === "compared");
+---
+
+<figure class="docchart">
+  <figcaption class="doccharttitle">{chart.title}</figcaption>
+  <div
+    class="svgbox"
+    style={`padding-bottom: ${(model.height / model.width) * 100}%`}
+  >
+    <svg
+      viewBox={`0 0 ${model.width} ${model.height}`}
+      role="img"
+      aria-labelledby={`${id}-title ${id}-desc`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title id={`${id}-title`}>{chart.title}</title>
+      <desc id={`${id}-desc`}>{model.description}</desc>
+      {
+        model.ticks.map((tick) => (
+          <g>
+            <line
+              class="grid"
+              x1={model.plot.left}
+              x2={model.plot.right}
+              y1={tick.y}
+              y2={tick.y}
+            />
+            <text
+              class="tick"
+              x={model.plot.left - 8}
+              y={tick.y + 3}
+              text-anchor="end"
+            >
+              {tick.label}
+            </text>
+          </g>
+        ))
+      }
+      {
+        model.divider !== null && (
+          <line
+            class="divider"
+            x1={model.divider}
+            x2={model.divider}
+            y1={model.plot.top - 6}
+            y2={model.plot.bottom + 28}
+          />
+        )
+      }
+      {
+        model.bars.map((bar) => (
+          <g>
+            {bar.missing ? (
+              <text
+                class="gap"
+                x={bar.centre}
+                y={model.plot.bottom - 6}
+                text-anchor="middle"
+              >
+                No data
+              </text>
+            ) : (
+              <rect
+                class:list={["bar", bar.group, { partial: bar.partial }]}
+                x={bar.x}
+                y={bar.y}
+                width={bar.width}
+                height={bar.height}
+                rx="2"
+              />
+            )}
+            {bar.valueLabel && (
+              <text
+                class="value"
+                x={bar.centre}
+                y={bar.y - 4}
+                text-anchor="middle"
+              >
+                {bar.valueLabel}
+              </text>
+            )}
+            <text
+              class="month"
+              x={bar.centre}
+              y={model.plot.bottom + 14}
+              text-anchor="middle"
+            >
+              {bar.label}
+            </text>
+            {bar.year && (
+              <text
+                class="year"
+                x={bar.centre}
+                y={model.plot.bottom + 27}
+                text-anchor="middle"
+              >
+                {bar.year}
+              </text>
+            )}
+          </g>
+        ))
+      }
+      {
+        model.baseline && (
+          <g>
+            <line
+              class="baseline"
+              x1={model.plot.left}
+              x2={model.plot.right}
+              y1={model.baseline.y}
+              y2={model.baseline.y}
+            />
+          </g>
+        )
+      }
+    </svg>
+  </div>
+  <p class="legend">
+    {hasCompared && <span class="key compared">Comparison period</span>}
+    <span class="key period">This period</span>
+    {model.baseline && <span class="key baseline">{model.baseline.label}</span>}
+  </p>
+</figure>

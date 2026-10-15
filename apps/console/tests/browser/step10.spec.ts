@@ -48,24 +48,25 @@ test("portfolio to client to report: generate, draft, approve and mark sent", as
   await expect(page.getByText("Upcoming reporting activity")).toBeVisible();
   await expect(page.locator("main")).toContainText("Nov 1, 8:00 AM Pacific");
   await clean(page);
+  await page.getByRole("link", { name: "New report" }).first().click();
+  await expect(page.getByRole("heading", { name: "New report" })).toBeVisible();
   await page.getByRole("button", { name: "Generate report" }).click();
 
-  await page.waitForURL(/\/reports\/2026-09\/$/);
+  await page.waitForURL(/\/reports\/2026-09\/\?revision=1$/);
   await expect(page.locator("h1")).toHaveText(
     "September 2026 performance report",
   );
   await expect(
     page.getByText("Profile views", { exact: true }).first(),
   ).toBeVisible();
-  await expect(page.getByText("Not tracked yet")).toBeVisible();
-  await expect(page.getByRole("cell", { name: "< 15" })).toBeVisible();
+  await expect(page.getByText("Scorecard")).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
   await noSystemText(page);
   await clean(page);
 
-  await page.getByRole("button", { name: "1 data note" }).click();
+  await page.getByRole("button", { name: /^Details/ }).click();
   await expect(page.locator("#report-notes")).toContainText(
-    "Google has not published this month’s search terms yet.",
+    "Covers September 2026, compared with the month before (August 2026).",
   );
   await page
     .locator("#report-notes")
@@ -97,13 +98,11 @@ test("portfolio to client to report: generate, draft, approve and mark sent", as
 
   await page.goto("/clients/synthetic-alpha/reports/");
   await expect(page.locator("tbody")).toContainText("Oct 3, 2026");
-  await page.getByRole("link", { name: "View summary" }).click();
-  await expect(page.locator("#report-summary")).toContainText(
-    "Saved measurements",
+  await expect(page.locator("tbody")).toContainText("vs previous period");
+  await page.getByRole("link", { name: "View report" }).click();
+  await expect(page.locator("h1")).toHaveText(
+    "September 2026 performance report",
   );
-  await expect(
-    page.getByRole("link", { name: "Open full report" }),
-  ).toBeVisible();
 });
 test("a failed read is a designed error, never sample data", async ({
   page,
@@ -113,12 +112,4 @@ test("a failed read is a designed error, never sample data", async ({
   await expect(
     page.getByText("Reports are temporarily unavailable"),
   ).toBeVisible();
-});
-test("print view drops the app chrome", async ({ page }) => {
-  await login(page, "admin", "/clients/synthetic-alpha/reports/");
-  await page.getByRole("button", { name: "Generate report" }).click();
-  await page.waitForURL(/\/reports\/2026-09\/$/);
-  await page.emulateMedia({ media: "print" });
-  await expect(page.locator(".printbrand")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Download" })).toBeHidden();
 });

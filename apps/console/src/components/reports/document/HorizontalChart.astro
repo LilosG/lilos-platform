@@ -1,0 +1,64 @@
+---
+import type { HorizontalModel } from "../../../lib/report-charts";
+interface Props {
+  title: string;
+  model: HorizontalModel;
+  /** Draw each row's share beside its figure. */
+  shares?: boolean;
+}
+const { title, model, shares = true } = Astro.props;
+const id = `bars-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+const room = model.width - model.labelWidth - model.valueWidth;
+---
+
+<figure class="docchart small">
+  <figcaption class="doccharttitle">{title}</figcaption>
+  <div
+    class="svgbox"
+    style={`padding-bottom: ${(model.height / model.width) * 100}%`}
+  >
+    <svg
+      viewBox={`0 0 ${model.width} ${model.height}`}
+      role="img"
+      aria-labelledby={`${id}-title ${id}-desc`}
+    >
+      <title id={`${id}-title`}>{title}</title>
+      <desc id={`${id}-desc`}>{model.description}</desc>
+      {
+        model.rows.map((row) => (
+          <g>
+            <text class="rowlabel" x="0" y={row.y + 17}>
+              {row.label}
+            </text>
+            <rect
+              class="track"
+              x={model.labelWidth}
+              y={row.y + 5}
+              width={room}
+              height="14"
+              rx="3"
+            />
+            {row.barWidth > 0 && (
+              <rect
+                class="bar period"
+                x={model.labelWidth}
+                y={row.y + 5}
+                width={row.barWidth}
+                height="14"
+                rx="3"
+              />
+            )}
+            <text
+              class="rowvalue"
+              x={model.labelWidth + room + 10}
+              y={row.y + 17}
+            >
+              {row.valueLabel}
+              {shares ? ` · ${row.share}%` : ""}
+            </text>
+          </g>
+        ))
+      }
+    </svg>
+  </div>
+</figure>

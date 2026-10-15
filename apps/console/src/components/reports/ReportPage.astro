@@ -2,37 +2,34 @@
 import "../../styles/reports.css";
 import type { ReportDetail } from "../../adapters/reports";
 import {
-  analyticsView,
-  comparisonRows,
-  dailyCharts,
+  comparisonBody,
+  comparisonQuery,
+  comparisonSlug,
+  periodSlug,
+  reportHref,
+} from "../../lib/report-period";
+import {
+  comparisonText,
+  earliestSendDay,
   headline,
-  locationRows,
-  monthRange,
-  monthSlug,
+  headlineTiles,
   narrativeView,
   noteGroups,
   notesChip,
-  profileTiles,
+  periodLabel,
+  periodRange,
   readinessChip,
   reportActions,
   reportChip,
-  reviewsView,
-  searchView,
-  sourceRows,
-  splitViews,
-  termRows,
-  workRows,
-  workTotal,
-  reasonText,
+  reportRef,
 } from "../../lib/report-view";
+import { scorecard } from "../../lib/report-document";
 import { dateText } from "../../lib/present";
 import MetricStrip from "../ui/MetricStrip.astro";
 import SectionHeading from "../ui/SectionHeading.astro";
 import StatusBadge from "../ui/StatusBadge.astro";
 import EmptyState from "../ui/EmptyState.astro";
 import DataTable from "../ui/DataTable.astro";
-import VisibilityChart from "../local-search/VisibilityChart.astro";
-import Stars from "../reviews/Stars.astro";
 import ConfirmDialog from "../administration/ConfirmDialog.astro";
 interface Props {
   report: ReportDetail;
@@ -41,42 +38,41 @@ interface Props {
 }
 const { report, api, today } = Astro.props;
 const snap = report.snapshot;
-const tiles = profileTiles(snap);
-const charts = dailyCharts(snap);
-const { splits, complete } = splitViews(snap);
-const sources = sourceRows(snap);
-const terms = termRows(snap);
-const rows = comparisonRows(snap);
-const places = locationRows(snap);
-const reviews = reviewsView(snap);
-const search = searchView(snap);
-const visits = analyticsView(snap);
-const work = workRows(snap);
+const { period, comparison } = reportRef(report);
+const tiles = headlineTiles(snap);
+const card = scorecard(snap);
 const narrative = narrativeView(report);
 const actions = reportActions(report);
 const notes = noteGroups(snap);
 const chip = notesChip(snap);
 const gbpWaiting = snap.gbp.availability === "unavailable";
-const slug = monthSlug(report.month);
+const documentHref = reportHref(report.client_slug, period, comparison, {
+  revision: report.revision,
+  document: true,
+});
+const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print=1`;
 ---
 
 <article
   class="reportpage"
   data-report-page
   data-api={api}
-  data-slug={slug}
+  data-period={periodSlug(period)}
+  data-comparison={comparisonSlug(comparison)}
+  data-vs={comparisonQuery(comparison)}
+  data-start={period.start}
+  data-end={period.end}
+  data-comparison-body={JSON.stringify(comparisonBody(comparison))}
   data-client-slug={report.client_slug}
   data-revision={report.revision}
   data-client={report.client_name}
-  data-month={report.month}
 >
   <div class="reporthead">
-    <div class="printbrand" aria-hidden="true">
-      LILOs Growth · Monthly performance report
-    </div>
     <div class="eyebrow">{report.client_name}</div>
     <h1>{headline(report)}</h1>
-    <p class="muted">{monthRange(report.month)}</p>
+    <p class="muted">
+      {periodRange(period)} · compared with {comparisonText(snap)}
+    </p>
     <div class="chipwrap">
       <StatusBadge
         text={reportChip(report.status).label}
@@ -86,14 +82,6 @@ const slug = monthSlug(report.month);
         text={readinessChip(report.readiness).label}
         tone={readinessChip(report.readiness).tone}
       />
-      <button
-        type="button"
-        class="statuschip noprint"
-        data-dialog="report-notes"
-        aria-label={`Data status: ${chip.label}. Open details`}
-      >
-        <StatusBadge text={chip.label} tone={chip.tone} />
-      </button>
       {
         report.delivery && (
           <span class="muted">Sent {dateText(report.delivery.sent_on)}</span>
@@ -105,12 +93,24 @@ const slug = monthSlug(report.month);
         )
       }
     </div>
-    <div class="reportactions noprint">
+    <div class="reportactions">
       <a class="control" href={`/clients/${report.client_slug}/reports/`}
         >All reports</a
       >
-      <button type="button" class="control" inert data-report-print
-        >Download</button
+      <button
+        type="button"
+        class="control"
+        data-dialog="report-notes"
+        aria-label={`Details. Data status: ${chip.label}`}
+      >
+        Details
+      </button>
+      <a
+        class="control"
+        href={printHref}
+        target="_blank"
+        rel="noopener"
+        data-report-download>Download PDF</a
       >
       {
         narrative.editable && (
@@ -135,15 +135,20 @@ const slug = monthSlug(report.month);
     </div>
     {
       actions.approve.why && report.status === "draft" && (
-        <p class="muted noprint">{actions.approve.why}</p>
+        <p class="muted">{actions.approve.why}</p>
       )
     }
     {
       report.status === "ready" && actions.send.allowed && (
-        <div class="reportactions noprint">
+        <div class="reportactions">
           <label>
             Sent on{" "}
-            <input type="date" name="sent_on" min={report.month} max={today} />
+            <input
+              type="date"
+              name="sent_on"
+              min={earliestSendDay(period)}
+              max={today}
+            />
           </label>
           <button type="button" class="control primary" inert data-report-send>
             Mark as sent
@@ -151,12 +156,7 @@ const slug = monthSlug(report.month);
         </div>
       )
     }
-    <p
-      class="formstatus noprint"
-      role="status"
-      aria-live="polite"
-      data-report-status
-    >
+    <p class="formstatus" role="status" aria-live="polite" data-report-status>
     </p>
   </div>
 
@@ -164,8 +164,8 @@ const slug = monthSlug(report.month);
     gbpWaiting ? (
       <section class="panel">
         <EmptyState title="Business Profile data is missing">
-          No day of {monthRange(report.month)} has synced from Google yet.
-          Reconnect Google, then regenerate this report.
+          No day of {periodRange(period)} has synced from Google yet. Reconnect
+          Google, then regenerate this report.
           <a
             slot="action"
             class="control primary"
@@ -175,442 +175,67 @@ const slug = monthSlug(report.month);
           </a>
         </EmptyState>
       </section>
+    ) : tiles.length ? (
+      <MetricStrip items={tiles} />
     ) : (
-      <Fragment>
-        <MetricStrip items={tiles.headline} />
-        <MetricStrip
-          items={[...tiles.optional, tiles.rate]}
-          columns={tiles.optional.length >= 3 ? 4 : 3}
-        />
-        <div class="splitgrid">
-          <section class="panel">
-            <SectionHeading>
-              <Fragment slot="title">Profile views per day</Fragment>
-            </SectionHeading>
-            {charts.views ? (
-              <div class="chartbody">
-                <VisibilityChart
-                  chart={charts.views}
-                  label="Daily profile views across the month"
-                />
-              </div>
-            ) : (
-              <EmptyState title="Not enough days to chart">
-                A trend appears once at least two days have synced.
-              </EmptyState>
-            )}
-          </section>
-          <section class="panel">
-            <SectionHeading>
-              <Fragment slot="title">Actions per day</Fragment>
-            </SectionHeading>
-            {charts.actions ? (
-              <div class="chartbody">
-                <VisibilityChart
-                  chart={charts.actions}
-                  label="Daily calls, website clicks and direction requests"
-                />
-              </div>
-            ) : (
-              <EmptyState title="Not enough days to chart">
-                A trend appears once at least two days have synced.
-              </EmptyState>
-            )}
-          </section>
-        </div>
-        {charts.note && <p class="muted">{charts.note}</p>}
-        <div class="splitgrid">
-          {complete ? (
-            splits.map((split) => (
-              <section class="panel">
-                <SectionHeading>
-                  <Fragment slot="title">{split.title}</Fragment>
-                </SectionHeading>
-                <div class="chartbody">
-                  {split.rows.map((row) => (
-                    <div class="splitrow">
-                      <div>
-                        <span>{row.label}</span>
-                        <b>
-                          {row.value} · {row.share}%
-                        </b>
-                      </div>
-                      <div class="splitbar">
-                        <i style={`width:${row.share}%`} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ))
-          ) : (
-            <section class="panel">
-              <EmptyState title="Where views came from">
-                The split appears once every day of the month has synced.
-              </EmptyState>
-            </section>
-          )}
-          <section class="panel">
-            <SectionHeading>
-              <Fragment slot="title">Where profile views came from</Fragment>
-            </SectionHeading>
-            <div class="chartbody">
-              {sources.map((row) => (
-                <div class="splitrow">
-                  <div>
-                    <span>{row.label}</span>
-                    <b>
-                      {row.value} · {row.share}%
-                    </b>
-                  </div>
-                  <div class="splitbar">
-                    <i style={`width:${row.share}%`} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-        <section
-          class="panel tablewrap"
-          role="region"
-          aria-label="Every profile figure"
-          tabindex="0"
-        >
-          <SectionHeading>
-            <Fragment slot="title">Every profile figure, compared</Fragment>
-          </SectionHeading>
-          <DataTable>
-            <thead>
-              <tr>
-                <>
-                  <th scope="col">Figure</th>
-                  <th class="num" scope="col">
-                    This month
-                  </th>
-                </>
-                <>
-                  <th class="num" scope="col">
-                    Last month
-                  </th>
-                  <th class="num" scope="col">
-                    Change
-                  </th>
-                </>
-                <>
-                  <th class="num" scope="col">
-                    Same month last year
-                  </th>
-                  <th class="num" scope="col">
-                    Change
-                  </th>
-                </>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr>
-                  <td>
-                    {row.label}
-                    {row.partial && (
-                      <small class="muted"> · partial month</small>
-                    )}
-                  </td>
-                  <td class="num">{row.current}</td>
-                  <td class="num">{row.previous}</td>
-                  <td class="num">{row.change}</td>
-                  <td class="num">{row.year}</td>
-                  <td class="num">{row.yearChange}</td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        </section>
-        {places.length > 0 && (
-          <section
-            class="panel tablewrap"
-            role="region"
-            aria-label="By location"
-            tabindex="0"
-          >
-            <SectionHeading>
-              <Fragment slot="title">By location</Fragment>
-            </SectionHeading>
-            <DataTable>
-              <thead>
-                <tr>
-                  <th scope="col">Location</th>
-                  <th class="num" scope="col">
-                    Profile views
-                  </th>
-                  <th class="num" scope="col">
-                    Calls
-                  </th>
-                  <th class="num" scope="col">
-                    Website clicks
-                  </th>
-                  <th class="num" scope="col">
-                    Directions
-                  </th>
-                  <th class="num" scope="col">
-                    Views change
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {places.map((row) => (
-                  <tr>
-                    <td>
-                      {row.name}
-                      {!row.mapped && (
-                        <small class="muted"> · not connected</small>
-                      )}
-                    </td>
-                    <td class="num">{row.views}</td>
-                    <td class="num">{row.calls}</td>
-                    <td class="num">{row.website}</td>
-                    <td class="num">{row.directions}</td>
-                    <td class="num">{row.change}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
-          </section>
-        )}
-      </Fragment>
+      <section class="panel">
+        <EmptyState title="No headline figures yet">
+          None of the headline figures could be compared with the earlier
+          period. Open Details to see why.
+        </EmptyState>
+      </section>
     )
   }
 
-  <section
-    class="panel tablewrap"
-    role="region"
-    aria-label="Search terms"
-    tabindex="0"
-  >
-    <SectionHeading
-      ><Fragment slot="title">How people searched for the business</Fragment
-      ></SectionHeading
-    >
-    {
-      terms.length ? (
+  {
+    card.groups.length > 0 && (
+      <section
+        class="panel tablewrap"
+        role="region"
+        aria-label="Scorecard"
+        tabindex="0"
+      >
+        <SectionHeading>
+          <Fragment slot="title">Scorecard</Fragment>
+        </SectionHeading>
         <DataTable>
           <thead>
             <tr>
-              <>
-                <th scope="col">Search term</th>
-                <th class="num" scope="col">
-                  Times shown
-                </th>
-              </>
+              <th scope="col">Measure</th>
+              <th scope="col">This period</th>
+              <th scope="col">Compared with</th>
+              <th scope="col">Change</th>
+              {card.hasYear && <th scope="col">Same period last year</th>}
             </tr>
           </thead>
-          <tbody>
-            {terms.map((row) => (
+          {card.groups.map((group) => (
+            <tbody>
               <tr>
-                <td>{row.keyword}</td>
-                <td class="num">{row.value}</td>
+                <th scope="colgroup" colspan={card.hasYear ? 5 : 4}>
+                  {group.title}
+                </th>
               </tr>
-            ))}
-          </tbody>
+              {group.rows.map((row) => (
+                <tr>
+                  <th scope="row">{row.label}</th>
+                  <td>{row.current}</td>
+                  <td>{row.compared}</td>
+                  <td>{row.change}</td>
+                  {card.hasYear && <td>{row.year ?? "No comparison"}</td>}
+                </tr>
+              ))}
+            </tbody>
+          ))}
         </DataTable>
-      ) : (
-        <EmptyState title="No search terms yet">
-          {snap.gbp.search_terms.reason
-            ? reasonText[snap.gbp.search_terms.reason] + ". "
-            : ""}
-          Google reports search terms once a month.
-        </EmptyState>
-      )
-    }
-    <div class="insight">
-      For rare searches Google reports a limit such as “&lt; 15” instead of a
-      count. That is shown as the limit, never as zero.
-    </div>
-  </section>
-
-  <section class="panel">
-    <SectionHeading><Fragment slot="title">Reviews</Fragment></SectionHeading>
-    {
-      reviews.available ? (
-        <Fragment>
-          <div class="reviewsummary">
-            <div class="bigrating">
-              <>
-                <strong>{reviews.ratingText}</strong>
-                <Stars rating={reviews.rating} />
-                <small>{reviews.total} reviews</small>
-              </>
-            </div>
-            <div class="distribution">
-              {reviews.distribution.map((row) => (
-                <div class="splitrow">
-                  <div>
-                    <span>
-                      {row.stars} {row.stars === 1 ? "star" : "stars"}
-                    </span>
-                    <b>{row.count}</b>
-                  </div>
-                  <div class="splitbar">
-                    <i style={`width:${row.share}%`} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <MetricStrip items={reviews.stats} />
-        </Fragment>
-      ) : (
-        <EmptyState title="Reviews are not available yet">
-          {reviews.gap}. Review figures appear once reviews have synced.
-        </EmptyState>
-      )
-    }
-  </section>
-
-  <section class="panel">
-    <SectionHeading
-      ><Fragment slot="title">Search Console and website visits</Fragment
-      ></SectionHeading
-    >
-    {
-      search.available ? (
-        <Fragment>
-          <MetricStrip items={[...search.tiles, visits.tile]} columns={5} />
-          {search.partialNote && <p class="muted">{search.partialNote}</p>}
-        </Fragment>
-      ) : (
-        <Fragment>
-          <EmptyState title="Search Console is not available">
-            {search.gap}. Search clicks and queries appear once it has synced.
-          </EmptyState>
-          <MetricStrip items={[visits.tile]} columns={3} />
-        </Fragment>
-      )
-    }
-    {
-      search.available && search.queries.length > 0 && (
-        <div
-          class="tablewrap"
-          role="region"
-          aria-label="Top search queries"
-          tabindex="0"
-        >
-          <DataTable>
-            <thead>
-              <tr>
-                <>
-                  <th scope="col">Top queries</th>
-                  <th class="num" scope="col">
-                    Clicks
-                  </th>
-                  <th class="num" scope="col">
-                    Impressions
-                  </th>
-                  <th class="num" scope="col">
-                    CTR
-                  </th>
-                  <th class="num" scope="col">
-                    Position
-                  </th>
-                  <th class="num" scope="col">
-                    Clicks vs last month
-                  </th>
-                </>
-              </tr>
-            </thead>
-            <tbody>
-              {search.queries.map((row) => (
-                <tr>
-                  <td>{row.label}</td>
-                  <td class="num">{row.clicks}</td>
-                  <td class="num">{row.impressions}</td>
-                  <td class="num">{row.ctr}</td>
-                  <td class="num">{row.position}</td>
-                  <td class="num">{row.change}</td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        </div>
-      )
-    }
-    {
-      search.available && search.pages.length > 0 && (
-        <div
-          class="tablewrap"
-          role="region"
-          aria-label="Top pages"
-          tabindex="0"
-        >
-          <DataTable>
-            <thead>
-              <tr>
-                <>
-                  <th scope="col">Top pages</th>
-                  <th class="num" scope="col">
-                    Clicks
-                  </th>
-                  <th class="num" scope="col">
-                    Impressions
-                  </th>
-                  <th class="num" scope="col">
-                    CTR
-                  </th>
-                  <th class="num" scope="col">
-                    Position
-                  </th>
-                  <th class="num" scope="col">
-                    Clicks vs last month
-                  </th>
-                </>
-              </tr>
-            </thead>
-            <tbody>
-              {search.pages.map((row) => (
-                <tr>
-                  <td>{row.label}</td>
-                  <td class="num">{row.clicks}</td>
-                  <td class="num">{row.impressions}</td>
-                  <td class="num">{row.ctr}</td>
-                  <td class="num">{row.position}</td>
-                  <td class="num">{row.change}</td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
-        </div>
-      )
-    }
-  </section>
-
-  <section class="panel">
-    <SectionHeading
-      ><Fragment slot="title">Local ranking</Fragment></SectionHeading
-    >
-    <EmptyState title="Not tracked yet"
-      >Local ranking scans are not part of this report yet. Nothing is estimated
-      in the meantime.</EmptyState
-    >
-  </section>
-
-  <section class="panel">
-    <SectionHeading
-      ><Fragment slot="title">Work completed</Fragment><Fragment slot="actions"
-        ><span class="muted">{workTotal(snap)} items</span></Fragment
-      ></SectionHeading
-    >
-    {
-      work.map((row) => (
-        <div class="listrow">
-          <div>
-            {row.label}
-            {row.titles.length > 0 && <small>{row.titles.join(" · ")}</small>}
-          </div>
-          <strong>{row.count}</strong>
-        </div>
-      ))
-    }
-  </section>
+        {card.footnotes.map((text) => (
+          <p class="muted tablenote">{text}</p>
+        ))}
+        {card.rowNotes.map((text) => (
+          <p class="muted tablenote">{text}</p>
+        ))}
+      </section>
+    )
+  }
 
   <section class="panel narrative" data-report-narrative>
     <SectionHeading>
@@ -618,7 +243,7 @@ const slug = monthSlug(report.month);
       <Fragment slot="actions">
         {
           narrative.editable && (
-            <span class="noprint">
+            <span>
               <button type="button" class="control" inert data-report-draft>
                 Draft with Hermes
               </button>
@@ -637,8 +262,8 @@ const slug = monthSlug(report.month);
     </SectionHeading>
     {
       narrative.drafted && narrative.editable && (
-        <p class="muted noprint">
-          Drafted by Hermes from this month’s numbers. Review and edit before
+        <p class="muted">
+          Drafted by Hermes from this report’s numbers. Review and edit before
           approving.
         </p>
       )
@@ -680,7 +305,34 @@ const slug = monthSlug(report.month);
       >
     </div>
     <div class="body">
-      <h2 id="report-notes-title">Data notes</h2>
+      <h2 id="report-notes-title">Report details</h2>
+      <p>
+        <StatusBadge text={chip.label} tone={chip.tone} />
+      </p>
+      <p>
+        Covers {periodLabel(period)}, compared with {comparisonText(snap)}.
+      </p>
+      {
+        snap.sync.gbp && (
+          <p class="muted">
+            Business Profile last synced {dateText(snap.sync.gbp)}.
+          </p>
+        )
+      }
+      {
+        snap.sync.search_console && (
+          <p class="muted">
+            Search Console last synced {dateText(snap.sync.search_console)}.
+          </p>
+        )
+      }
+      {
+        snap.sync.analytics && (
+          <p class="muted">
+            Google Analytics last synced {dateText(snap.sync.analytics)}.
+          </p>
+        )
+      }
       {
         notes.length ? (
           notes.map((group) => (

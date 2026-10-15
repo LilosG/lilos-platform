@@ -1,0 +1,479 @@
+/* The client report document: a Letter page to print or save as a PDF. Colors and fonts are the
+   console's own tokens (app.css, theme.css); the print brand green is the sidebar's green. */
+@page {
+  size: Letter;
+  margin: 0.6in;
+}
+.docpage {
+  margin: 0;
+  background: #eef2f0;
+  color: var(--ink);
+  font:
+    10pt/1.45 "DM Sans",
+    sans-serif;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.doc {
+  --brand: var(--green, #235448);
+  --soft: #e9f2e9;
+  --compared: #b9c7c0;
+  --warn: var(--amber, #956318);
+  width: 100%;
+  max-width: 8.5in;
+  margin: 24px auto;
+  padding: 0.6in;
+  background: #fff;
+  box-shadow: 0 1px 12px rgb(28 41 41 / 12%);
+}
+.doc h1,
+.doc h2,
+.doc h3,
+.doc .cardvalue {
+  font-family: "Manrope", "DM Sans", sans-serif;
+  color: var(--brand);
+  margin: 0;
+}
+.doc h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17pt;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--brand);
+}
+.doc h2 span {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11pt;
+}
+.doc h3 {
+  font-size: 11.5pt;
+  margin: 18px 0 8px;
+}
+.doc p {
+  margin: 0 0 8px;
+}
+.doc .muted {
+  color: var(--muted);
+}
+.doc .small,
+.doc .footnote {
+  font-size: 8.5pt;
+}
+.doc .footnote {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+.doc .prose {
+  font-size: 10.5pt;
+  line-height: 1.6;
+  max-width: 6.6in;
+}
+/* Cover */
+.cover {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 9.4in;
+  padding: 0.3in 0 0;
+}
+.cover .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font:
+    800 13pt "Manrope",
+    sans-serif;
+  color: var(--brand);
+}
+.cover .logo {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: var(--lime, #d5ee86);
+}
+.covertitle {
+  border-left: 6px solid var(--lime, #d5ee86);
+  padding-left: 22px;
+}
+.covertitle .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 10pt;
+  color: var(--muted);
+}
+.covertitle h1 {
+  font-size: 34pt;
+  line-height: 1.1;
+  margin: 6px 0 12px;
+}
+.covertitle .period {
+  font:
+    700 20pt "Manrope",
+    sans-serif;
+  margin: 0;
+}
+.covertitle .range {
+  color: var(--muted);
+  font-size: 11pt;
+}
+.coverfacts {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.coverfacts dt {
+  font-size: 8.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.coverfacts dd {
+  margin: 2px 0 0;
+  font-size: 11pt;
+}
+/* Sections */
+.numbered {
+  padding-top: 8px;
+  margin-top: 28px;
+}
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.cards.three {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  background: #fff;
+  break-inside: avoid;
+}
+.cardlabel {
+  color: var(--muted);
+  font-size: 9pt;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+.cardvalue {
+  font-size: 30pt;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 6px 0 4px;
+}
+.cardvalue.small {
+  font-size: 20pt;
+}
+.cardchange {
+  font-weight: 600;
+  font-size: 10pt;
+  margin: 0 0 8px;
+}
+.cardchange.up,
+.change.up {
+  color: #32755a;
+}
+.cardchange.down,
+.change.down {
+  color: var(--red, #b2473e);
+}
+.cardline {
+  color: var(--muted);
+  font-size: 9.5pt;
+  margin: 0;
+}
+/* Tables */
+.doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  break-inside: avoid;
+}
+.doc th,
+.doc td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: 400;
+  vertical-align: top;
+}
+.doc thead th {
+  background: var(--soft);
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 8.5pt;
+}
+.doc tbody th[scope="row"] {
+  font-weight: 500;
+}
+.doc .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.doc .strong {
+  font-weight: 700;
+}
+.doc .score tr.group th {
+  background: #f5f7f6;
+  color: var(--brand);
+  font-weight: 700;
+  padding-top: 10px;
+  border-bottom: 1px solid var(--brand);
+}
+.doc .months th,
+.doc .months td {
+  padding: 5px 4px;
+  font-size: 8pt;
+}
+.block {
+  break-inside: avoid;
+}
+/* Charts */
+.docchart {
+  margin: 0 0 14px;
+  break-inside: avoid;
+}
+.docchart .charttitle {
+  font:
+    700 10.5pt "Manrope",
+    sans-serif;
+  color: var(--brand);
+  margin-bottom: 4px;
+}
+.docchart .svgbox {
+  position: relative;
+  width: 100%;
+}
+.docchart svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.docchart.small .svgbox {
+  max-width: 6.2in;
+}
+.docchart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.docchart .tick,
+.docchart .month,
+.docchart .year,
+.docchart .gap,
+.docchart .rowlabel,
+.docchart .rowvalue,
+.docchart .value {
+  font:
+    9px "DM Sans",
+    sans-serif;
+  fill: var(--muted);
+}
+.docchart .rowlabel,
+.docchart .rowvalue {
+  font-size: 11px;
+  fill: var(--ink);
+}
+.docchart .value {
+  fill: var(--ink);
+  font-size: 9px;
+}
+.docchart .year {
+  font-weight: 700;
+}
+.docchart .bar.period {
+  fill: var(--brand);
+}
+.docchart .bar.compared {
+  fill: var(--compared);
+}
+.docchart .bar.partial {
+  fill-opacity: 0.55;
+}
+.docchart .track {
+  fill: #edf0ef;
+}
+.docchart .divider {
+  stroke: var(--line);
+  stroke-dasharray: 2 3;
+}
+.docchart .baseline {
+  stroke: var(--warn);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 8.5pt;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+.legend .key::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  background: var(--brand);
+}
+.legend .key.compared::before {
+  background: var(--compared);
+}
+.legend .key.baseline::before {
+  height: 0;
+  width: 16px;
+  border-top: 2px dashed var(--warn);
+  border-radius: 0;
+  background: none;
+}
+.splits {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.reviewhead {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.rating .cardvalue {
+  font-size: 40pt;
+}
+/* Work, notes */
+.work {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.work > li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  break-inside: avoid;
+}
+.work .worklabel {
+  margin: 0;
+  font-size: 10.5pt;
+}
+.work .titles {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 9pt;
+}
+.defs {
+  margin: 0;
+  font-size: 8.5pt;
+}
+.defs div {
+  margin-bottom: 7px;
+  break-inside: avoid;
+}
+.defs dt {
+  font-weight: 700;
+}
+.defs dd {
+  margin: 1px 0 0;
+  color: #3d4b49;
+}
+.notes ul {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.doc .empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  break-inside: avoid;
+}
+@media screen and (max-width: 700px) {
+  .doc {
+    margin: 0;
+    padding: 20px 16px;
+    box-shadow: none;
+  }
+  .cover {
+    min-height: 70vh;
+  }
+  .covertitle h1 {
+    font-size: 26pt;
+  }
+  .cards,
+  .reviewhead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .block {
+    overflow-x: auto;
+  }
+  .doc table {
+    min-width: 440px;
+  }
+  .doc .months {
+    min-width: 640px;
+  }
+}
+@media print {
+  .docpage {
+    background: #fff;
+  }
+  .doc {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+  .cover {
+    min-height: 9.5in;
+    break-after: page;
+  }
+  .numbered {
+    break-before: page;
+    margin-top: 0;
+    padding-top: 0;
+  }
+  .cover + .numbered,
+  .numbered[data-section="ahead"] {
+    break-before: auto;
+    margin-top: 22px;
+  }
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  .card,
+  table,
+  .docchart,
+  .block,
+  .defs div,
+  .work > li {
+    break-inside: avoid;
+  }
+  .doc .months th,
+  .doc .months td {
+    padding: 4px 3px;
+  }
+}
