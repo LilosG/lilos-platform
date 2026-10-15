@@ -2040,6 +2040,14 @@ button.statuschip .badge {
   font-size: 13px;
   min-height: 1.2em;
 }
+/* Work in progress is not an error. */
+.formstatus[data-state="working"] {
+  color: var(--muted);
+}
+.control[data-review-ingest]:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
 .sortable {
   cursor: pointer;
   user-select: none;

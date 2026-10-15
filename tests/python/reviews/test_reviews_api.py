@@ -15,10 +15,12 @@ from apps.api.app.access_control.catalog import AccessCatalogSeeder
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
+from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.integrations.models import (
     IntegrationConnection,
     Provider,
@@ -553,30 +555,155 @@ def test_cross_tenant_review_detail_is_not_found(
     assert response.status_code in (403, 404)
 
 
+def _ingest_base(ids: dict[str, UUID], key: str = "location") -> str:
+    return f"/api/v1/organizations/{ids['organization']}/locations/{ids[key]}/reviews/ingest"
+
+
+def _set_run(postgresql_test_url: str, run_id: str, status: str, failure_code: str | None) -> None:
+    async def work(session: AsyncSession) -> None:
+        async with session.begin():
+            run = await session.get(WorkflowRun, UUID(run_id))
+            assert run is not None
+            run.status = status
+            run.failure_code = failure_code
+
+    run_db(postgresql_test_url, work)
+
+
 @pytest.mark.integration
-def test_ingest_route_maps_to_ingest_handler_not_get_review_by_id(
+def test_ingest_enqueues_a_run_and_returns_202_not_an_inline_import(
+    postgresql_test_url: str,
     reviews_client: tuple[TestClient, dict[str, UUID]],
 ) -> None:
-    """Regression: the production frontend sends ``POST .../reviews/ingest``.
-
-    Production returned ``405 Method Not Allowed`` because an older API build
-    lacked the ``POST /ingest`` route, so the path matched ``GET .../reviews/{review_id}``
-    (``review_id == "ingest"``) with the wrong method. This test proves the current
-    route table maps the exact frontend-shaped request to the ``ingest_reviews``
-    handler: an authenticated POST with body ``{}`` must NOT return 405, and with
-    no active GBP location mapping it returns a truthful 409 the operator can act on.
-    """
+    """The production frontend sends ``POST .../reviews/ingest``; it must queue, not import."""
     client, ids = reviews_client
-    org, location = ids["organization"], ids["location"]
-    base = f"/api/v1/organizations/{org}/locations/{location}/reviews"
+    response = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-1"}, json={}
+    )
 
-    response = client.post(f"{base}/ingest", headers=HEADERS, json={})
-
-    assert response.status_code != 405, "ingest route is shadowed by GET /{review_id}"
-    assert response.status_code == 409
+    assert response.status_code == 202
     body = response.json()
-    assert body["error"]["code"] == "REVIEW_INGESTION_UNAVAILABLE"
-    assert "Google Business Profile" in body["error"]["message"]
+    assert body["run_status"] == "queued"
+    assert set(body) == {"run_id", "run_status"}
+
+    async def work(session: AsyncSession) -> tuple[str, UUID | None, str | None]:
+        run = await session.get(WorkflowRun, UUID(body["run_id"]))
+        assert run is not None
+        job = await session.scalar(select(Job).where(Job.workflow_run_id == run.id))
+        audit = await session.scalar(
+            select(AuditEvent.event_type).where(
+                AuditEvent.resource_id == run.id,
+                AuditEvent.event_type == "workflow.run_now.requested",
+            )
+        )
+        return run.status, run.location_id, audit if job else None
+
+    status, location_id, audit = run_db(postgresql_test_url, work)
+    assert (status, location_id) == ("queued", ids["location"])
+    assert audit == "workflow.run_now.requested"
+
+
+@pytest.mark.integration
+def test_ingest_requires_an_idempotency_key(
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    assert client.post(_ingest_base(ids), headers=HEADERS, json={}).status_code == 422
+
+
+@pytest.mark.integration
+def test_ingest_same_key_and_double_click_return_one_run(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    first = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-1"}, json={}
+    )
+    replay = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-1"}, json={}
+    )
+    # A second click mints a new key while the first import is still queued.
+    double_click = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-2"}, json={}
+    )
+    assert {r.status_code for r in (first, replay, double_click)} == {202}
+    run_id = first.json()["run_id"]
+    assert replay.json()["run_id"] == run_id
+    assert double_click.json()["run_id"] == run_id
+
+    async def count(session: AsyncSession) -> int:
+        rows = await session.scalars(
+            select(WorkflowRun.id).where(WorkflowRun.location_id == ids["location"])
+        )
+        return len(rows.all())
+
+    assert run_db(postgresql_test_url, count) == 1
+
+    # Once it has finished, a new click starts a fresh import.
+    _set_run(postgresql_test_url, run_id, "completed", None)
+    again = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-3"}, json={}
+    )
+    assert again.status_code == 202
+    assert again.json()["run_id"] != run_id
+
+
+@pytest.mark.integration
+def test_ingest_status_maps_run_outcomes_to_typed_results(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    run_id = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-1"}, json={}
+    ).json()["run_id"]
+    url = f"{_ingest_base(ids)}/{run_id}"
+
+    cases = [
+        ("queued", None, "queued", None),
+        ("running", None, "running", None),
+        ("retry_scheduled", "REVIEWS_INGEST_FAILED", "retry_scheduled", None),
+        ("completed", None, "completed", "SUCCEEDED"),
+        ("retry_scheduled", "TOKEN_REFRESH_FAILED", "retry_scheduled", "RECONNECT_REQUIRED"),
+        ("failed", "TOKEN_REFRESH_FAILED", "failed", "RECONNECT_REQUIRED"),
+        ("failed", "REVIEWS_INGEST_FAILED", "failed", "FAILED"),
+        ("failed", "GBP_LOCATION_NOT_FOUND", "failed", "FAILED"),
+        ("escalated", None, "escalated", "FAILED"),
+    ]
+    for status, failure_code, expected_status, expected_result in cases:
+        _set_run(postgresql_test_url, run_id, status, failure_code)
+        response = client.get(url, headers=HEADERS)
+        assert response.status_code == 200, (status, failure_code)
+        assert response.json() == {
+            "run_id": run_id,
+            "run_status": expected_status,
+            "result": expected_result,
+        }
+
+
+@pytest.mark.integration
+def test_ingest_status_is_not_found_for_another_org_or_location(
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    run_id = client.post(
+        _ingest_base(ids), headers={**HEADERS, "Idempotency-Key": "ingest-key-1"}, json={}
+    ).json()["run_id"]
+
+    # The run exists, but not for the sibling location of the same organization.
+    sibling = client.get(f"{_ingest_base(ids, 'sibling_location')}/{run_id}", headers=HEADERS)
+    assert sibling.status_code == 404
+    assert sibling.json()["error"]["code"] == "WORKFLOW_RUN_NOT_FOUND"
+
+    # Another organization's path never reveals it.
+    other = (
+        f"/api/v1/organizations/{ids['other_organization']}/locations/{ids['location']}"
+        f"/reviews/ingest/{run_id}"
+    )
+    assert client.get(other, headers=HEADERS).status_code in (403, 404)
+
+    assert client.get(f"{_ingest_base(ids)}/{uuid4()}", headers=HEADERS).status_code == 404
 
 
 def _approved_fact(client: TestClient, org: UUID) -> str:

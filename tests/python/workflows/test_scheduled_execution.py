@@ -495,3 +495,87 @@ async def test_reviews_ingest_schedule_dispatch_path_resolves_platform_location(
     assert ingest_calls[0]["location_id"] == platform_location_id, (
         "ingest_for_location must receive the platform location id, not a GBPLocation.id"
     )
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_reviews_ingest_manually_enqueued_run_ingests_its_location(
+    postgresql_test_url: str,
+    workflows_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A manual import (no schedule row) runs through the same handler as a scheduled one."""
+    import asyncio
+
+    from apps.api.app.execution.handlers import _handle_reviews_ingest
+    from apps.api.app.integrations.errors import IntegrationReconnectRequiredError
+    from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
+
+    monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
+    config = Config(ROOT / "alembic.ini")
+    await asyncio.to_thread(command.upgrade, config, "head")
+
+    async with workflows_session_factory.begin() as session:
+        org, location, _gbp, _provider, connection = await _seed_org(
+            session, "Manual Ingest Org", f"rvmanual-{uuid4().hex[:12]}"
+        )
+        run, created = await ExecutionService().run_now_for_location(
+            session,
+            org.id,
+            location.id,
+            "reviews.ingest",
+            "manual-key-1",
+            correlation_id="manual-ingest",
+            actor_id=None,
+        )
+        assert created
+        org_id, platform_location_id, run_id = org.id, location.id, run.id
+        input_document = dict(run.input_document)
+
+    calls: list[Any] = []
+
+    async def fake_token_resolver(session: AsyncSession, organization_id: Any) -> Any:
+        return "fake-token", connection
+
+    async def fake_ingest(
+        self: ReviewIngestionService,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: Any,
+        location_id: Any,
+        *,
+        actor_id: Any,
+        correlation_id: str,
+    ) -> dict[str, object]:
+        calls.append(location_id)
+        return {"ingested": 2155, "updated": 0, "total": 2155}
+
+    monkeypatch.setattr(handlers_module, "_token_resolver", fake_token_resolver)
+    monkeypatch.setattr(ReviewIngestionService, "ingest_for_location", fake_ingest)
+
+    async with workflows_session_factory() as session:
+        outcome = await _handle_reviews_ingest(
+            session,
+            organization_id=org_id,
+            location_id=platform_location_id,
+            input_document=input_document,
+            correlation_id="manual-ingest",
+            workflow_run_id=run_id,
+        )
+    assert outcome.result == "succeeded"
+    assert calls == [platform_location_id]
+
+    async def lost_authorization(session: AsyncSession, organization_id: Any) -> Any:
+        raise IntegrationReconnectRequiredError
+
+    monkeypatch.setattr(handlers_module, "_token_resolver", lost_authorization)
+    async with workflows_session_factory() as session:
+        failed = await _handle_reviews_ingest(
+            session,
+            organization_id=org_id,
+            location_id=platform_location_id,
+            input_document=input_document,
+            correlation_id="manual-ingest",
+            workflow_run_id=run_id,
+        )
+    assert failed.safe_error == "TOKEN_REFRESH_FAILED"
