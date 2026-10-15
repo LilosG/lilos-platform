@@ -67,10 +67,13 @@ import {
 import { dialogView, filterQuery } from "../../../lib/automation-view";
 import { clientAreaSlugs } from "../../../config/routes";
 import ClientReports from "../../../components/reports/ClientReports.astro";
+import NewReportDialog from "../../../components/reports/NewReportDialog.astro";
 import ReportPage from "../../../components/reports/ReportPage.astro";
-import ReportSummary from "../../../components/reports/ReportSummary.astro";
 import { loadClientReports, loadReport } from "../../../server/report-loader";
-import { monthFromSlug } from "../../../lib/report-view";
+import {
+  comparisonFromQuery,
+  periodFromSlug,
+} from "../../../lib/report-period";
 import type { ReportDetail, ReportList } from "../../../adapters/reports";
 import {
   loadOverview,
@@ -413,28 +416,37 @@ try {
 }
 let reportsList: ReportList | undefined;
 let reportDetail: ReportDetail | undefined;
-let reportMode: "list" | "report" | "summary" | undefined;
+let reportMode: "list" | "new" | "report" | undefined;
 let reportsFailed = false;
 if (section === "reports") {
-  const month = segments[1] ? monthFromSlug(segments[1]) : null;
+  const second = segments[1] ?? "";
+  const creating = second === "new";
+  const period = second && !creating ? periodFromSlug(second) : null;
+  const comparison = comparisonFromQuery(Astro.url.searchParams.get("vs"));
   const revision = Astro.url.searchParams.get("revision");
   const wanted = revision === null ? null : Number(revision);
   if (
-    segments.length > 3 ||
-    (segments[1] && !month) ||
-    (segments[2] && segments[2] !== "summary") ||
+    segments.length > 2 ||
+    (second && !creating && !period) ||
+    !comparison ||
     (wanted !== null && (!Number.isInteger(wanted) || wanted < 1))
   )
     return new Response("Page not found", { status: 404 });
-  reportMode = !month ? "list" : segments[2] ? "summary" : "report";
-  const loaded = month
-    ? await loadReport(Astro.locals, client.organization_id, month, wanted)
+  reportMode = creating ? "new" : period ? "report" : "list";
+  const loaded = period
+    ? await loadReport(
+        Astro.locals,
+        client.organization_id,
+        period,
+        comparison,
+        wanted,
+      )
     : await loadClientReports(Astro.locals, client.organization_id);
   if (loaded.kind === "unauthenticated") return Astro.redirect("/login/", 303);
   if (loaded.kind === "notfound")
     return new Response("Page not found", { status: 404 });
   if (loaded.kind === "error") reportsFailed = true;
-  else if (month) reportDetail = loaded.value as ReportDetail;
+  else if (period) reportDetail = loaded.value as ReportDetail;
   else reportsList = loaded.value as ReportList;
 }
 const title =
@@ -493,7 +505,7 @@ const title =
       <Fragment>
         <PageHeader
           title="Reports"
-          subtitle="Monthly performance reports for this client."
+          subtitle="Performance reports for this client."
           client
         />
         <ErrorState title="Reports are temporarily unavailable">
@@ -504,18 +516,21 @@ const title =
           </a>
         </ErrorState>
       </Fragment>
-    ) : reportMode === "list" && reportsList ? (
+    ) : (reportMode === "list" || reportMode === "new") && reportsList ? (
       <Fragment>
         <PageHeader
           title="Reports"
-          subtitle="Monthly performance reports, saved as approved."
+          subtitle="Performance reports for any months that have ended, saved as approved."
           client
         />
-        <ClientReports
-          list={reportsList}
-          slug={client.organization_slug}
-          organization={client.organization_id}
-        />
+        <ClientReports list={reportsList} slug={client.organization_slug} />
+        {reportMode === "new" && (
+          <NewReportDialog
+            list={reportsList}
+            slug={client.organization_slug}
+            organization={client.organization_id}
+          />
+        )}
       </Fragment>
     ) : reportMode === "report" && reportDetail ? (
       <ReportPage
@@ -523,8 +538,6 @@ const title =
         api={`/api/organizations/${client.organization_id}/command-center/reports/`}
         today={new Date().toISOString().slice(0, 10)}
       />
-    ) : reportMode === "summary" && reportDetail ? (
-      <ReportSummary report={reportDetail} />
     ) : automationsPage?.kind === "detail" ? (
       <Fragment>
         <DialogFrame

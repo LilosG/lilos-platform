@@ -1,0 +1,110 @@
+---
+import type { ReportList } from "../../adapters/reports";
+import {
+  addMonths,
+  presetPeriods,
+  selectableMonths,
+} from "../../lib/report-period";
+import DialogFrame from "../ui/DialogFrame.astro";
+import MonthControl from "./MonthControl.astro";
+interface Props {
+  list: ReportList;
+  slug: string;
+  organization: string;
+}
+const { list, slug, organization } = Astro.props;
+const lastEnded = list.current_month;
+const months = selectableMonths(lastEnded);
+const presets = presetPeriods(lastEnded);
+const baselineEnd = addMonths(lastEnded, -3);
+---
+
+<DialogFrame
+  id="new-report"
+  returnTo={`/clients/${slug}/reports/`}
+  returnLabel="Cancel"
+>
+  <Fragment slot="body">
+    <form
+      id="new-report-form"
+      data-new-report
+      data-api={`/api/organizations/${organization}/command-center/reports/generate/`}
+      data-client-slug={slug}
+      data-last-ended={lastEnded}
+      data-presets={JSON.stringify(presets)}
+      novalidate
+    >
+      <h2 id="new-report-title">New report</h2>
+      <p class="muted">
+        Reports cover whole calendar months, from 1 to 12 of them. Only months
+        that have ended can be chosen, because Search Console and Google
+        Analytics keep their figures month by month.
+      </p>
+      <div class="newreport">
+        <label>
+          Period
+          <select name="preset" aria-label="Period" data-preset>
+            <option value="last-month">Last month</option>
+            <option value="last-3">Last 3 months</option>
+            <option value="last-6">Last 6 months</option>
+            <option value="year-to-date">Year to date</option>
+            <option value="custom">Choose months</option>
+          </select>
+        </label>
+        <div class="monthpair">
+          <MonthControl
+            name="start"
+            label="First month"
+            months={months}
+            selected={lastEnded}
+          />
+          <MonthControl
+            name="end"
+            label="Last month"
+            months={months}
+            selected={lastEnded}
+          />
+        </div>
+        <p class="fielderror" role="alert" data-error-for="period" hidden></p>
+        <label>
+          Compare with
+          <select name="compare" aria-label="Compare with" data-compare>
+            <option value="previous">Previous period</option>
+            <option value="year-ago">Same period last year</option>
+            <option value="baseline">A baseline period</option>
+          </select>
+        </label>
+        <p class="muted" data-compare-help>
+          The same number of months immediately before the report.
+        </p>
+        <div class="monthpair" data-baseline hidden>
+          <MonthControl
+            name="baseline_start"
+            label="Baseline first month"
+            months={months}
+            selected={baselineEnd}
+          />
+          <MonthControl
+            name="baseline_end"
+            label="Baseline last month"
+            months={months}
+            selected={baselineEnd}
+          />
+        </div>
+        <p class="fielderror" role="alert" data-error-for="baseline" hidden></p>
+      </div>
+      <p class="formstatus" role="status" aria-live="polite" data-report-status>
+      </p>
+    </form>
+  </Fragment>
+  <Fragment slot="footer">
+    <button
+      type="submit"
+      form="new-report-form"
+      class="control primary"
+      data-generate-submit
+    >
+      Generate report
+    </button>
+  </Fragment>
+</DialogFrame>

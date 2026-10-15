@@ -2,8 +2,11 @@ import { z } from "zod";
 const uuid =
   "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})";
 const base = `organizations/${uuid}/command-center/reports`;
-const month = "(\\d{4}-(?:0[1-9]|1[0-2]))";
-const one = `${base}/${month}/(\\d{1,4})`;
+const month = "\\d{4}-(?:0[1-9]|1[0-2])";
+// A period is one month or several ("2026-05_2026-09"); a comparison is previous, year-ago or vs-<months>.
+const period = `(${month}(?:_${month})?)`;
+const comparison = `(previous|year-ago|vs-${month}(?:_${month})?)`;
+const one = `${base}/${period}/${comparison}/(\\d{1,4})`;
 const empty = z.object({}).strict();
 export const narrativeBody = z
   .object({
@@ -11,14 +14,29 @@ export const narrativeBody = z
     next_work: z.string().max(4000),
   })
   .strict();
+const firstOfMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/);
 export const generateBody = z
-  .object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/) })
+  .object({
+    start_month: firstOfMonth,
+    end_month: firstOfMonth,
+    comparison: z
+      .object({
+        basis: z.enum([
+          "previous_period",
+          "same_period_last_year",
+          "custom_baseline",
+        ]),
+        baseline_start: firstOfMonth.optional(),
+        baseline_end: firstOfMonth.optional(),
+      })
+      .strict(),
+  })
   .strict();
 export const sentBody = z
   .object({ sent_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })
   .strict();
 /**
- * Monthly reports through the BFF: the portfolio board, one client's reports, one stored
+ * Reports through the BFF: the portfolio board, one client's reports, one stored
  * revision, and the writes (generate, narrative, draft, approve, mark sent).
  */
 export const reportRoutes = [

@@ -9,12 +9,12 @@ import EmptyState from "../ui/EmptyState.astro";
 interface Props {
   list: ReportList;
   slug: string;
-  organization: string;
 }
-const { list, slug, organization } = Astro.props;
+const { list, slug } = Astro.props;
 const panel = currentPanel(list, slug);
 const history = historyRows(list, slug);
 const upcoming = upcomingRows(list);
+const newReport = `/clients/${slug}/reports/new/`;
 ---
 
 <section class="panel currentreport" data-reports-current>
@@ -41,25 +41,25 @@ const upcoming = upcomingRows(list);
       <h3>{panel.heading}</h3>
       <p>{panel.text}</p>
     </div>
-    {
-      panel.action ? (
-        <a class="control primary" href={panel.action.href}>
-          {panel.action.label}
-        </a>
-      ) : panel.generate ? (
-        <button
-          type="button"
-          class="control primary"
-          inert
-          data-generate-report
-          data-month={list.current_month}
-          data-api={`/api/organizations/${organization}/command-center/reports/generate/`}
-          data-href={`/clients/${slug}/reports/${list.current_month.slice(0, 7)}/`}
-        >
-          Generate report
-        </button>
-      ) : null
-    }
+    <div class="reportactions">
+      {
+        panel.action && (
+          <a class="control primary" href={panel.action.href}>
+            {panel.action.label}
+          </a>
+        )
+      }
+      {
+        list.permissions.can_generate && (
+          <a
+            class:list={["control", { primary: !panel.action }]}
+            href={newReport}
+          >
+            New report
+          </a>
+        )
+      }
+    </div>
   </div>
   {
     panel.blocked && (
@@ -70,7 +70,6 @@ const upcoming = upcomingRows(list);
       </InsightPanel>
     )
   }
-  <p class="formstatus" role="status" aria-live="polite" data-report-status></p>
 </section>
 <section
   class="panel tablewrap spaced-section"
@@ -87,6 +86,7 @@ const upcoming = upcomingRows(list);
         <thead>
           <tr>
             <th scope="col">Period</th>
+            <th scope="col">Compared with</th>
             <th scope="col">Status</th>
             <th scope="col">Delivered</th>
             <th scope="col">
@@ -101,13 +101,14 @@ const upcoming = upcomingRows(list);
                 {row.period}
                 {row.version && <small class="muted"> · {row.version}</small>}
               </td>
+              <td>{row.comparison}</td>
               <td>
                 <StatusBadge text={row.status.label} tone={row.status.tone} />
               </td>
               <td>{row.delivered}</td>
               <td>
                 <a class="control" href={row.href}>
-                  View summary
+                  View report
                 </a>
               </td>
             </tr>
@@ -116,7 +117,12 @@ const upcoming = upcomingRows(list);
       </DataTable>
     ) : (
       <EmptyState title="No reports yet">
-        The first monthly report appears here once it has been generated.
+        Choose the months to report on and what to compare them with.
+        {list.permissions.can_generate && (
+          <a slot="action" class="control primary" href={newReport}>
+            New report
+          </a>
+        )}
       </EmptyState>
     )
   }
