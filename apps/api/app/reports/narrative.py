@@ -14,7 +14,7 @@ import json
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
@@ -30,6 +30,7 @@ from apps.api.app.reports.contracts import (
     NarrativeOrigin,
     ReportCountComparison,
     ReportNarrative,
+    ReportPeriod,
     ReportRateComparison,
     ReportSnapshot,
 )
@@ -150,7 +151,17 @@ def numbers_in(text: str) -> list[Decimal]:
 
 def allowed_numbers(snapshot: ReportSnapshot) -> set[Decimal]:
     """Every number the snapshot contains, anywhere in it, in the forms a sentence may use."""
-    allowed: set[Decimal] = {Decimal(snapshot.month.year)}
+    comparison = snapshot.comparison
+    periods = [
+        snapshot.period,
+        comparison.compared,
+        *([comparison.year_ago] if comparison.year_ago else []),
+    ]
+    allowed: set[Decimal] = {
+        Decimal(month.year)
+        for period in periods
+        for month in (period.start_month, period.end_month)
+    }
     for leaf in _leaves(snapshot.model_dump(mode="json")):
         if isinstance(leaf, bool) or leaf is None:
             continue
@@ -179,15 +190,28 @@ def failure_of(narrative: ReportNarrative, snapshot: ReportSnapshot) -> Narrativ
     return None
 
 
+def label_of(period: ReportPeriod) -> str:
+    """ "September 2026", or "May to September 2026" (with both years when they differ)."""
+    first, last = period.start_month, period.end_month
+    if first == last:
+        return f"{_MONTHS[first.month - 1]} {first.year}"
+    start = _MONTHS[first.month - 1] + ("" if first.year == last.year else f" {first.year}")
+    return f"{start} to {_MONTHS[last.month - 1]} {last.year}"
+
+
 def _figure(comparison: ReportCountComparison) -> dict[str, Any]:
     out: dict[str, Any] = {
-        "this_month": comparison.current.value,
-        "last_month": comparison.previous.value,
+        "this_period": comparison.current.value,
+        "compared_period": comparison.compared.value,
         "change": comparison.change,
         "change_percent": comparison.change_percent,
     }
+    if comparison.compared_as.value == "monthly_average":
+        # The compared figure is a monthly average, set against this period's monthly average.
+        out["compared_period_is"] = "monthly average"
+        out["this_period_monthly_average"] = comparison.current_monthly_average
     if comparison.year_ago is not None:
-        out["same_month_last_year"] = comparison.year_ago.value
+        out["same_period_last_year"] = comparison.year_ago.value
         out["change_vs_last_year"] = comparison.year_change
         out["change_percent_vs_last_year"] = comparison.year_change_percent
     if comparison.current.availability.value == "partial":
@@ -197,18 +221,19 @@ def _figure(comparison: ReportCountComparison) -> dict[str, Any]:
 
 def _rate(comparison: ReportRateComparison) -> dict[str, Any]:
     return {
-        "this_month": comparison.current.value,
-        "last_month": comparison.previous.value,
+        "this_period": comparison.current.value,
+        "compared_period": comparison.compared.value,
         "change": comparison.change,
     }
 
 
 def evidence_of(snapshot: ReportSnapshot) -> dict[str, Any]:
     """The compact facts the model may write from. Every number here is a snapshot value."""
-    month = date.fromisoformat(snapshot.month.isoformat())
     gbp = snapshot.gbp
+    reviews = snapshot.reviews
     return {
-        "month": f"{_MONTHS[month.month - 1]} {month.year}",
+        "period": label_of(snapshot.period),
+        "compared_with": label_of(snapshot.comparison.compared),
         "profile_views": _figure(gbp.profile_views.total),
         "profile_view_sources": {
             row.metric.value: _figure(row.comparison) for row in gbp.profile_views.sources
@@ -218,7 +243,9 @@ def evidence_of(snapshot: ReportSnapshot) -> dict[str, Any]:
             row.metric.value: _figure(row.comparison) for row in gbp.actions.actions
         },
         "other_actions": {
-            row.metric.value: _figure(row.comparison) for row in gbp.actions.optional
+            row.metric.value: _figure(row.comparison)
+            for row in gbp.actions.optional
+            if row.comparable
         },
         "action_rate_percent": _rate(gbp.actions.action_rate),
         "search_terms": [
@@ -226,17 +253,20 @@ def evidence_of(snapshot: ReportSnapshot) -> dict[str, Any]:
             for term in gbp.search_terms.terms[:10]
         ],
         "reviews": {
-            "new_in_month": snapshot.reviews.new_in_month.value,
-            "average_rating_in_month": snapshot.reviews.average_rating_in_month.value,
-            "average_rating_overall": snapshot.reviews.average_rating_overall.value,
-            "total_reviews": snapshot.reviews.total_count.value,
-            "responses_published": snapshot.reviews.responses_published.value,
-            "response_rate_percent": snapshot.reviews.response_rate_percent.value,
+            "new_reviews": _figure(reviews.new_reviews),
+            "average_rating_in_period": _rate(reviews.average_rating_in_period),
+            "average_rating_overall": _rate(reviews.average_rating_overall),
+            "total_reviews": reviews.total_count.value,
+            "responses_published": reviews.responses_published.value,
+            "response_rate_percent": _rate(reviews.response_rate_percent),
         },
         "search_console": {
             "clicks": _figure(snapshot.search_console.clicks),
             "impressions": _figure(snapshot.search_console.impressions),
             "average_position": _rate(snapshot.search_console.average_position),
+            "branded_share_of_top_search_clicks_percent": (
+                snapshot.search_console.branded_share_percent
+            ),
             "top_queries": [
                 {"query": row.query, "clicks": row.clicks, "clicks_change": row.clicks_change}
                 for row in snapshot.search_console.top_queries[:5]

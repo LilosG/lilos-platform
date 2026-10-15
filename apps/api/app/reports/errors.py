@@ -10,7 +10,63 @@ class ReportMonthNotEndedError(ApiError):
     status_code = HTTPStatus.BAD_REQUEST
     code = "REPORT_MONTH_NOT_ENDED"
     category = ErrorCategory.VALIDATION
-    public_message = "A report covers a calendar month that has ended."
+    public_message = "A report covers calendar months that have ended."
+
+
+class ReportMonthNotFirstError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_MONTH_NOT_FIRST"
+    category = ErrorCategory.VALIDATION
+    public_message = "A report month is given as the first day of the month."
+
+
+class ReportPeriodOrderError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_PERIOD_ORDER"
+    category = ErrorCategory.VALIDATION
+    public_message = "The last month cannot be before the first month."
+
+
+class ReportPeriodTooLongError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_PERIOD_TOO_LONG"
+    category = ErrorCategory.VALIDATION
+    public_message = "A period covers 1 to 12 whole months."
+
+
+class ReportPeriodInvalidError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_PERIOD_INVALID"
+    category = ErrorCategory.VALIDATION
+    public_message = "The period is not a month or a range of months."
+
+
+class ReportComparisonInvalidError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_COMPARISON_INVALID"
+    category = ErrorCategory.VALIDATION
+    public_message = "The comparison is not one this report offers."
+
+
+class ReportBaselineRequiredError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_BASELINE_REQUIRED"
+    category = ErrorCategory.VALIDATION
+    public_message = "A baseline comparison needs a first and a last baseline month."
+
+
+class ReportBaselineUnexpectedError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_BASELINE_UNEXPECTED"
+    category = ErrorCategory.VALIDATION
+    public_message = "Baseline months are only given for a baseline comparison."
+
+
+class ReportBaselineOverlapsError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "REPORT_BASELINE_OVERLAPS"
+    category = ErrorCategory.VALIDATION
+    public_message = "The baseline must end before the report period starts."
 
 
 class ReportNotFoundError(NotFoundError):
@@ -57,4 +113,4 @@ class ReportSentDateInvalidError(ApiError):
     status_code = HTTPStatus.BAD_REQUEST
     code = "REPORT_SENT_DATE_INVALID"
     category = ErrorCategory.VALIDATION
-    public_message = "The sent date must be after the report's month and not in the future."
+    public_message = "The sent date must be after the report's last month and not in the future."

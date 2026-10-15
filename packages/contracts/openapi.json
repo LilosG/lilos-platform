@@ -1892,6 +1892,61 @@
         "title": "CommunicationCreate",
         "type": "object"
       },
+      "ComparedAs": {
+        "description": "Whether a count was compared as a total, or as a monthly average because the lengths differ.\n\nRates and positions are never averaged this way.",
+        "enum": [
+          "total",
+          "monthly_average"
+        ],
+        "title": "ComparedAs",
+        "type": "string"
+      },
+      "ComparisonBasis": {
+        "description": "What a report period is compared with.",
+        "enum": [
+          "previous_period",
+          "same_period_last_year",
+          "custom_baseline"
+        ],
+        "title": "ComparisonBasis",
+        "type": "string"
+      },
+      "ComparisonSpec": {
+        "additionalProperties": false,
+        "description": "What the period is compared with; a baseline names its own months.",
+        "properties": {
+          "baseline_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline End"
+          },
+          "baseline_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Start"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/ComparisonBasis",
+            "default": "previous_period"
+          }
+        },
+        "title": "ComparisonSpec",
+        "type": "object"
+      },
       "ComposeContentType": {
         "description": "Types an operator may pin when composing from a prompt; absent means Hermes decides.",
         "enum": [
@@ -4522,6 +4577,18 @@
         },
         "title": "HTTPValidationError",
         "type": "object"
+      },
+      "HeadlineKey": {
+        "enum": [
+          "profile_views",
+          "profile_actions",
+          "website_search_clicks",
+          "organic_sessions",
+          "new_reviews",
+          "average_rating"
+        ],
+        "title": "HeadlineKey",
+        "type": "string"
       },
       "HealthStatus": {
         "description": "Stable health states exposed by the API.",
@@ -9638,22 +9705,25 @@
         "description": "Why part of a report is missing or approximate. The console turns each into a sentence.",
         "enum": [
           "gbp_not_connected",
-          "gbp_month_not_synced",
-          "gbp_month_partial",
+          "gbp_period_not_synced",
+          "gbp_period_partial",
           "gbp_sync_failed",
           "gbp_location_not_mapped",
           "gbp_search_terms_unavailable",
-          "gbp_previous_month_incomplete",
+          "gbp_compared_period_incomplete",
           "gbp_year_ago_unavailable",
           "reviews_not_synced",
           "search_console_not_connected",
           "search_console_not_synced",
           "search_console_lag_days",
-          "search_console_previous_month_unavailable",
+          "search_console_months_missing",
+          "search_console_compared_period_unavailable",
           "analytics_not_connected",
           "analytics_not_synced",
           "analytics_organic_unavailable",
-          "analytics_previous_month_unavailable"
+          "analytics_months_missing",
+          "analytics_compared_period_unavailable",
+          "optional_figure_not_reported"
         ],
         "title": "NoteCode",
         "type": "string"
@@ -12736,7 +12806,8 @@
           "7d",
           "28d",
           "90d",
-          "month"
+          "month",
+          "range"
         ],
         "title": "PerformancePeriod",
         "type": "string"
@@ -14796,11 +14867,26 @@
       "ReportActionRow": {
         "additionalProperties": false,
         "properties": {
+          "comparable": {
+            "default": true,
+            "title": "Comparable",
+            "type": "boolean"
+          },
           "comparison": {
             "$ref": "#/components/schemas/ReportCountComparison"
           },
           "metric": {
             "$ref": "#/components/schemas/GBPPerformanceMetric"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoteCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reported": {
             "title": "Reported",
@@ -14842,6 +14928,39 @@
         "title": "ReportAnalyticsSection",
         "type": "object"
       },
+      "ReportComparison": {
+        "additionalProperties": false,
+        "description": "A comparison once resolved against a period; stored in the snapshot.",
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/ComparisonBasis"
+          },
+          "compared": {
+            "$ref": "#/components/schemas/ReportPeriod"
+          },
+          "compared_as": {
+            "$ref": "#/components/schemas/ComparedAs"
+          },
+          "year_ago": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "basis",
+          "compared",
+          "year_ago",
+          "compared_as"
+        ],
+        "title": "ReportComparison",
+        "type": "object"
+      },
       "ReportCountComparison": {
         "additionalProperties": false,
         "properties": {
@@ -14867,11 +14986,26 @@
             ],
             "title": "Change Percent"
           },
+          "compared": {
+            "$ref": "#/components/schemas/ReportCountFigure"
+          },
+          "compared_as": {
+            "$ref": "#/components/schemas/ComparedAs",
+            "default": "total"
+          },
           "current": {
             "$ref": "#/components/schemas/ReportCountFigure"
           },
-          "previous": {
-            "$ref": "#/components/schemas/ReportCountFigure"
+          "current_monthly_average": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Monthly Average"
           },
           "year_ago": {
             "anyOf": [
@@ -14908,7 +15042,7 @@
         },
         "required": [
           "current",
-          "previous"
+          "compared"
         ],
         "title": "ReportCountComparison",
         "type": "object"
@@ -14940,6 +15074,28 @@
               }
             ],
             "title": "Days Expected"
+          },
+          "months_covered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Covered"
+          },
+          "months_expected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Expected"
           },
           "reason": {
             "anyOf": [
@@ -15077,6 +15233,16 @@
             ],
             "title": "Location Id"
           },
+          "metric": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GBPPerformanceMetric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "section": {
             "$ref": "#/components/schemas/SectionKey"
           }
@@ -15132,6 +15298,9 @@
             "title": "Client Slug",
             "type": "string"
           },
+          "comparison": {
+            "$ref": "#/components/schemas/ComparisonSpec"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -15151,11 +15320,6 @@
             "title": "Is Current",
             "type": "boolean"
           },
-          "month": {
-            "format": "date",
-            "title": "Month",
-            "type": "string"
-          },
           "narrative": {
             "$ref": "#/components/schemas/ReportNarrative"
           },
@@ -15163,6 +15327,9 @@
             "format": "uuid",
             "title": "Organization Id",
             "type": "string"
+          },
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriod"
           },
           "permissions": {
             "$ref": "#/components/schemas/ReportPermissions"
@@ -15189,7 +15356,8 @@
           "organization_id",
           "client_name",
           "client_slug",
-          "month",
+          "period",
+          "comparison",
           "revision",
           "revision_count",
           "status",
@@ -15214,6 +15382,9 @@
           "availability": {
             "$ref": "#/components/schemas/Availability"
           },
+          "compared_range": {
+            "$ref": "#/components/schemas/ReportRange"
+          },
           "current_range": {
             "$ref": "#/components/schemas/ReportRange"
           },
@@ -15226,9 +15397,6 @@
             },
             "title": "Locations",
             "type": "array"
-          },
-          "previous_range": {
-            "$ref": "#/components/schemas/ReportRange"
           },
           "profile_views": {
             "$ref": "#/components/schemas/ReportProfileViews"
@@ -15259,13 +15427,20 @@
             "title": "Through Date"
           },
           "year_ago_range": {
-            "$ref": "#/components/schemas/ReportRange"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "availability",
           "current_range",
-          "previous_range",
+          "compared_range",
           "year_ago_range",
           "through_date",
           "profile_views",
@@ -15280,14 +15455,26 @@
       "ReportGenerateRequest": {
         "additionalProperties": false,
         "properties": {
-          "month": {
+          "comparison": {
+            "$ref": "#/components/schemas/ComparisonSpec",
+            "default": {
+              "basis": "previous_period"
+            }
+          },
+          "end_month": {
             "format": "date",
-            "title": "Month",
+            "title": "End Month",
+            "type": "string"
+          },
+          "start_month": {
+            "format": "date",
+            "title": "Start Month",
             "type": "string"
           }
         },
         "required": [
-          "month"
+          "start_month",
+          "end_month"
         ],
         "title": "ReportGenerateRequest",
         "type": "object"
@@ -15308,6 +15495,40 @@
           "created"
         ],
         "title": "ReportGenerateResult",
+        "type": "object"
+      },
+      "ReportHeadline": {
+        "additionalProperties": false,
+        "description": "One of the figures the report leads with. Exactly one of count or rate is set.",
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportCountComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "$ref": "#/components/schemas/HeadlineKey"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportRateComparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "ReportHeadline",
         "type": "object"
       },
       "ReportListView": {
@@ -15421,6 +15642,65 @@
         "title": "ReportMarkSentRequest",
         "type": "object"
       },
+      "ReportMonthPoint": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "month": {
+            "format": "date",
+            "title": "Month",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "month",
+          "availability"
+        ],
+        "title": "ReportMonthPoint",
+        "type": "object"
+      },
+      "ReportMonthlySeries": {
+        "additionalProperties": false,
+        "properties": {
+          "compared": {
+            "items": {
+              "$ref": "#/components/schemas/ReportMonthPoint"
+            },
+            "title": "Compared",
+            "type": "array"
+          },
+          "key": {
+            "$ref": "#/components/schemas/SeriesKey"
+          },
+          "period": {
+            "items": {
+              "$ref": "#/components/schemas/ReportMonthPoint"
+            },
+            "title": "Period",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "period",
+          "compared"
+        ],
+        "title": "ReportMonthlySeries",
+        "type": "object"
+      },
       "ReportNarrative": {
         "additionalProperties": false,
         "description": "The two prose sections. Written by a person, or drafted and then reviewed by one.",
@@ -15489,6 +15769,28 @@
           "next_work"
         ],
         "title": "ReportNarrativeUpdate",
+        "type": "object"
+      },
+      "ReportPeriod": {
+        "additionalProperties": false,
+        "description": "1 to 12 consecutive whole calendar months, each given as its first day.",
+        "properties": {
+          "end_month": {
+            "format": "date",
+            "title": "End Month",
+            "type": "string"
+          },
+          "start_month": {
+            "format": "date",
+            "title": "Start Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_month",
+          "end_month"
+        ],
+        "title": "ReportPeriod",
         "type": "object"
       },
       "ReportPermissions": {
@@ -15612,10 +15914,10 @@
             ],
             "title": "Change"
           },
-          "current": {
+          "compared": {
             "$ref": "#/components/schemas/ReportRateFigure"
           },
-          "previous": {
+          "current": {
             "$ref": "#/components/schemas/ReportRateFigure"
           },
           "year_ago": {
@@ -15642,7 +15944,7 @@
         },
         "required": [
           "current",
-          "previous"
+          "compared"
         ],
         "title": "ReportRateComparison",
         "type": "object"
@@ -15696,18 +15998,11 @@
           "availability": {
             "$ref": "#/components/schemas/Availability"
           },
-          "average_rating_in_month": {
-            "$ref": "#/components/schemas/ReportRateFigure"
+          "average_rating_in_period": {
+            "$ref": "#/components/schemas/ReportRateComparison"
           },
           "average_rating_overall": {
-            "$ref": "#/components/schemas/ReportRateFigure"
-          },
-          "distribution_month": {
-            "items": {
-              "$ref": "#/components/schemas/ReportStarCount"
-            },
-            "title": "Distribution Month",
-            "type": "array"
+            "$ref": "#/components/schemas/ReportRateComparison"
           },
           "distribution_overall": {
             "items": {
@@ -15716,8 +16011,15 @@
             "title": "Distribution Overall",
             "type": "array"
           },
-          "new_in_month": {
-            "$ref": "#/components/schemas/ReportCountFigure"
+          "distribution_period": {
+            "items": {
+              "$ref": "#/components/schemas/ReportStarCount"
+            },
+            "title": "Distribution Period",
+            "type": "array"
+          },
+          "new_reviews": {
+            "$ref": "#/components/schemas/ReportCountComparison"
           },
           "reason": {
             "anyOf": [
@@ -15733,7 +16035,7 @@
             "$ref": "#/components/schemas/ReportCountFigure"
           },
           "response_rate_percent": {
-            "$ref": "#/components/schemas/ReportRateFigure"
+            "$ref": "#/components/schemas/ReportRateComparison"
           },
           "responses_published": {
             "$ref": "#/components/schemas/ReportCountFigure"
@@ -15744,15 +16046,15 @@
         },
         "required": [
           "availability",
-          "new_in_month",
-          "average_rating_in_month",
+          "new_reviews",
+          "average_rating_in_period",
           "average_rating_overall",
           "total_count",
           "responses_published",
           "responded_to_new",
           "response_rate_percent",
           "distribution_overall",
-          "distribution_month"
+          "distribution_period"
         ],
         "title": "ReportReviewsSection",
         "type": "object"
@@ -15771,6 +16073,9 @@
               }
             ],
             "title": "Approved At"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/ComparisonSpec"
           },
           "created_at": {
             "format": "date-time",
@@ -15791,10 +16096,8 @@
             "title": "Is Current",
             "type": "boolean"
           },
-          "month": {
-            "format": "date",
-            "title": "Month",
-            "type": "string"
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriod"
           },
           "readiness": {
             "$ref": "#/components/schemas/ReportReadiness"
@@ -15808,7 +16111,8 @@
           }
         },
         "required": [
-          "month",
+          "period",
+          "comparison",
           "revision",
           "status",
           "readiness",
@@ -15828,6 +16132,17 @@
           },
           "average_position": {
             "$ref": "#/components/schemas/ReportRateComparison"
+          },
+          "branded_share_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branded Share Percent"
           },
           "clicks": {
             "$ref": "#/components/schemas/ReportCountComparison"
@@ -15904,6 +16219,17 @@
             ],
             "title": "Clicks Change"
           },
+          "compared_clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compared Clicks"
+          },
           "ctr": {
             "anyOf": [
               {
@@ -15933,17 +16259,6 @@
               }
             ],
             "title": "Position"
-          },
-          "previous_clicks": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Previous Clicks"
           }
         },
         "required": [
@@ -15952,7 +16267,7 @@
           "impressions",
           "ctr",
           "position",
-          "previous_clicks",
+          "compared_clicks",
           "clicks_change"
         ],
         "title": "ReportSearchPageRow",
@@ -15976,6 +16291,17 @@
             ],
             "title": "Clicks Change"
           },
+          "compared_clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compared Clicks"
+          },
           "ctr": {
             "anyOf": [
               {
@@ -15991,6 +16317,10 @@
             "title": "Impressions",
             "type": "integer"
           },
+          "is_branded": {
+            "title": "Is Branded",
+            "type": "boolean"
+          },
           "position": {
             "anyOf": [
               {
@@ -16002,17 +16332,6 @@
             ],
             "title": "Position"
           },
-          "previous_clicks": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Previous Clicks"
-          },
           "query": {
             "title": "Query",
             "type": "string"
@@ -16020,11 +16339,12 @@
         },
         "required": [
           "query",
+          "is_branded",
           "clicks",
           "impressions",
           "ctr",
           "position",
-          "previous_clicks",
+          "compared_clicks",
           "clicks_change"
         ],
         "title": "ReportSearchQueryRow",
@@ -16079,6 +16399,28 @@
           "availability": {
             "$ref": "#/components/schemas/Availability"
           },
+          "months_covered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Covered"
+          },
+          "months_expected": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Expected"
+          },
           "reason": {
             "anyOf": [
               {
@@ -16095,6 +16437,11 @@
             },
             "title": "Terms",
             "type": "array"
+          },
+          "total_terms": {
+            "default": 0,
+            "title": "Total Terms",
+            "type": "integer"
           }
         },
         "required": [
@@ -16106,21 +16453,40 @@
       },
       "ReportSnapshot": {
         "additionalProperties": false,
-        "description": "Everything computed for one organization and one month. Deterministic and typed.",
+        "description": "Everything computed for one organization and one period. Deterministic and typed.",
         "properties": {
           "analytics": {
             "$ref": "#/components/schemas/ReportAnalyticsSection"
           },
+          "comparison": {
+            "$ref": "#/components/schemas/ReportComparison"
+          },
           "gbp": {
             "$ref": "#/components/schemas/ReportGbpSection"
+          },
+          "headlines": {
+            "items": {
+              "$ref": "#/components/schemas/ReportHeadline"
+            },
+            "title": "Headlines",
+            "type": "array"
           },
           "local_rank": {
             "$ref": "#/components/schemas/TrackedCount"
           },
-          "month": {
-            "format": "date",
-            "title": "Month",
-            "type": "string"
+          "location_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Location Names",
+            "type": "array"
+          },
+          "monthly": {
+            "items": {
+              "$ref": "#/components/schemas/ReportMonthlySeries"
+            },
+            "title": "Monthly",
+            "type": "array"
           },
           "notes": {
             "items": {
@@ -16129,6 +16495,9 @@
             "title": "Notes",
             "type": "array"
           },
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriod"
+          },
           "readiness": {
             "$ref": "#/components/schemas/ReportReadiness"
           },
@@ -16136,21 +16505,29 @@
             "$ref": "#/components/schemas/ReportReviewsSection"
           },
           "schema_version": {
-            "default": 1,
+            "default": 2,
             "title": "Schema Version",
             "type": "integer"
           },
           "search_console": {
             "$ref": "#/components/schemas/ReportSearchConsoleSection"
           },
+          "sync": {
+            "$ref": "#/components/schemas/ReportSync",
+            "default": {}
+          },
           "work": {
             "$ref": "#/components/schemas/ReportWorkSection"
           }
         },
         "required": [
-          "month",
+          "period",
+          "comparison",
+          "location_names",
           "readiness",
           "notes",
+          "headlines",
+          "monthly",
           "gbp",
           "reviews",
           "search_console",
@@ -16258,6 +16635,50 @@
         ],
         "title": "ReportStatus",
         "type": "string"
+      },
+      "ReportSync": {
+        "additionalProperties": false,
+        "description": "When each source was last synced, as a day. Informational: not part of the data hash.",
+        "properties": {
+          "analytics": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analytics"
+          },
+          "gbp": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gbp"
+          },
+          "search_console": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Console"
+          }
+        },
+        "title": "ReportSync",
+        "type": "object"
       },
       "ReportUpcoming": {
         "additionalProperties": false,
@@ -18393,6 +18814,22 @@
           "narrative"
         ],
         "title": "SectionKey",
+        "type": "string"
+      },
+      "SeriesKey": {
+        "description": "A figure drawn month by month.",
+        "enum": [
+          "profile_views",
+          "profile_actions",
+          "calls",
+          "website_clicks",
+          "direction_requests",
+          "search_clicks",
+          "search_impressions",
+          "organic_sessions",
+          "new_reviews"
+        ],
+        "title": "SeriesKey",
         "type": "string"
       },
       "ServiceAssignmentCreate": {
@@ -23260,7 +23697,7 @@
     },
     "/api/v1/organizations/{organization_id}/command-center/reports/generate": {
       "post": {
-        "description": "Compute a month from stored data. Identical data returns the existing draft.",
+        "description": "Compute a period from stored data. Identical data returns the existing draft.",
         "operationId": "generate_report_api_v1_organizations__organization_id__command_center_reports_generate_post",
         "parameters": [
           {
@@ -23312,10 +23749,10 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}": {
       "get": {
         "description": "One stored revision exactly as it was saved.",
-        "operationId": "report_detail_api_v1_organizations__organization_id__command_center_reports__month___revision__get",
+        "operationId": "report_detail_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__get",
         "parameters": [
           {
             "in": "path",
@@ -23329,11 +23766,21 @@
           },
           {
             "in": "path",
-            "name": "month",
+            "name": "period",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
-              "title": "Month",
+              "maxLength": 64,
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comparison",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "title": "Comparison",
               "type": "string"
             }
           },
@@ -23376,10 +23823,10 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/approve": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/approve": {
       "post": {
         "description": "Approve the exact revision shown. Approved revisions are immutable.",
-        "operationId": "approve_report_api_v1_organizations__organization_id__command_center_reports__month___revision__approve_post",
+        "operationId": "approve_report_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__approve_post",
         "parameters": [
           {
             "in": "path",
@@ -23393,11 +23840,21 @@
           },
           {
             "in": "path",
-            "name": "month",
+            "name": "period",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
-              "title": "Month",
+              "maxLength": 64,
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comparison",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "title": "Comparison",
               "type": "string"
             }
           },
@@ -23440,10 +23897,10 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/draft-narrative": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/draft-narrative": {
       "post": {
         "description": "Ask Hermes for a draft of the narrative. A draft that fails a check is not used.",
-        "operationId": "draft_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__draft_narrative_post",
+        "operationId": "draft_narrative_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__draft_narrative_post",
         "parameters": [
           {
             "in": "path",
@@ -23457,11 +23914,21 @@
           },
           {
             "in": "path",
-            "name": "month",
+            "name": "period",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
-              "title": "Month",
+              "maxLength": 64,
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comparison",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "title": "Comparison",
               "type": "string"
             }
           },
@@ -23504,10 +23971,10 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/mark-sent": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/mark-sent": {
       "post": {
         "description": "Record that a person sent the approved report on the given day. Sends nothing.",
-        "operationId": "mark_report_sent_api_v1_organizations__organization_id__command_center_reports__month___revision__mark_sent_post",
+        "operationId": "mark_report_sent_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__mark_sent_post",
         "parameters": [
           {
             "in": "path",
@@ -23521,11 +23988,21 @@
           },
           {
             "in": "path",
-            "name": "month",
+            "name": "period",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
-              "title": "Month",
+              "maxLength": 64,
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comparison",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "title": "Comparison",
               "type": "string"
             }
           },
@@ -23578,10 +24055,10 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/narrative": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/narrative": {
       "put": {
         "description": "Replace a draft's narrative. An approved revision cannot be edited.",
-        "operationId": "update_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__narrative_put",
+        "operationId": "update_narrative_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__narrative_put",
         "parameters": [
           {
             "in": "path",
@@ -23595,11 +24072,21 @@
           },
           {
             "in": "path",
-            "name": "month",
+            "name": "period",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
-              "title": "Month",
+              "maxLength": 64,
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comparison",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "title": "Comparison",
               "type": "string"
             }
           },

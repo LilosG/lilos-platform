@@ -21,9 +21,11 @@ from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
 from apps.api.app.reports.contracts import (
+    ComparisonSpec,
     PortfolioReportCounts,
     PortfolioReportRow,
     ReportDeliveryView,
+    ReportPeriod,
     ReportReadiness,
     ReportRevisionRow,
     ReportStatus,
@@ -57,12 +59,14 @@ async def _deliveries(
 
 
 async def revision_rows(session: AsyncSession, organization_id: UUID) -> list[ReportRevisionRow]:
-    """Every revision of the client, newest month first, each with its status and delivery."""
+    """Every revision of the client, newest period first, each with its status and delivery."""
     rows = (
         await session.execute(
             select(
                 ReportRevision.id,
                 ReportRevision.period_month,
+                ReportRevision.period_end_month,
+                ReportRevision.comparison_key,
                 ReportRevision.revision,
                 ReportRevision.status,
                 ReportRevision.created_at,
@@ -70,23 +74,39 @@ async def revision_rows(session: AsyncSession, organization_id: UUID) -> list[Re
                 _READINESS,
             )
             .where(ReportRevision.organization_id == organization_id)
-            .order_by(ReportRevision.period_month.desc(), ReportRevision.revision.desc())
+            .order_by(
+                ReportRevision.period_end_month.desc(),
+                ReportRevision.period_month.desc(),
+                ReportRevision.comparison_key,
+                ReportRevision.revision.desc(),
+            )
         )
     ).all()
     deliveries = await _deliveries(session, [organization_id], [row[0] for row in rows])
-    newest: dict[date, int] = {}
-    for _, month, revision, *_rest in rows:
-        newest[month] = max(newest.get(month, 0), revision)
+    newest: dict[tuple[date, date, str], int] = {}
+    for _, start, end, key, revision, *_rest in rows:
+        newest[(start, end, key)] = max(newest.get((start, end, key), 0), revision)
     result: list[ReportRevisionRow] = []
-    for revision_id, month, revision, status, created_at, approved_at, readiness in rows:
+    for (
+        revision_id,
+        start,
+        end,
+        key,
+        revision,
+        status,
+        created_at,
+        approved_at,
+        readiness,
+    ) in rows:
         delivery = deliveries.get(revision_id)
         result.append(
             ReportRevisionRow(
-                month=month,
+                period=ReportPeriod(start_month=start, end_month=end),
+                comparison=ComparisonSpec.from_key(key),
                 revision=revision,
                 status=_status(status == REVISION_APPROVED, delivery),
                 readiness=ReportReadiness(readiness),
-                is_current=revision == newest[month],
+                is_current=revision == newest[(start, end, key)],
                 created_at=created_at,
                 approved_at=approved_at,
                 delivery=ReportDeliveryView(
@@ -102,7 +122,10 @@ async def revision_rows(session: AsyncSession, organization_id: UUID) -> list[Re
 async def portfolio_rows(
     session: AsyncSession, organizations: Sequence[Organization], month: date
 ) -> tuple[list[PortfolioReportRow], PortfolioReportCounts]:
-    """The latest report of ``month`` for every organization, in a fixed number of queries."""
+    """The latest single-month report against the previous month, of ``month``, for every client.
+
+    The board is one month wide: reports of other periods and comparisons belong to a client.
+    """
     ids = [organization.id for organization in organizations]
     rows = (
         (
@@ -117,6 +140,8 @@ async def portfolio_rows(
                 .where(
                     ReportRevision.organization_id.in_(ids),
                     ReportRevision.period_month == month,
+                    ReportRevision.period_end_month == month,
+                    ReportRevision.comparison_key == ComparisonSpec().key,
                 )
                 .order_by(ReportRevision.organization_id, ReportRevision.revision)
             )

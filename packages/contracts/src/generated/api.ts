@@ -973,7 +973,7 @@ export interface paths {
         put?: never;
         /**
          * Generate Report
-         * @description Compute a month from stored data. Identical data returns the existing draft.
+         * @description Compute a period from stored data. Identical data returns the existing draft.
          */
         post: operations["generate_report_api_v1_organizations__organization_id__command_center_reports_generate_post"];
         delete?: never;
@@ -982,7 +982,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}": {
         parameters: {
             query?: never;
             header?: never;
@@ -993,7 +993,7 @@ export interface paths {
          * Report Detail
          * @description One stored revision exactly as it was saved.
          */
-        get: operations["report_detail_api_v1_organizations__organization_id__command_center_reports__month___revision__get"];
+        get: operations["report_detail_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1002,7 +1002,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/approve": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/approve": {
         parameters: {
             query?: never;
             header?: never;
@@ -1015,14 +1015,14 @@ export interface paths {
          * Approve Report
          * @description Approve the exact revision shown. Approved revisions are immutable.
          */
-        post: operations["approve_report_api_v1_organizations__organization_id__command_center_reports__month___revision__approve_post"];
+        post: operations["approve_report_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__approve_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/draft-narrative": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/draft-narrative": {
         parameters: {
             query?: never;
             header?: never;
@@ -1035,14 +1035,14 @@ export interface paths {
          * Draft Narrative
          * @description Ask Hermes for a draft of the narrative. A draft that fails a check is not used.
          */
-        post: operations["draft_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__draft_narrative_post"];
+        post: operations["draft_narrative_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__draft_narrative_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/mark-sent": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/mark-sent": {
         parameters: {
             query?: never;
             header?: never;
@@ -1055,14 +1055,14 @@ export interface paths {
          * Mark Report Sent
          * @description Record that a person sent the approved report on the given day. Sends nothing.
          */
-        post: operations["mark_report_sent_api_v1_organizations__organization_id__command_center_reports__month___revision__mark_sent_post"];
+        post: operations["mark_report_sent_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__mark_sent_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/organizations/{organization_id}/command-center/reports/{month}/{revision}/narrative": {
+    "/api/v1/organizations/{organization_id}/command-center/reports/{period}/{comparison}/{revision}/narrative": {
         parameters: {
             query?: never;
             header?: never;
@@ -1074,7 +1074,7 @@ export interface paths {
          * Update Narrative
          * @description Replace a draft's narrative. An approved revision cannot be edited.
          */
-        put: operations["update_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__narrative_put"];
+        put: operations["update_narrative_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__narrative_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6321,6 +6321,32 @@ export interface components {
             message_reference: string;
         };
         /**
+         * ComparedAs
+         * @description Whether a count was compared as a total, or as a monthly average because the lengths differ.
+         *
+         *     Rates and positions are never averaged this way.
+         * @enum {string}
+         */
+        ComparedAs: "total" | "monthly_average";
+        /**
+         * ComparisonBasis
+         * @description What a report period is compared with.
+         * @enum {string}
+         */
+        ComparisonBasis: "previous_period" | "same_period_last_year" | "custom_baseline";
+        /**
+         * ComparisonSpec
+         * @description What the period is compared with; a baseline names its own months.
+         */
+        ComparisonSpec: {
+            /** Baseline End */
+            baseline_end?: string | null;
+            /** Baseline Start */
+            baseline_start?: string | null;
+            /** @default previous_period */
+            basis: components["schemas"]["ComparisonBasis"];
+        };
+        /**
          * ComposeContentType
          * @description Types an operator may pin when composing from a prompt; absent means Hermes decides.
          * @enum {string}
@@ -7247,6 +7273,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HeadlineKey
+         * @enum {string}
+         */
+        HeadlineKey: "profile_views" | "profile_actions" | "website_search_clicks" | "organic_sessions" | "new_reviews" | "average_rating";
         /**
          * HealthStatus
          * @description Stable health states exposed by the API.
@@ -8851,7 +8882,7 @@ export interface components {
          * @description Why part of a report is missing or approximate. The console turns each into a sentence.
          * @enum {string}
          */
-        NoteCode: "gbp_not_connected" | "gbp_month_not_synced" | "gbp_month_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_previous_month_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_previous_month_unavailable" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_previous_month_unavailable";
+        NoteCode: "gbp_not_connected" | "gbp_period_not_synced" | "gbp_period_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_compared_period_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_months_missing" | "search_console_compared_period_unavailable" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_months_missing" | "analytics_compared_period_unavailable" | "optional_figure_not_reported";
         /** OffboardingCreate */
         OffboardingCreate: {
             /** Reason */
@@ -9816,7 +9847,7 @@ export interface components {
          * PerformancePeriod
          * @enum {string}
          */
-        PerformancePeriod: "7d" | "28d" | "90d" | "month";
+        PerformancePeriod: "7d" | "28d" | "90d" | "month" | "range";
         /** PerformanceProperty */
         PerformanceProperty: {
             /** External Property Id */
@@ -10517,8 +10548,14 @@ export interface components {
         RecoveryAction: "reconnect_google_business_profile" | "check_analytics_connection" | "check_search_console_connection" | "connect_website" | "check_location_mapping";
         /** ReportActionRow */
         ReportActionRow: {
+            /**
+             * Comparable
+             * @default true
+             */
+            comparable: boolean;
             comparison: components["schemas"]["ReportCountComparison"];
             metric: components["schemas"]["GBPPerformanceMetric"];
+            note?: components["schemas"]["NoteCode"] | null;
             /** Reported */
             reported: boolean;
         };
@@ -10528,14 +10565,28 @@ export interface components {
             organic_sessions: components["schemas"]["ReportCountComparison"];
             reason?: components["schemas"]["UnavailableReason"] | null;
         };
+        /**
+         * ReportComparison
+         * @description A comparison once resolved against a period; stored in the snapshot.
+         */
+        ReportComparison: {
+            basis: components["schemas"]["ComparisonBasis"];
+            compared: components["schemas"]["ReportPeriod"];
+            compared_as: components["schemas"]["ComparedAs"];
+            year_ago: components["schemas"]["ReportPeriod"] | null;
+        };
         /** ReportCountComparison */
         ReportCountComparison: {
             /** Change */
             change?: number | null;
             /** Change Percent */
             change_percent?: number | null;
+            compared: components["schemas"]["ReportCountFigure"];
+            /** @default total */
+            compared_as: components["schemas"]["ComparedAs"];
             current: components["schemas"]["ReportCountFigure"];
-            previous: components["schemas"]["ReportCountFigure"];
+            /** Current Monthly Average */
+            current_monthly_average?: number | null;
             year_ago?: components["schemas"]["ReportCountFigure"] | null;
             /** Year Change */
             year_change?: number | null;
@@ -10549,6 +10600,10 @@ export interface components {
             days_covered?: number | null;
             /** Days Expected */
             days_expected?: number | null;
+            /** Months Covered */
+            months_covered?: number | null;
+            /** Months Expected */
+            months_expected?: number | null;
             reason?: components["schemas"]["UnavailableReason"] | null;
             /** Value */
             value?: number | null;
@@ -10584,6 +10639,7 @@ export interface components {
             count?: number | null;
             /** Location Id */
             location_id?: string | null;
+            metric?: components["schemas"]["GBPPerformanceMetric"] | null;
             section: components["schemas"]["SectionKey"];
         };
         /** ReportDeliveryView */
@@ -10607,6 +10663,7 @@ export interface components {
             client_name: string;
             /** Client Slug */
             client_slug: string;
+            comparison: components["schemas"]["ComparisonSpec"];
             /**
              * Created At
              * Format: date-time
@@ -10615,17 +10672,13 @@ export interface components {
             delivery: components["schemas"]["ReportDeliveryView"] | null;
             /** Is Current */
             is_current: boolean;
-            /**
-             * Month
-             * Format: date
-             */
-            month: string;
             narrative: components["schemas"]["ReportNarrative"];
             /**
              * Organization Id
              * Format: uuid
              */
             organization_id: string;
+            period: components["schemas"]["ReportPeriod"];
             permissions: components["schemas"]["ReportPermissions"];
             readiness: components["schemas"]["ReportReadiness"];
             /** Revision */
@@ -10639,31 +10692,51 @@ export interface components {
         ReportGbpSection: {
             actions: components["schemas"]["ReportProfileActions"];
             availability: components["schemas"]["Availability"];
+            compared_range: components["schemas"]["ReportRange"];
             current_range: components["schemas"]["ReportRange"];
             daily: components["schemas"]["ReportDailySeries"];
             /** Locations */
             locations: components["schemas"]["ReportLocationRow"][];
-            previous_range: components["schemas"]["ReportRange"];
             profile_views: components["schemas"]["ReportProfileViews"];
             reason?: components["schemas"]["UnavailableReason"] | null;
             search_terms: components["schemas"]["ReportSearchTerms"];
             /** Through Date */
             through_date: string | null;
-            year_ago_range: components["schemas"]["ReportRange"];
+            year_ago_range: components["schemas"]["ReportRange"] | null;
         };
         /** ReportGenerateRequest */
         ReportGenerateRequest: {
             /**
-             * Month
+             * @default {
+             *       "basis": "previous_period"
+             *     }
+             */
+            comparison: components["schemas"]["ComparisonSpec"];
+            /**
+             * End Month
              * Format: date
              */
-            month: string;
+            end_month: string;
+            /**
+             * Start Month
+             * Format: date
+             */
+            start_month: string;
         };
         /** ReportGenerateResult */
         ReportGenerateResult: {
             /** Created */
             created: boolean;
             report: components["schemas"]["ReportDetailView"];
+        };
+        /**
+         * ReportHeadline
+         * @description One of the figures the report leads with. Exactly one of count or rate is set.
+         */
+        ReportHeadline: {
+            count?: components["schemas"]["ReportCountComparison"] | null;
+            key: components["schemas"]["HeadlineKey"];
+            rate?: components["schemas"]["ReportRateComparison"] | null;
         };
         /** ReportListView */
         ReportListView: {
@@ -10707,6 +10780,25 @@ export interface components {
              */
             sent_on: string;
         };
+        /** ReportMonthPoint */
+        ReportMonthPoint: {
+            availability: components["schemas"]["Availability"];
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Value */
+            value?: number | null;
+        };
+        /** ReportMonthlySeries */
+        ReportMonthlySeries: {
+            /** Compared */
+            compared: components["schemas"]["ReportMonthPoint"][];
+            key: components["schemas"]["SeriesKey"];
+            /** Period */
+            period: components["schemas"]["ReportMonthPoint"][];
+        };
         /**
          * ReportNarrative
          * @description The two prose sections. Written by a person, or drafted and then reviewed by one.
@@ -10737,6 +10829,22 @@ export interface components {
             next_work: string;
             /** What Changed */
             what_changed: string;
+        };
+        /**
+         * ReportPeriod
+         * @description 1 to 12 consecutive whole calendar months, each given as its first day.
+         */
+        ReportPeriod: {
+            /**
+             * End Month
+             * Format: date
+             */
+            end_month: string;
+            /**
+             * Start Month
+             * Format: date
+             */
+            start_month: string;
         };
         /** ReportPermissions */
         ReportPermissions: {
@@ -10781,8 +10889,8 @@ export interface components {
         ReportRateComparison: {
             /** Change */
             change?: number | null;
+            compared: components["schemas"]["ReportRateFigure"];
             current: components["schemas"]["ReportRateFigure"];
-            previous: components["schemas"]["ReportRateFigure"];
             year_ago?: components["schemas"]["ReportRateFigure"] | null;
             /** Year Change */
             year_change?: number | null;
@@ -10802,16 +10910,16 @@ export interface components {
         /** ReportReviewsSection */
         ReportReviewsSection: {
             availability: components["schemas"]["Availability"];
-            average_rating_in_month: components["schemas"]["ReportRateFigure"];
-            average_rating_overall: components["schemas"]["ReportRateFigure"];
-            /** Distribution Month */
-            distribution_month: components["schemas"]["ReportStarCount"][];
+            average_rating_in_period: components["schemas"]["ReportRateComparison"];
+            average_rating_overall: components["schemas"]["ReportRateComparison"];
             /** Distribution Overall */
             distribution_overall: components["schemas"]["ReportStarCount"][];
-            new_in_month: components["schemas"]["ReportCountFigure"];
+            /** Distribution Period */
+            distribution_period: components["schemas"]["ReportStarCount"][];
+            new_reviews: components["schemas"]["ReportCountComparison"];
             reason?: components["schemas"]["UnavailableReason"] | null;
             responded_to_new: components["schemas"]["ReportCountFigure"];
-            response_rate_percent: components["schemas"]["ReportRateFigure"];
+            response_rate_percent: components["schemas"]["ReportRateComparison"];
             responses_published: components["schemas"]["ReportCountFigure"];
             total_count: components["schemas"]["ReportCountFigure"];
         };
@@ -10819,6 +10927,7 @@ export interface components {
         ReportRevisionRow: {
             /** Approved At */
             approved_at: string | null;
+            comparison: components["schemas"]["ComparisonSpec"];
             /**
              * Created At
              * Format: date-time
@@ -10827,11 +10936,7 @@ export interface components {
             delivery: components["schemas"]["ReportDeliveryView"] | null;
             /** Is Current */
             is_current: boolean;
-            /**
-             * Month
-             * Format: date
-             */
-            month: string;
+            period: components["schemas"]["ReportPeriod"];
             readiness: components["schemas"]["ReportReadiness"];
             /** Revision */
             revision: number;
@@ -10841,6 +10946,8 @@ export interface components {
         ReportSearchConsoleSection: {
             availability: components["schemas"]["Availability"];
             average_position: components["schemas"]["ReportRateComparison"];
+            /** Branded Share Percent */
+            branded_share_percent?: number | null;
             clicks: components["schemas"]["ReportCountComparison"];
             ctr_percent: components["schemas"]["ReportRateComparison"];
             impressions: components["schemas"]["ReportCountComparison"];
@@ -10858,6 +10965,8 @@ export interface components {
             clicks: number;
             /** Clicks Change */
             clicks_change: number | null;
+            /** Compared Clicks */
+            compared_clicks: number | null;
             /** Ctr */
             ctr: number | null;
             /** Impressions */
@@ -10866,8 +10975,6 @@ export interface components {
             page: string;
             /** Position */
             position: number | null;
-            /** Previous Clicks */
-            previous_clicks: number | null;
         };
         /** ReportSearchQueryRow */
         ReportSearchQueryRow: {
@@ -10875,14 +10982,16 @@ export interface components {
             clicks: number;
             /** Clicks Change */
             clicks_change: number | null;
+            /** Compared Clicks */
+            compared_clicks: number | null;
             /** Ctr */
             ctr: number | null;
             /** Impressions */
             impressions: number;
+            /** Is Branded */
+            is_branded: boolean;
             /** Position */
             position: number | null;
-            /** Previous Clicks */
-            previous_clicks: number | null;
             /** Query */
             query: string;
         };
@@ -10900,33 +11009,47 @@ export interface components {
         /** ReportSearchTerms */
         ReportSearchTerms: {
             availability: components["schemas"]["Availability"];
+            /** Months Covered */
+            months_covered?: number | null;
+            /** Months Expected */
+            months_expected?: number | null;
             reason?: components["schemas"]["UnavailableReason"] | null;
             /** Terms */
             terms: components["schemas"]["ReportSearchTerm"][];
+            /**
+             * Total Terms
+             * @default 0
+             */
+            total_terms: number;
         };
         /**
          * ReportSnapshot
-         * @description Everything computed for one organization and one month. Deterministic and typed.
+         * @description Everything computed for one organization and one period. Deterministic and typed.
          */
         ReportSnapshot: {
             analytics: components["schemas"]["ReportAnalyticsSection"];
+            comparison: components["schemas"]["ReportComparison"];
             gbp: components["schemas"]["ReportGbpSection"];
+            /** Headlines */
+            headlines: components["schemas"]["ReportHeadline"][];
             local_rank: components["schemas"]["TrackedCount"];
-            /**
-             * Month
-             * Format: date
-             */
-            month: string;
+            /** Location Names */
+            location_names: string[];
+            /** Monthly */
+            monthly: components["schemas"]["ReportMonthlySeries"][];
             /** Notes */
             notes: components["schemas"]["ReportDataNote"][];
+            period: components["schemas"]["ReportPeriod"];
             readiness: components["schemas"]["ReportReadiness"];
             reviews: components["schemas"]["ReportReviewsSection"];
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             search_console: components["schemas"]["ReportSearchConsoleSection"];
+            /** @default {} */
+            sync: components["schemas"]["ReportSync"];
             work: components["schemas"]["ReportWorkSection"];
         };
         /** ReportSourceRow */
@@ -10962,6 +11085,18 @@ export interface components {
          * @enum {string}
          */
         ReportStatus: "draft" | "ready" | "sent";
+        /**
+         * ReportSync
+         * @description When each source was last synced, as a day. Informational: not part of the data hash.
+         */
+        ReportSync: {
+            /** Analytics */
+            analytics?: string | null;
+            /** Gbp */
+            gbp?: string | null;
+            /** Search Console */
+            search_console?: string | null;
+        };
         /** ReportUpcoming */
         ReportUpcoming: {
             kind: components["schemas"]["UpcomingKind"];
@@ -11693,6 +11828,12 @@ export interface components {
          * @enum {string}
          */
         SectionKey: "profile_views" | "profile_actions" | "daily_series" | "search_terms" | "locations" | "reviews" | "search_console" | "analytics" | "local_rank" | "work_completed" | "narrative";
+        /**
+         * SeriesKey
+         * @description A figure drawn month by month.
+         * @enum {string}
+         */
+        SeriesKey: "profile_views" | "profile_actions" | "calls" | "website_clicks" | "direction_requests" | "search_clicks" | "search_impressions" | "organic_sessions" | "new_reviews";
         /** ServiceAssignmentCreate */
         ServiceAssignmentCreate: {
             /** Location Id */
@@ -14171,13 +14312,14 @@ export interface operations {
             };
         };
     };
-    report_detail_api_v1_organizations__organization_id__command_center_reports__month___revision__get: {
+    report_detail_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organization_id: string;
-                month: string;
+                period: string;
+                comparison: string;
                 revision: number;
             };
             cookie?: never;
@@ -14204,13 +14346,14 @@ export interface operations {
             };
         };
     };
-    approve_report_api_v1_organizations__organization_id__command_center_reports__month___revision__approve_post: {
+    approve_report_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__approve_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organization_id: string;
-                month: string;
+                period: string;
+                comparison: string;
                 revision: number;
             };
             cookie?: never;
@@ -14237,13 +14380,14 @@ export interface operations {
             };
         };
     };
-    draft_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__draft_narrative_post: {
+    draft_narrative_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__draft_narrative_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organization_id: string;
-                month: string;
+                period: string;
+                comparison: string;
                 revision: number;
             };
             cookie?: never;
@@ -14270,13 +14414,14 @@ export interface operations {
             };
         };
     };
-    mark_report_sent_api_v1_organizations__organization_id__command_center_reports__month___revision__mark_sent_post: {
+    mark_report_sent_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__mark_sent_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organization_id: string;
-                month: string;
+                period: string;
+                comparison: string;
                 revision: number;
             };
             cookie?: never;
@@ -14307,13 +14452,14 @@ export interface operations {
             };
         };
     };
-    update_narrative_api_v1_organizations__organization_id__command_center_reports__month___revision__narrative_put: {
+    update_narrative_api_v1_organizations__organization_id__command_center_reports__period___comparison___revision__narrative_put: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 organization_id: string;
-                month: string;
+                period: string;
+                comparison: string;
                 revision: number;
             };
             cookie?: never;

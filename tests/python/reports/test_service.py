@@ -31,6 +31,8 @@ from apps.api.app.reports.errors import (
 from apps.api.app.reports.service import ReportService, status_of
 from reports.support import (
     OCTOBER_FIRST,
+    PERIOD,
+    PREVIOUS,
     SEPTEMBER,
     Factory,
     seed_complete_month,
@@ -56,7 +58,7 @@ async def user(factory: Factory) -> UUID:
 async def generate(factory: Factory, org: UUID, svc: ReportService | None = None):  # type: ignore[no-untyped-def]
     async with factory.begin() as session:
         return await (svc or ReportService()).generate(
-            session, org, SEPTEMBER, actor_id=None, correlation_id="test", now=OCTOBER_FIRST
+            session, org, PERIOD, PREVIOUS, actor_id=None, correlation_id="test", now=OCTOBER_FIRST
         )
 
 
@@ -158,14 +160,14 @@ async def test_changed_data_is_the_next_revision_and_a_draft_edit_recomputes_the
     before = second.revision.snapshot_hash
     async with factory.begin() as session:
         edited = await svc.set_narrative(
-            session, org, SEPTEMBER, 2, WORDS, actor_id=None, correlation_id="edit"
+            session, org, PERIOD, PREVIOUS, 2, WORDS, actor_id=None, correlation_id="edit"
         )
     assert edited.revision.snapshot_hash != before
     assert edited.narrative == WORDS and edited.data_hash == second.data_hash
 
     # Regenerating keeps a person's own words, and not a draft that was checked against old numbers.
     async with factory.begin() as session:
-        stored = await svc.get(session, org, SEPTEMBER, 2, lock=True)
+        stored = await svc.get(session, org, PERIOD, PREVIOUS, 2, lock=True)
         document = dict(stored.revision.metric_snapshot)
         document["narrative"] = {**stored.narrative.model_dump(mode="json"), "origin": "hermes"}
         stored.revision.metric_snapshot = document
@@ -192,11 +194,11 @@ async def test_an_approved_revision_is_immutable_and_a_changed_regeneration_is_a
     await generate(factory, org, svc)
     async with factory.begin() as session:
         await svc.set_narrative(
-            session, org, SEPTEMBER, 1, WORDS, actor_id=approver, correlation_id="c"
+            session, org, PERIOD, PREVIOUS, 1, WORDS, actor_id=approver, correlation_id="c"
         )
     async with factory.begin() as session:
         approved, changed = await svc.approve(
-            session, org, SEPTEMBER, 1, actor_id=approver, correlation_id="c"
+            session, org, PERIOD, PREVIOUS, 1, actor_id=approver, correlation_id="c"
         )
     assert changed and approved.revision.status == "approved"
     assert approved.revision.approved_by_user_id == approver and approved.revision.approved_at
@@ -204,7 +206,7 @@ async def test_an_approved_revision_is_immutable_and_a_changed_regeneration_is_a
     async with factory.begin() as session:
         with pytest.raises(ReportNotEditableError):
             await svc.set_narrative(
-                session, org, SEPTEMBER, 1, WORDS, actor_id=approver, correlation_id="c"
+                session, org, PERIOD, PREVIOUS, 1, WORDS, actor_id=approver, correlation_id="c"
             )
     with pytest.raises(ReportAlreadyApprovedError):
         await generate(factory, org, svc)  # nothing changed
@@ -221,7 +223,7 @@ async def test_an_approved_revision_is_immutable_and_a_changed_regeneration_is_a
     # Approving again is a no-op.
     async with factory.begin() as session:
         again, changed = await svc.approve(
-            session, org, SEPTEMBER, 1, actor_id=approver, correlation_id="c"
+            session, org, PERIOD, PREVIOUS, 1, actor_id=approver, correlation_id="c"
         )
     assert not changed and again.revision.approved_at == approved.revision.approved_at
 
@@ -235,14 +237,14 @@ async def test_an_approved_revision_is_immutable_and_a_changed_regeneration_is_a
     newer, created = await generate(factory, org, svc)
     assert created and newer.revision.revision == 2 and newer.revision.status == "draft"
     async with factory() as session:
-        first = await svc.get(session, org, SEPTEMBER, 1)
+        first = await svc.get(session, org, PERIOD, PREVIOUS, 1)
     assert first.revision.status == "approved" and first.narrative == WORDS
     assert first.data_hash != newer.data_hash
 
     async with factory.begin() as session:  # the older revision can no longer be approved or edited
         with pytest.raises(ReportNotEditableError):
             await svc.set_narrative(
-                session, org, SEPTEMBER, 1, WORDS, actor_id=None, correlation_id="c"
+                session, org, PERIOD, PREVIOUS, 1, WORDS, actor_id=None, correlation_id="c"
             )
 
 
@@ -257,17 +259,20 @@ async def test_approval_is_refused_for_missing_data_an_empty_narrative_and_an_ol
     assert missing.snapshot.readiness is ReportReadiness.MISSING_DATA
     async with factory.begin() as session:
         await svc.set_narrative(
-            session, org, SEPTEMBER, 1, WORDS, actor_id=None, correlation_id="c"
+            session, org, PERIOD, PREVIOUS, 1, WORDS, actor_id=None, correlation_id="c"
         )
     async with factory.begin() as session:
         with pytest.raises(ReportDataMissingError):
-            await svc.approve(session, org, SEPTEMBER, 1, actor_id=approver, correlation_id="c")
+            await svc.approve(
+                session, org, PERIOD, PREVIOUS, 1, actor_id=approver, correlation_id="c"
+            )
 
     async with factory.begin() as session:  # the person clears it again
         await svc.set_narrative(
             session,
             org,
-            SEPTEMBER,
+            PERIOD,
+            PREVIOUS,
             1,
             ReportNarrative(origin=NarrativeOrigin.MANUAL),
             actor_id=None,
@@ -278,10 +283,14 @@ async def test_approval_is_refused_for_missing_data_an_empty_narrative_and_an_ol
     assert created and ready.revision.revision == 2
     async with factory.begin() as session:
         with pytest.raises(ReportNarrativeEmptyError):
-            await svc.approve(session, org, SEPTEMBER, 2, actor_id=approver, correlation_id="c")
+            await svc.approve(
+                session, org, PERIOD, PREVIOUS, 2, actor_id=approver, correlation_id="c"
+            )
     async with factory.begin() as session:
         with pytest.raises(ReportRevisionSupersededError):
-            await svc.approve(session, org, SEPTEMBER, 1, actor_id=approver, correlation_id="c")
+            await svc.approve(
+                session, org, PERIOD, PREVIOUS, 1, actor_id=approver, correlation_id="c"
+            )
 
 
 @pytest.mark.anyio
@@ -295,7 +304,8 @@ async def test_marking_as_sent_is_recorded_once_by_a_person_and_audited(factory:
             await svc.mark_sent(
                 session,
                 org,
-                SEPTEMBER,
+                PERIOD,
+                PREVIOUS,
                 1,
                 date(2026, 10, 3),
                 actor_id=person,
@@ -304,23 +314,32 @@ async def test_marking_as_sent_is_recorded_once_by_a_person_and_audited(factory:
             )
     async with factory.begin() as session:
         await svc.set_narrative(
-            session, org, SEPTEMBER, 1, WORDS, actor_id=person, correlation_id="c"
+            session, org, PERIOD, PREVIOUS, 1, WORDS, actor_id=person, correlation_id="c"
         )
     async with factory.begin() as session:
-        await svc.approve(session, org, SEPTEMBER, 1, actor_id=person, correlation_id="c")
+        await svc.approve(session, org, PERIOD, PREVIOUS, 1, actor_id=person, correlation_id="c")
 
     for bad in (date(2026, 9, 30), SENT.date() + timedelta(days=1)):
         async with factory.begin() as session:
             with pytest.raises(ReportSentDateInvalidError):
                 await svc.mark_sent(
-                    session, org, SEPTEMBER, 1, bad, actor_id=person, correlation_id="c", now=SENT
+                    session,
+                    org,
+                    PERIOD,
+                    PREVIOUS,
+                    1,
+                    bad,
+                    actor_id=person,
+                    correlation_id="c",
+                    now=SENT,
                 )
 
     async with factory.begin() as session:
         delivery, created = await svc.mark_sent(
             session,
             org,
-            SEPTEMBER,
+            PERIOD,
+            PREVIOUS,
             1,
             date(2026, 10, 3),
             actor_id=person,
@@ -329,14 +348,15 @@ async def test_marking_as_sent_is_recorded_once_by_a_person_and_audited(factory:
         )
     assert created and delivery.sent_on == date(2026, 10, 3) and delivery.status == "sent"
     assert delivery.sent_by_user_id == person
-    assert delivery.idempotency_key == f"{org}:2026-09-01:1"
+    assert delivery.idempotency_key == f"{org}:2026-09:previous:1"
     assert delivery.notification_delivery_id is None  # nothing was emailed or notified
 
     async with factory.begin() as session:
         replay, created = await svc.mark_sent(
             session,
             org,
-            SEPTEMBER,
+            PERIOD,
+            PREVIOUS,
             1,
             date(2026, 10, 4),
             actor_id=person,
@@ -348,7 +368,7 @@ async def test_marking_as_sent_is_recorded_once_by_a_person_and_audited(factory:
         count = await session.scalar(
             select(func.count(ReportDelivery.id)).where(ReportDelivery.organization_id == org)
         )
-        revision = (await svc.get(session, org, SEPTEMBER, 1)).revision
+        revision = (await svc.get(session, org, PERIOD, PREVIOUS, 1)).revision
         assert status_of(revision, delivery) is ReportStatus.SENT
     assert count == 1
     assert await events(factory, org) == [

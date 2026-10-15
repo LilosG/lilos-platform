@@ -202,22 +202,51 @@ class ReportRevision(UUIDPrimaryKeyMixin, Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("organization_id", "id", name="uq_report_revisions_org_id"),
-        # Revisions are numbered per month: a month's first report is revision 1.
+        # Revisions are numbered per period and comparison: the first report of each is revision 1.
         UniqueConstraint(
-            "report_definition_id", "period_month", "revision", name="uq_report_revision_month"
+            "report_definition_id",
+            "period_month",
+            "period_end_month",
+            "comparison_key",
+            "revision",
+            name="uq_report_revision_month",
         ),
         UniqueConstraint("snapshot_hash", name="uq_report_snapshot_hash"),
         CheckConstraint(
             "period_month = date_trunc('month', period_month)::date", name="month_is_first_day"
         ),
-        Index("ix_report_revisions_org_period_month", "organization_id", "period_month"),
+        CheckConstraint(
+            "period_end_month = date_trunc('month', period_end_month)::date",
+            name="end_month_is_first_day",
+        ),
+        CheckConstraint("period_end_month >= period_month", name="period_not_reversed"),
+        CheckConstraint(
+            "(extract(year from period_end_month) * 12 + extract(month from period_end_month))"
+            " - (extract(year from period_month) * 12 + extract(month from period_month)) < 12",
+            name="period_within_12_months",
+        ),
+        CheckConstraint(
+            "comparison_key ~ '^(previous|year_ago|baseline:[0-9]{4}-[0-9]{2}:[0-9]{4}-[0-9]{2})$'",
+            name="comparison_key_valid",
+        ),
+        Index(
+            "ix_report_revisions_org_period_month",
+            "organization_id",
+            "period_month",
+            "period_end_month",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     report_definition_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    # The first day of the calendar month the report covers.
+    # The first day of the first and of the last calendar month the report covers.
     period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end_month: Mapped[date] = mapped_column(Date, nullable=False)
+    # What the period is compared with: previous, year_ago or baseline:YYYY-MM:YYYY-MM.
+    comparison_key: Mapped[str] = mapped_column(
+        String(40), nullable=False, server_default="previous"
+    )
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     metric_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)

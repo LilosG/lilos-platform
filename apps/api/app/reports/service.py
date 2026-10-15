@@ -1,4 +1,4 @@
-"""Persistence of the monthly report: generate, edit the narrative, approve, record as sent.
+"""Persistence of the report: generate, edit the narrative, approve, record as sent.
 
 Reports are saved snapshots. A revision's numbers are computed once and never recomputed; an
 approved revision is immutable (the database refuses any change to it), and a regeneration whose
@@ -24,11 +24,14 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.insights.models import ReportDefinition, ReportDelivery, ReportRevision
 from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
+from apps.api.app.reporting_periods import calendar_month_window
 from apps.api.app.reports.contracts import (
     DEFINITION_KEY,
     SNAPSHOT_SCHEMA_VERSION,
+    ComparisonSpec,
     NarrativeOrigin,
     ReportNarrative,
+    ReportPeriod,
     ReportReadiness,
     ReportSnapshot,
     ReportStatus,
@@ -60,7 +63,7 @@ METRIC_KEYS: list[str] = [
     "report.snapshot",
     *[f"gbp.{metric.value}" for metric in GBPPerformanceMetric],
     "gbp.search_keywords",
-    "reviews.monthly",
+    "reviews.period",
     "search_console.month",
     "ga4.organicLanding.sessions",
 ]
@@ -80,8 +83,14 @@ class StoredReport:
     data_hash: str
 
     @property
-    def month(self) -> date:
-        return self.revision.period_month
+    def period(self) -> ReportPeriod:
+        return ReportPeriod(
+            start_month=self.revision.period_month, end_month=self.revision.period_end_month
+        )
+
+    @property
+    def comparison(self) -> ComparisonSpec:
+        return ComparisonSpec.from_key(self.revision.comparison_key)
 
     @property
     def is_approved(self) -> bool:
@@ -112,18 +121,20 @@ def open_envelope(revision: ReportRevision) -> StoredReport:
 def snapshot_hash(
     organization_id: UUID,
     definition_id: UUID,
-    month: date,
+    period: ReportPeriod,
+    comparison: ComparisonSpec,
     revision: int,
     digest: str,
     narrative: ReportNarrative,
 ) -> str:
-    """Globally unique: tenant, definition, month, revision, the numbers and the narrative."""
+    """Globally unique: tenant, definition, period, comparison, revision, numbers, narrative."""
     return hashlib.sha256(
         canonical_json(
             {
                 "organization_id": str(organization_id),
                 "definition_id": str(definition_id),
-                "month": month.isoformat(),
+                "period": period.slug,
+                "comparison": comparison.key,
                 "revision": revision,
                 "data": digest,
                 "narrative": narrative.model_dump(mode="json"),
@@ -173,6 +184,15 @@ class ReportService:
             ),
         )
 
+    @staticmethod
+    def _where(period: ReportPeriod, comparison: ComparisonSpec) -> dict[str, object]:
+        """The period and comparison a report covers, for the audit trail."""
+        return {
+            "start_month": period.start_month.isoformat(),
+            "end_month": period.end_month.isoformat(),
+            "comparison": comparison.key,
+        }
+
     async def ensure_definition(
         self, session: AsyncSession, organization_id: UUID
     ) -> ReportDefinition:
@@ -213,15 +233,28 @@ class ReportService:
             assert definition is not None
         return definition
 
+    @staticmethod
+    def _of(
+        organization_id: UUID, period: ReportPeriod, comparison: ComparisonSpec
+    ) -> tuple[object, ...]:
+        """The conditions that select the revisions of one period and comparison."""
+        return (
+            ReportRevision.organization_id == organization_id,
+            ReportRevision.period_month == period.start_month,
+            ReportRevision.period_end_month == period.end_month,
+            ReportRevision.comparison_key == comparison.key,
+        )
+
     async def _revisions(
-        self, session: AsyncSession, organization_id: UUID, month: date
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
     ) -> list[ReportRevision]:
         rows = await session.scalars(
             select(ReportRevision)
-            .where(
-                ReportRevision.organization_id == organization_id,
-                ReportRevision.period_month == month,
-            )
+            .where(*self._of(organization_id, period, comparison))  # type: ignore[arg-type]
             .order_by(ReportRevision.revision)
         )
         return list(rows)
@@ -230,14 +263,14 @@ class ReportService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        month: date,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
         revision: int,
         *,
         lock: bool = False,
     ) -> StoredReport:
         statement = select(ReportRevision).where(
-            ReportRevision.organization_id == organization_id,
-            ReportRevision.period_month == month,
+            *self._of(organization_id, period, comparison),  # type: ignore[arg-type]
             ReportRevision.revision == revision,
         )
         row = await session.scalar(statement.with_for_update() if lock else statement)
@@ -246,19 +279,26 @@ class ReportService:
         return open_envelope(row)
 
     async def latest(
-        self, session: AsyncSession, organization_id: UUID, month: date
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
     ) -> StoredReport | None:
-        revisions = await self._revisions(session, organization_id, month)
+        revisions = await self._revisions(session, organization_id, period, comparison)
         return open_envelope(revisions[-1]) if revisions else None
 
     async def revision_count(
-        self, session: AsyncSession, organization_id: UUID, month: date
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
     ) -> int:
         return int(
             await session.scalar(
                 select(func.count(ReportRevision.id)).where(
-                    ReportRevision.organization_id == organization_id,
-                    ReportRevision.period_month == month,
+                    *self._of(organization_id, period, comparison)  # type: ignore[arg-type]
                 )
             )
             or 0
@@ -279,24 +319,26 @@ class ReportService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        month: date,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
         *,
         actor_id: UUID | None,
         correlation_id: str,
         now: datetime | None = None,
     ) -> tuple[StoredReport, bool]:
-        """Compute the month and store it. Returns the revision and whether it is new.
+        """Compute the period and store it. Returns the revision and whether it is new.
 
         Identical data returns the existing draft. After approval an identical regeneration is
         refused; different data becomes a new draft and the approved revision is untouched.
         """
         now = now or datetime.now(UTC)
-        require_ended(month, now)
+        require_ended(period.end_month, now)
+        comparison.resolve(period)  # refuses a baseline that overlaps the period
         # The definition row is the lock that numbers revisions: one generation at a time.
         definition = await self.ensure_definition(session, organization_id)
-        snapshot = await build_snapshot(session, organization_id, month, now=now)
+        snapshot = await build_snapshot(session, organization_id, period, comparison, now=now)
         digest = data_hash(snapshot)
-        previous = await self.latest(session, organization_id, month)
+        previous = await self.latest(session, organization_id, period, comparison)
         narrative = ReportNarrative()
         if previous is not None:
             if previous.data_hash == digest:
@@ -311,10 +353,12 @@ class ReportService:
         revision = ReportRevision(
             organization_id=organization_id,
             report_definition_id=definition.id,
-            period_month=month,
+            period_month=period.start_month,
+            period_end_month=period.end_month,
+            comparison_key=comparison.key,
             revision=number,
             snapshot_hash=snapshot_hash(
-                organization_id, definition.id, month, number, digest, narrative
+                organization_id, definition.id, period, comparison, number, digest, narrative
             ),
             metric_snapshot=envelope(snapshot, narrative, digest),
             metric_versions=list(METRIC_VERSIONS),
@@ -331,9 +375,9 @@ class ReportService:
             actor_id=actor_id,
             revision=revision,
             correlation_id=correlation_id,
-            summary="Monthly report generated.",
+            summary="Report generated.",
             metadata={
-                "month": month.isoformat(),
+                **self._where(period, comparison),
                 "revision": number,
                 "readiness": snapshot.readiness.value,
                 "data_hash": digest,
@@ -344,17 +388,24 @@ class ReportService:
     async def assert_editable(
         self, session: AsyncSession, organization_id: UUID, stored: StoredReport
     ) -> None:
-        """Only the newest revision of a month, and only while it is a draft, can be edited."""
+        """Only the newest revision of a report, and only while it is a draft, can be edited."""
         if stored.is_approved:
             raise ReportNotEditableError
-        count = await self.revision_count(session, organization_id, stored.month)
+        count = await self.revision_count(
+            session, organization_id, stored.period, stored.comparison
+        )
         if stored.revision.revision != count:
             raise ReportRevisionSupersededError
 
     async def _editable(
-        self, session: AsyncSession, organization_id: UUID, month: date, revision: int
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
+        revision: int,
     ) -> StoredReport:
-        stored = await self.get(session, organization_id, month, revision, lock=True)
+        stored = await self.get(session, organization_id, period, comparison, revision, lock=True)
         await self.assert_editable(session, organization_id, stored)
         return stored
 
@@ -362,7 +413,8 @@ class ReportService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        month: date,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
         revision: int,
         narrative: ReportNarrative,
         *,
@@ -371,13 +423,14 @@ class ReportService:
         event: str = "reports.narrative.edited",
     ) -> StoredReport:
         """Replace a draft's narrative; the revision's hash follows its content."""
-        stored = await self._editable(session, organization_id, month, revision)
+        stored = await self._editable(session, organization_id, period, comparison, revision)
         row = stored.revision
         row.metric_snapshot = envelope(stored.snapshot, narrative, stored.data_hash)
         row.snapshot_hash = snapshot_hash(
             organization_id,
             row.report_definition_id,
-            month,
+            period,
+            comparison,
             row.revision,
             stored.data_hash,
             narrative,
@@ -392,7 +445,7 @@ class ReportService:
             correlation_id=correlation_id,
             summary="Report narrative updated.",
             metadata={
-                "month": month.isoformat(),
+                **self._where(period, comparison),
                 "revision": row.revision,
                 "origin": narrative.origin.value,
             },
@@ -403,7 +456,8 @@ class ReportService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        month: date,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
         revision: int,
         *,
         actor_id: UUID,
@@ -411,10 +465,12 @@ class ReportService:
         now: datetime | None = None,
     ) -> tuple[StoredReport, bool]:
         """Approve the current draft. Approving it again is a no-op that returns it."""
-        stored = await self.get(session, organization_id, month, revision, lock=True)
+        stored = await self.get(session, organization_id, period, comparison, revision, lock=True)
         if stored.is_approved:
             return stored, False
-        if stored.revision.revision != (await self.revision_count(session, organization_id, month)):
+        if stored.revision.revision != (
+            await self.revision_count(session, organization_id, period, comparison)
+        ):
             raise ReportRevisionSupersededError
         if stored.snapshot.readiness is ReportReadiness.MISSING_DATA:
             raise ReportDataMissingError
@@ -432,9 +488,9 @@ class ReportService:
             actor_id=actor_id,
             revision=row,
             correlation_id=correlation_id,
-            summary="Monthly report approved.",
+            summary="Report approved.",
             metadata={
-                "month": month.isoformat(),
+                **self._where(period, comparison),
                 "revision": row.revision,
                 "readiness": stored.snapshot.readiness.value,
                 "data_hash": stored.data_hash,
@@ -446,7 +502,8 @@ class ReportService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        month: date,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
         revision: int,
         sent_on: date,
         *,
@@ -456,19 +513,21 @@ class ReportService:
     ) -> tuple[ReportDelivery, bool]:
         """Record that a person sent the approved report. The same revision is recorded once."""
         now = now or datetime.now(UTC)
-        stored = await self.get(session, organization_id, month, revision, lock=True)
+        stored = await self.get(session, organization_id, period, comparison, revision, lock=True)
         if not stored.is_approved:
             raise ReportNotApprovedError
         existing = await self.delivery(session, organization_id, stored.revision.id)
         if existing is not None:
             return existing, False
-        following = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
+        following = calendar_month_window(period.end_month)[1].date()
         if sent_on < following or sent_on > report_today(now):
             raise ReportSentDateInvalidError
         delivery = ReportDelivery(
             organization_id=organization_id,
             report_revision_id=stored.revision.id,
-            idempotency_key=f"{organization_id}:{month.isoformat()}:{stored.revision.revision}",
+            idempotency_key=(
+                f"{organization_id}:{period.slug}:{comparison.key}:{stored.revision.revision}"
+            ),
             status=DELIVERY_SENT,
             sent_on=sent_on,
             sent_by_user_id=actor_id,
@@ -482,9 +541,9 @@ class ReportService:
             actor_id=actor_id,
             revision=stored.revision,
             correlation_id=correlation_id,
-            summary="Monthly report recorded as sent.",
+            summary="Report recorded as sent.",
             metadata={
-                "month": month.isoformat(),
+                **self._where(period, comparison),
                 "revision": stored.revision.revision,
                 "sent_on": sent_on.isoformat(),
             },

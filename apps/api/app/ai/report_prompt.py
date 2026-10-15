@@ -1,4 +1,4 @@
-"""The prompt for the two prose sections of a monthly client report.
+"""The prompt for the two prose sections of a client report.
 
 The model is handed the stored snapshot's numbers as evidence and may state only those numbers.
 The checks that enforce this run in code after the draft returns (``reports.narrative``); the
@@ -11,7 +11,8 @@ import json
 from typing import Any
 
 _RULES = (
-    "You write two short sections of a monthly performance report that a local business owner "
+    "You write two short sections of a performance report covering one or more whole months, "
+    "that a local business owner "
     "will read: what changed and why it matters, and what happens next.",
     "EVIDENCE below is the only source of truth. State a number only if it appears in EVIDENCE, "
     "written the same way (a rounded whole number of the same figure is fine). Never add, "

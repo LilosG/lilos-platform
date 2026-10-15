@@ -1,8 +1,10 @@
-"""Monthly client reports: generate, review, approve and record as sent.
+"""Client reports: generate, review, approve and record as sent.
 
 Reads never call a provider.
 
-A report is a saved snapshot of one calendar month. Numbers are computed by code from stored data;
+A report is a saved snapshot of 1 to 12 whole calendar months set against a comparison. Its
+address is ``{period}/{comparison}/{revision}``: ``2026-09`` or ``2026-05_2026-09``, then
+``previous``, ``year-ago`` or ``vs-2026-01_2026-03``. Numbers are computed by code from stored data;
 a person edits the narrative, approves the exact revision, and records when they sent it. Nothing
 here emails or notifies anyone.
 """
@@ -18,6 +20,7 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.errors import NotFoundError, request_correlation_id
 from apps.api.app.organizations.models import Organization
 from apps.api.app.reports.contracts import (
+    ComparisonSpec,
     NarrativeOrigin,
     NarrativeOutcome,
     PortfolioReportsView,
@@ -30,6 +33,7 @@ from apps.api.app.reports.contracts import (
     ReportNarrative,
     ReportNarrativeDraftResult,
     ReportNarrativeUpdate,
+    ReportPeriod,
     ReportPermissions,
 )
 from apps.api.app.reports.errors import ReportScopeNotReadableError
@@ -47,7 +51,9 @@ from apps.api.app.routes.insights import policy
 from apps.api.app.routes.reviews import Session
 
 MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
-Month = Annotated[str, Path(pattern=MONTH_PATTERN)]
+# The period and comparison segments are parsed in code, so a malformed one gets a typed error.
+PeriodSlug = Annotated[str, Path(max_length=64)]
+ComparisonSlug = Annotated[str, Path(max_length=64)]
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/command-center/reports",
@@ -75,6 +81,10 @@ def month_of(value: str) -> date:
     return date.fromisoformat(f"{value}-01")
 
 
+def report_of(period: str, comparison: str) -> tuple[ReportPeriod, ComparisonSpec]:
+    return ReportPeriod.from_slug(period), ComparisonSpec.from_slug(comparison)
+
+
 async def permissions_of(
     session: Session, principal: Authenticated, organization_id: UUID, request: Request
 ) -> ReportPermissions:
@@ -94,12 +104,13 @@ async def detail_of(
     if organization is None:
         raise NotFoundError
     delivery = await service.delivery(session, organization_id, stored.revision.id)
-    count = await service.revision_count(session, organization_id, stored.month)
+    count = await service.revision_count(session, organization_id, stored.period, stored.comparison)
     return ReportDetailView(
         organization_id=organization_id,
         client_name=organization.name,
         client_slug=organization.slug,
-        month=stored.month,
+        period=stored.period,
+        comparison=stored.comparison,
         revision=stored.revision.revision,
         revision_count=count,
         status=status_of(stored.revision, delivery),
@@ -143,7 +154,17 @@ async def list_reports(
     """The client's current report, every stored revision, and the next scheduled run."""
     history = await revision_rows(session, organization_id)
     current_month = last_ended_month(datetime.now(UTC))
-    current = next((row for row in history if row.month == current_month and row.is_current), None)
+    current = next(
+        (
+            row
+            for row in history
+            if row.period.start_month == current_month
+            and row.period.end_month == current_month
+            and row.comparison.basis is ComparisonSpec().basis
+            and row.is_current
+        ),
+        None,
+    )
     return ReportListView(
         organization_id=organization_id,
         current_month=current_month,
@@ -163,13 +184,16 @@ async def generate_report(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("insights.manage")],
 ) -> ReportGenerateResult:
-    """Compute a month from stored data. Identical data returns the existing draft."""
-    require_ended(body.month, datetime.now(UTC))
+    """Compute a period from stored data. Identical data returns the existing draft."""
+    period = body.period
+    body.comparison.resolve(period)
+    require_ended(period.end_month, datetime.now(UTC))
     await require_whole_scope(session, principal, organization_id, request)
     stored, created = await service.generate(
         session,
         organization_id,
-        body.month,
+        period,
+        body.comparison,
         actor_id=principal.platform_user_id,
         correlation_id=str(request_correlation_id(request)),
     )
@@ -179,18 +203,20 @@ async def generate_report(
     )
 
 
-@router.get("/{month}/{revision}", response_model=ReportDetailView)
+@router.get("/{period}/{comparison}/{revision}", response_model=ReportDetailView)
 async def report_detail(
     request: Request,
     organization_id: UUID,
-    month: Month,
+    period: PeriodSlug,
+    comparison: ComparisonSlug,
     revision: Annotated[int, Path(ge=1)],
     session: Session,
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("insights.read")],
 ) -> ReportDetailView:
     """One stored revision exactly as it was saved."""
-    stored = await service.get(session, organization_id, month_of(month), revision)
+    when, spec = report_of(period, comparison)
+    stored = await service.get(session, organization_id, when, spec, revision)
     return await detail_of(
         session,
         organization_id,
@@ -199,11 +225,12 @@ async def report_detail(
     )
 
 
-@router.put("/{month}/{revision}/narrative", response_model=ReportDetailView)
+@router.put("/{period}/{comparison}/{revision}/narrative", response_model=ReportDetailView)
 async def update_narrative(
     request: Request,
     organization_id: UUID,
-    month: Month,
+    period: PeriodSlug,
+    comparison: ComparisonSlug,
     revision: Annotated[int, Path(ge=1)],
     body: ReportNarrativeUpdate,
     session: Session,
@@ -211,10 +238,12 @@ async def update_narrative(
     _: Annotated[AuthorizationDecision, policy("insights.manage")],
 ) -> ReportDetailView:
     """Replace a draft's narrative. An approved revision cannot be edited."""
+    when, spec = report_of(period, comparison)
     stored = await service.set_narrative(
         session,
         organization_id,
-        month_of(month),
+        when,
+        spec,
         revision,
         ReportNarrative(
             what_changed=body.what_changed.strip(),
@@ -232,11 +261,14 @@ async def update_narrative(
     )
 
 
-@router.post("/{month}/{revision}/draft-narrative", response_model=ReportNarrativeDraftResult)
+@router.post(
+    "/{period}/{comparison}/{revision}/draft-narrative", response_model=ReportNarrativeDraftResult
+)
 async def draft_narrative(
     request: Request,
     organization_id: UUID,
-    month: Month,
+    period: PeriodSlug,
+    comparison: ComparisonSlug,
     revision: Annotated[int, Path(ge=1)],
     session: Session,
     principal: Authenticated,
@@ -244,7 +276,8 @@ async def draft_narrative(
     _: Annotated[AuthorizationDecision, policy("insights.manage")],
 ) -> ReportNarrativeDraftResult:
     """Ask Hermes for a draft of the narrative. A draft that fails a check is not used."""
-    stored = await service.get(session, organization_id, month_of(month), revision, lock=True)
+    when, spec = report_of(period, comparison)
+    stored = await service.get(session, organization_id, when, spec, revision, lock=True)
     # Refuse before any spend: only the current draft has a narrative to draft.
     await service.assert_editable(session, organization_id, stored)
     result = await drafter.draft(
@@ -257,7 +290,8 @@ async def draft_narrative(
         stored = await service.set_narrative(
             session,
             organization_id,
-            stored.month,
+            when,
+            spec,
             revision,
             result.narrative,
             actor_id=principal.platform_user_id,
@@ -272,21 +306,24 @@ async def draft_narrative(
     )
 
 
-@router.post("/{month}/{revision}/approve", response_model=ReportDetailView)
+@router.post("/{period}/{comparison}/{revision}/approve", response_model=ReportDetailView)
 async def approve_report(
     request: Request,
     organization_id: UUID,
-    month: Month,
+    period: PeriodSlug,
+    comparison: ComparisonSlug,
     revision: Annotated[int, Path(ge=1)],
     session: Session,
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("insights.publish")],
 ) -> ReportDetailView:
     """Approve the exact revision shown. Approved revisions are immutable."""
+    when, spec = report_of(period, comparison)
     stored, _approved = await service.approve(
         session,
         organization_id,
-        month_of(month),
+        when,
+        spec,
         revision,
         actor_id=principal.platform_user_id,
         correlation_id=str(request_correlation_id(request)),
@@ -299,11 +336,12 @@ async def approve_report(
     )
 
 
-@router.post("/{month}/{revision}/mark-sent", response_model=ReportDetailView)
+@router.post("/{period}/{comparison}/{revision}/mark-sent", response_model=ReportDetailView)
 async def mark_report_sent(
     request: Request,
     organization_id: UUID,
-    month: Month,
+    period: PeriodSlug,
+    comparison: ComparisonSlug,
     revision: Annotated[int, Path(ge=1)],
     body: ReportMarkSentRequest,
     session: Session,
@@ -311,16 +349,19 @@ async def mark_report_sent(
     _: Annotated[AuthorizationDecision, policy("insights.publish")],
 ) -> ReportDetailView:
     """Record that a person sent the approved report on the given day. Sends nothing."""
+    when, spec = report_of(period, comparison)
     await service.mark_sent(
         session,
         organization_id,
-        month_of(month),
+        when,
+        spec,
         revision,
         body.sent_on,
         actor_id=principal.platform_user_id,
         correlation_id=str(request_correlation_id(request)),
     )
-    stored = await service.get(session, organization_id, month_of(month), revision)
+    when, spec = report_of(period, comparison)
+    stored = await service.get(session, organization_id, when, spec, revision)
     return await detail_of(
         session,
         organization_id,

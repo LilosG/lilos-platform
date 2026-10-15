@@ -7,13 +7,17 @@ when the stored rows say zero.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date
 
 from apps.api.app.products.gbp.performance_enums import GBPPerformanceAvailability
-from apps.api.app.products.gbp.performance_read import MetricComparison, Total, compare
+from apps.api.app.products.gbp.performance_read import Total
 from apps.api.app.reports.contracts import (
     Availability,
+    ComparedAs,
     ReportCountComparison,
     ReportCountFigure,
+    ReportMonthPoint,
     ReportRateComparison,
     ReportRateFigure,
     UnavailableReason,
@@ -61,15 +65,13 @@ def count_figure(total: Total, *, optional: bool = False) -> ReportCountFigure:
     )
 
 
-def year_figure(total: Total | None) -> ReportCountFigure:
-    """The same month a year earlier counts only when that whole month was synced."""
-    if total is None:
+def year_figure(figure: ReportCountFigure | None) -> ReportCountFigure:
+    """The same months a year earlier count only when every one of them was synced."""
+    if figure is None:
         return unavailable_count(UnavailableReason.NOT_COMPARED)
-    if total.availability is GBPPerformanceAvailability.AVAILABLE:
-        return count_figure(total)
-    if total.availability is GBPPerformanceAvailability.PARTIAL:
+    if figure.availability is Availability.PARTIAL:
         return unavailable_count(UnavailableReason.PARTIAL_PERIOD)
-    return unavailable_count(_REASON[total.availability])
+    return figure
 
 
 def combine(totals: Sequence[Total]) -> Total:
@@ -87,32 +89,107 @@ def combine(totals: Sequence[Total]) -> Total:
     )
 
 
-def count_comparison(
+def _settled(figure: ReportCountFigure) -> bool:
+    """A figure a change can be drawn from: a half-settled one proves nothing."""
+    return figure.availability is Availability.AVAILABLE and figure.value is not None
+
+
+def _delta(current: float, other: float) -> tuple[float, float | None]:
+    return current - other, (round((current - other) / other * 100, 1) if other else None)
+
+
+@dataclass(frozen=True, slots=True)
+class Basis:
+    """How a period is set against its comparison: months on each side and the unit compared."""
+
+    compared_as: ComparedAs = ComparedAs.TOTAL
+    period_months: int = 1
+    compared_months: int = 1
+
+    def compared_value(self, total: int) -> int:
+        """The compared figure in the comparison's unit: the total, or its monthly average."""
+        if self.compared_as is ComparedAs.TOTAL:
+            return total
+        return round(total / self.compared_months)
+
+    def current_average(self, total: int) -> int | None:
+        return (
+            round(total / self.period_months)
+            if self.compared_as is ComparedAs.MONTHLY_AVERAGE
+            else None
+        )
+
+
+def compare_counts(
+    current: ReportCountFigure,
+    compared: ReportCountFigure,
+    year_ago: ReportCountFigure | None,
+    basis: Basis,
+    *,
+    with_year: bool = True,
+) -> ReportCountComparison:
+    """A period's count against its comparison and (when asked) the same months a year earlier.
+
+    ``compared`` is the comparison's total; it is turned into a monthly average here when the
+    two periods differ in length, and the change is between like quantities.
+    """
+    averaged = basis.compared_as is ComparedAs.MONTHLY_AVERAGE
+    shown = compared
+    if averaged and compared.value is not None:
+        shown = compared.model_copy(update={"value": basis.compared_value(compared.value)})
+    change: int | None = None
+    percent: float | None = None
+    if _settled(current) and _settled(compared):
+        assert current.value is not None and compared.value is not None
+        if averaged:
+            now_average = current.value / basis.period_months
+            before_average = compared.value / basis.compared_months
+            _, percent = _delta(now_average, before_average)
+            change = round(now_average) - round(before_average)
+        else:
+            difference, percent = _delta(current.value, compared.value)
+            change = int(difference)
+    year_change: int | None = None
+    year_percent: float | None = None
+    year_shown: ReportCountFigure | None = None
+    if with_year and year_ago is not None:
+        year_shown = year_figure(year_ago)
+        if _settled(current) and _settled(year_shown):
+            assert current.value is not None and year_shown.value is not None
+            difference, year_percent = _delta(current.value, year_shown.value)
+            year_change = int(difference)
+    return ReportCountComparison(
+        current=current,
+        compared=shown,
+        compared_as=basis.compared_as,
+        current_monthly_average=(
+            basis.current_average(current.value) if current.value is not None else None
+        ),
+        year_ago=year_shown,
+        change=change,
+        change_percent=percent,
+        year_change=year_change,
+        year_change_percent=year_percent,
+    )
+
+
+def total_comparison(
     current: Total,
-    previous: Total,
+    compared: Total,
     year_ago: Total | None,
+    basis: Basis,
     *,
     optional: bool = False,
     with_year: bool = True,
 ) -> ReportCountComparison:
-    """Current against the month before and (when asked) the same month a year earlier."""
-    month = compare(current, previous)
-    year = compare(current, year_ago) if year_ago is not None else None
-    return ReportCountComparison(
-        current=count_figure(current, optional=optional),
-        previous=count_figure(previous, optional=optional),
-        year_ago=year_figure(year_ago) if with_year else None,
-        change=month.change,
-        change_percent=month.change_percent,
-        year_change=year.change if year else None,
-        year_change_percent=year.change_percent if year else None,
+    """``compare_counts`` over stored Business Profile totals."""
+    return compare_counts(
+        count_figure(current, optional=optional),
+        count_figure(compared, optional=optional),
+        count_figure(year_ago, optional=optional) if year_ago is not None else None,
+        basis,
+        with_year=with_year,
     )
-
-
-def comparison_of(
-    read: MetricComparison, year_ago: Total | None, *, optional: bool = False
-) -> ReportCountComparison:
-    return count_comparison(read.current, read.previous, year_ago, optional=optional)
 
 
 def rate_figure(numerator: Total, denominator: Total) -> ReportRateFigure:
@@ -129,9 +206,11 @@ def rate_figure(numerator: Total, denominator: Total) -> ReportRateFigure:
 
 def rate_comparison(
     current: ReportRateFigure,
-    previous: ReportRateFigure,
+    compared: ReportRateFigure,
     year_ago: ReportRateFigure | None = None,
 ) -> ReportRateComparison:
+    """Rates and positions are set against each other directly, never averaged over months."""
+
     def difference(other: ReportRateFigure | None) -> float | None:
         if other is None or current.value is None or other.value is None:
             return None
@@ -141,8 +220,56 @@ def rate_comparison(
 
     return ReportRateComparison(
         current=current,
-        previous=previous,
+        compared=compared,
         year_ago=year_ago,
-        change=difference(previous),
+        change=difference(compared),
         year_change=difference(year_ago),
     )
+
+
+# ---- Figures stored one total per calendar month (Search Console, Analytics) ------------------
+
+
+@dataclass(frozen=True, slots=True)
+class MonthValue:
+    """One stored month: its total, and whether the provider had not yet settled it."""
+
+    month: date
+    value: int
+    partial: bool = False
+
+
+def months_figure(expected: Sequence[date], present: Sequence[MonthValue]) -> ReportCountFigure:
+    """The sum of the months that were synced.
+
+    All months settled: available. Some missing, or stored before the provider settled them:
+    partial, with how many months were covered. None synced: unavailable, never 0.
+    """
+    if not present:
+        return unavailable_count(UnavailableReason.NOT_SYNCED)
+    complete = len(present) == len(expected) and not any(item.partial for item in present)
+    return ReportCountFigure(
+        availability=Availability.AVAILABLE if complete else Availability.PARTIAL,
+        value=sum(item.value for item in present),
+        months_covered=len(present),
+        months_expected=len(expected),
+    )
+
+
+def month_points(expected: Sequence[date], present: Sequence[MonthValue]) -> list[ReportMonthPoint]:
+    """One point per month; a month that was not synced is a point with no value."""
+    by_month = {item.month: item for item in present}
+    points: list[ReportMonthPoint] = []
+    for month in expected:
+        item = by_month.get(month)
+        if item is None:
+            points.append(ReportMonthPoint(month=month, availability=Availability.UNAVAILABLE))
+        else:
+            points.append(
+                ReportMonthPoint(
+                    month=month,
+                    availability=Availability.PARTIAL if item.partial else Availability.AVAILABLE,
+                    value=item.value,
+                )
+            )
+    return points

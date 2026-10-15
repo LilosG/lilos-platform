@@ -563,9 +563,13 @@ class AnalyticsService:
         actor_id: UUID | None,
         correlation_id: str,
         days: int = DEFAULT_SYNC_WINDOW_DAYS,
+        backfill_months: bool = False,
     ) -> dict[str, object]:
         """Pull GA4 metrics into ``MetricObservation`` without holding a transaction
         across any provider request.
+
+        ``backfill_months`` also stores up to 16 settled months of Organic Search sessions for
+        long reports: a one-time run per property (``scripts/backfill_report_months.py``).
 
         Three phases: (1) a short read transaction, (2) every provider request --
         token refresh, the 7/28/90 reports and the organic landing-page report --
@@ -585,7 +589,11 @@ class AnalyticsService:
             organic = await self._plan_organic_pages(session, organization_id, prop)
             months = (
                 await months_to_fetch(
-                    session, organization_id, prop.external_property_id, datetime.now(UTC).date()
+                    session,
+                    organization_id,
+                    prop.external_property_id,
+                    datetime.now(UTC).date(),
+                    backfill=backfill_months,
                 )
                 if organic.expected_host
                 else []
