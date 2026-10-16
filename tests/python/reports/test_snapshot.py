@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -209,6 +210,12 @@ async def test_an_optional_figure_that_drops_to_zero_is_not_comparable_and_says_
     assert all(h.key.value != "bookings" for h in result.headlines)
 
 
+def booked_per_day(booked: int) -> Callable[[GBPPerformanceMetric, date], int]:
+    """Daily values: every core figure 4 a day, bookings ``booked`` a day."""
+    bookings = GBPPerformanceMetric.BUSINESS_BOOKINGS
+    return lambda metric, day: booked if metric is bookings else 4
+
+
 @pytest.mark.anyio
 async def test_an_optional_figure_that_stops_part_way_through_the_period_is_marked_incomplete(
     factory: Factory,
@@ -223,7 +230,7 @@ async def test_an_optional_figure_that_stops_part_way_through_the_period_is_mark
             org,
             gbp,
             date(2026, month_number, 1),
-            lambda m, d, booked=booked: booked if m is bookings else 4,
+            booked_per_day(booked),
             metrics=(*CORE, bookings),
         )
 
@@ -258,7 +265,7 @@ async def test_an_optional_figure_still_reported_in_the_last_month_is_not_stoppe
             org,
             gbp,
             date(2026, month_number, 1),
-            lambda m, d, booked=booked: booked if m is bookings else 4,
+            booked_per_day(booked),
             metrics=(*CORE, bookings),
         )
 

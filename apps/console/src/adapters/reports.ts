@@ -56,6 +56,7 @@ export const NOTE_CODES = [
   "analytics_months_missing",
   "analytics_compared_period_unavailable",
   "optional_figure_not_reported",
+  "optional_figure_stopped",
 ] as const;
 const noteCode = codes<NoteCode>()(NOTE_CODES);
 export const SECTION_KEYS = [
@@ -414,6 +415,7 @@ const note = z
     count: nullableInt.optional(),
     location_id: uuid.nullable().optional(),
     metric: metric.nullable().optional(),
+    month: day.nullable().optional(),
   })
   .strict();
 const month = z.string().regex(/^\d{4}-\d{2}-01$/);

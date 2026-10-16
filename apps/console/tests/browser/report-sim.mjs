@@ -116,9 +116,12 @@ export function reset(mode = "default") {
             searchAlone: true,
             cards: true,
             urlVariants: true,
-            bookings: true,
-            bookingsCompared: 28,
-            bookingsYear: 101,
+            // Bookings: 101 in July, 28 in August, 0 in September; the comparison had some.
+            bookingsStopped: {
+              after: "2026-08-01",
+              total: 129,
+              compared: 318,
+            },
             internalNames: ["Main"],
           },
         ),

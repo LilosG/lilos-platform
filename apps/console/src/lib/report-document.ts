@@ -242,6 +242,32 @@ export function scorecard(
         const made = countRow(label, SOURCE.gbp, row.comparison);
         return made ? [made] : [];
       }
+      if (row.note === "optional_figure_stopped") {
+        // Values stopped part way through: the total so far stands, marked incomplete, with no change.
+        const stopped = snapshot.notes.find(
+          (item) =>
+            item.code === "optional_figure_stopped" &&
+            item.metric === row.metric,
+        );
+        return [
+          {
+            label,
+            source: SOURCE.gbp,
+            note: stopped ? noteText(stopped) : null,
+            current: `${countText(row.comparison.current) ?? "Not reported"}*`,
+            currentSub: null,
+            compared:
+              countText(row.comparison.compared) ??
+              gapText(row.comparison.compared),
+            change: "Not comparable",
+            direction: "none",
+            tone: "neutral",
+            year: null,
+            yearChange: null,
+            partial: false,
+          },
+        ];
+      }
       // Google reported none this period but some before: not a result, and not a change.
       const note = snapshot.notes.find(
         (item) =>

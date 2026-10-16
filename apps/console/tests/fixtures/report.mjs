@@ -330,6 +330,18 @@ export function snapshot(period, spec, options = {}) {
             },
           ]
         : []),
+      ...(options.bookingsStopped
+        ? [
+            {
+              code: "optional_figure_stopped",
+              section: "profile_actions",
+              count: null,
+              location_id: null,
+              metric: "BUSINESS_BOOKINGS",
+              month: options.bookingsStopped.after,
+            },
+          ]
+        : []),
       ...(options.bookings
         ? [
             {
@@ -456,18 +468,17 @@ export function snapshot(period, spec, options = {}) {
             note: null,
           },
         ],
-        optional: options.bookings
+        optional: options.bookingsStopped
           ? [
               {
+                // July 101, August 28, September 0: Google stopped counting after August.
                 metric: "BUSINESS_BOOKINGS",
                 comparison: {
-                  current: gone("not_reported"),
-                  compared: f(options.bookingsCompared ?? 45),
+                  current: f(options.bookingsStopped.total),
+                  compared: f(options.bookingsStopped.compared),
                   compared_as: "total",
                   current_monthly_average: null,
-                  year_ago: options.bookingsYear
-                    ? f(options.bookingsYear)
-                    : null,
+                  year_ago: null,
                   change: null,
                   change_percent: null,
                   year_change: null,
@@ -475,10 +486,32 @@ export function snapshot(period, spec, options = {}) {
                 },
                 reported: true,
                 comparable: false,
-                note: "optional_figure_not_reported",
+                note: "optional_figure_stopped",
               },
             ]
-          : [],
+          : options.bookings
+            ? [
+                {
+                  metric: "BUSINESS_BOOKINGS",
+                  comparison: {
+                    current: gone("not_reported"),
+                    compared: f(options.bookingsCompared ?? 45),
+                    compared_as: "total",
+                    current_monthly_average: null,
+                    year_ago: options.bookingsYear
+                      ? f(options.bookingsYear)
+                      : null,
+                    change: null,
+                    change_percent: null,
+                    year_change: null,
+                    year_change_percent: null,
+                  },
+                  reported: true,
+                  comparable: false,
+                  note: "optional_figure_not_reported",
+                },
+              ]
+            : [],
       },
       daily: {
         availability: "available",

@@ -85,9 +85,9 @@ test.describe("the client document reads like a report", () => {
     // Four addresses of the home page are one row.
     const pages = page.getByRole("row", { name: /^Home page/ });
     await expect(pages).toHaveCount(1);
-    // Google stopped reporting bookings: the reason sits beside the figure.
+    // Google stopped reporting bookings after August: the reason sits beside the figure.
     await expect(page.locator("[data-section=scorecard]")).toContainText(
-      "Google reported no bookings this period (28 in the comparison period)",
+      "Google reported no bookings after August, so this period's total is incomplete.",
     );
     // Search clicks have no comparison months, so no card is written about them.
     await expect(page.locator("[data-result]")).toHaveCount(2);

@@ -435,6 +435,8 @@ const NOTE_TEXT: Record<NoteCode, (note: ReportNote) => string> = {
     "Analytics data for the comparison period is not complete, so changes are not shown.",
   optional_figure_not_reported: (note) =>
     `Google reported no ${note.metric ? metricSentenceName(note.metric) : "figure"} this period${note.count != null ? ` (${fmt(note.count)} in the comparison period)` : ""}. This can reflect a change in how Google reports it, not lower demand.`,
+  optional_figure_stopped: (note) =>
+    `Google reported no ${note.metric ? metricSentenceName(note.metric) : "figure"} after ${note.month ? monthName(note.month) : "an earlier month"}, so this period's total is incomplete.`,
 };
 export const noteText = (note: ReportNote): string =>
   NOTE_TEXT[note.code](note);

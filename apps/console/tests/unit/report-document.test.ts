@@ -160,6 +160,28 @@ describe("the scorecard", () => {
       "Google reported no bookings this period (45 in the comparison period). This can reflect a change in how Google reports it, not lower demand.",
     );
   });
+  it("marks a figure Google stopped counting mid-period as incomplete, with no change", () => {
+    const stopped = report({
+      bookingsStopped: { after: "2026-08-01", total: 129, compared: 318 },
+      cards: true,
+    });
+    const row = scorecard(stopped.snapshot)
+      .groups.flatMap((group) => group.rows)
+      .find((item) => item.label === "Bookings")!;
+    expect(row).toMatchObject({
+      current: "129*",
+      compared: "318",
+      change: "Not comparable",
+      direction: "none",
+      note: "Google reported no bookings after August, so this period's total is incomplete.",
+    });
+    // It is never one of the result cards.
+    expect(
+      documentView(stopped).glance!.cards.map((card) =>
+        card.title.toLowerCase(),
+      ),
+    ).not.toContain(expect.stringContaining("booking"));
+  });
   it("compares counts as monthly averages when the baseline is another length", () => {
     const card = scorecard(
       report(
