@@ -63,7 +63,7 @@ ROWS = [
 
 def snapshot_with(
     base: dict[str, Any], rows: list[ReportMovementQuery], *, comparable: bool = True
-):
+) -> ReportSnapshot:
     snapshot = ReportSnapshot.model_validate(base)
     movement = ReportSearchMovement(
         comparable=comparable,

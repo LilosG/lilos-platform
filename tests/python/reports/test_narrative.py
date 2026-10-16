@@ -18,8 +18,8 @@ from apps.api.app.reports.narrative import (
     RETENTION_POLICY_KEY,
     TOPICS_TASK_KEY,
     NarrativeDrafter,
-    numbers_in,
 )
+from apps.api.app.reports.verify import numbers_in
 from apps.api.app.routes.command_center_reports import get_narrative_drafter
 from reports.routes_support import BASE, call
 from reports.support import Factory
