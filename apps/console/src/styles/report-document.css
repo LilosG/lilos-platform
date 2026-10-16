@@ -417,6 +417,12 @@
   text-transform: uppercase;
   break-after: avoid;
 }
+/* The console's own table rules drop the last cell border of a body; every row here keeps its
+   divider across the whole width, except the very last row, which the card's edge closes. */
+.doc tbody tr:last-child th,
+.doc tbody tr:last-child td {
+  border-bottom: 1px solid var(--hair);
+}
 .doc tbody:last-child tr:last-child th,
 .doc tbody:last-child tr:last-child td {
   border-bottom: 0;

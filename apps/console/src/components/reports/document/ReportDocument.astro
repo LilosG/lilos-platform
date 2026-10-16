@@ -172,11 +172,6 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
     view.gbp && (
       <section data-section="gbp" aria-labelledby="s-gbp">
         <SectionHead head={view.gbp.head} number={number("gbp")} id="s-gbp" />
-        <div class="charts">
-          {view.gbp.charts.map((chart) => (
-            <BarChart chart={chart} />
-          ))}
-        </div>
         {view.gbp.splits.length > 0 && (
           <div class="splits">
             {view.gbp.splits.map((split) => (
@@ -192,6 +187,11 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
             ))}
           </div>
         )}
+        <div class="charts">
+          {view.gbp.charts.map((chart) => (
+            <BarChart chart={chart} />
+          ))}
+        </div>
         {view.gbp.terms && (
           <div
             class="card flush"
@@ -513,6 +513,17 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
           number={number("visits")}
           id="s-visits"
         />
+        <div class="tiles" data-visits-tile>
+          <div>
+            <p class="tilelabel">Visits from search</p>
+            <p class="tilevalue">{view.visits.tile.value}</p>
+            {view.visits.tile.line && (
+              <p class:list={["tileline", view.visits.tile.tone]}>
+                {view.visits.tile.line}
+              </p>
+            )}
+          </div>
+        </div>
         <div class="charts">
           <BarChart chart={view.visits.chart} />
         </div>
@@ -528,6 +539,15 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
           number={number("reviews")}
           id="s-reviews"
         />
+        <div class="tiles">
+          {view.reviews.view.stats.map((stat) => (
+            <div>
+              <p class="tilelabel">{stat.label}</p>
+              <p class="tilevalue">{stat.value}</p>
+              <p class="tileline">{stat.detail}</p>
+            </div>
+          ))}
+        </div>
         <div class="dreviewhead">
           {view.reviews.view.rating && (
             <div class="card rating">
@@ -546,15 +566,6 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
               caption={view.reviews.view.caption}
             />
           )}
-        </div>
-        <div class="tiles">
-          {view.reviews.view.stats.map((stat) => (
-            <div>
-              <p class="tilelabel">{stat.label}</p>
-              <p class="tilevalue">{stat.value}</p>
-              <p class="tileline">{stat.detail}</p>
-            </div>
-          ))}
         </div>
       </section>
     )

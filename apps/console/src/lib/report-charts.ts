@@ -68,7 +68,7 @@ export interface BarChartOptions {
 }
 export function barChart(options: BarChartOptions): BarChartModel {
   const width = options.width ?? 600;
-  const height = options.height ?? (options.bars.length <= 4 ? 190 : 240);
+  const height = options.height ?? (options.bars.length <= 4 ? 190 : 165);
   const plot = { left: 54, right: width - 12, top: 20, bottom: height - 46 };
   const count = options.bars.length;
   const gap = options.bars.some((b) => b.group === "compared") ? 18 : 0;

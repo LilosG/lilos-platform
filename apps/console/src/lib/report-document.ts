@@ -1292,7 +1292,7 @@ export interface DocumentView {
     locations: LocationLine[];
   } | null;
   search: { head: Head; view: SearchView } | null;
-  visits: { head: Head; chart: MonthlyChart } | null;
+  visits: { head: Head; tile: Tile; chart: MonthlyChart } | null;
   reviews: { head: Head; view: ReviewsView } | null;
   work: { head: Head; lines: WorkLine[] } | null;
   ahead: { head: Head; paragraphs: string[] } | null;
@@ -1304,6 +1304,22 @@ export interface DocumentView {
     sync: string[];
     notIncluded: string[];
     period: string;
+  };
+}
+/** The one figure of the website visits section, set against its comparison. */
+function visitsTile(snapshot: ReportSnapshot): Tile {
+  const sessions = snapshot.analytics.organic_sessions;
+  const change = changeText(sessions);
+  const compared = countText(sessions.compared);
+  const averaged = sessions.compared_as === "monthly_average";
+  return {
+    label: "Visits from search",
+    value: countText(sessions.current) ?? "",
+    line:
+      change && compared && !isPartial(sessions.current)
+        ? `${change} from ${compared}${averaged ? " a month" : ""}`
+        : null,
+    tone: toneOf(directionOf(sessions.change)),
   };
 }
 /** The whole client document for one stored revision. */
@@ -1458,6 +1474,7 @@ export function documentView(report: ReportDetail): DocumentView {
             measured: "Google Analytics, search visits, by month",
             compared,
           },
+          tile: visitsTile(snapshot),
           chart: visitsChart,
         }
       : null,
