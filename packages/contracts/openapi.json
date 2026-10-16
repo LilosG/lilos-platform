@@ -9761,7 +9761,8 @@
           "analytics_organic_unavailable",
           "analytics_months_missing",
           "analytics_compared_period_unavailable",
-          "optional_figure_not_reported"
+          "optional_figure_not_reported",
+          "optional_figure_stopped"
         ],
         "title": "NoteCode",
         "type": "string"
@@ -15280,6 +15281,18 @@
                 "type": "null"
               }
             ]
+          },
+          "month": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
           },
           "section": {
             "$ref": "#/components/schemas/SectionKey"

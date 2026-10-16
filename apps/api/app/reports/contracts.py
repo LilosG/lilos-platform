@@ -149,6 +149,8 @@ class NoteCode(StrEnum):
     ANALYTICS_COMPARED_PERIOD_UNAVAILABLE = "analytics_compared_period_unavailable"
     # Google reported no <figure> this period but did in the comparison period.
     OPTIONAL_FIGURE_NOT_REPORTED = "optional_figure_not_reported"
+    # The figure had values earlier in the period and none from a month on: the total is incomplete.
+    OPTIONAL_FIGURE_STOPPED = "optional_figure_stopped"
 
 
 class NoteEffect(StrEnum):
@@ -180,6 +182,7 @@ NOTE_EFFECT: dict[NoteCode, NoteEffect] = {
     NoteCode.ANALYTICS_MONTHS_MISSING: NoteEffect.DEGRADING,
     NoteCode.ANALYTICS_COMPARED_PERIOD_UNAVAILABLE: NoteEffect.INFORMATIONAL,
     NoteCode.OPTIONAL_FIGURE_NOT_REPORTED: NoteEffect.INFORMATIONAL,
+    NoteCode.OPTIONAL_FIGURE_STOPPED: NoteEffect.INFORMATIONAL,
 }
 
 
@@ -204,6 +207,7 @@ NOTE_SECTION: dict[NoteCode, SectionKey] = {
     NoteCode.ANALYTICS_MONTHS_MISSING: SectionKey.ANALYTICS,
     NoteCode.ANALYTICS_COMPARED_PERIOD_UNAVAILABLE: SectionKey.ANALYTICS,
     NoteCode.OPTIONAL_FIGURE_NOT_REPORTED: SectionKey.PROFILE_ACTIONS,
+    NoteCode.OPTIONAL_FIGURE_STOPPED: SectionKey.PROFILE_ACTIONS,
 }
 
 
@@ -760,6 +764,7 @@ def note(
     count: int | None = None,
     location_id: UUID | None = None,
     metric: GBPPerformanceMetric | None = None,
+    month: date | None = None,
 ) -> ReportDataNote:
     """A data note for ``code``, placed in the section the code belongs to."""
     return ReportDataNote(
@@ -768,6 +773,7 @@ def note(
         count=count,
         location_id=location_id,
         metric=metric,
+        month=month,
     )
 
 
@@ -783,6 +789,8 @@ class ReportDataNote(Model):
     location_id: UUID | None = None
     # The figure a note is about (optional Business Profile figures).
     metric: GBPPerformanceMetric | None = None
+    # The last month that had values, for a figure that stopped mid-period.
+    month: date | None = None
 
     @model_validator(mode="before")
     @classmethod

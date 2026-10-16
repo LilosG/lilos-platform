@@ -199,8 +199,25 @@ def _views(read: PerformanceRead, basis: Basis) -> ReportCountComparison:
     )
 
 
+def stopped_after(
+    read: PerformanceRead, metric: GBPPerformanceMetric, months: Sequence[date]
+) -> date | None:
+    """The last month with values, when the figure then reads zero through the period's end.
+
+    Google stops reporting some optional figures (bookings) part way through a period. The months
+    after that are zeros it never counted, so the period's total is incomplete. None when the
+    figure never had values in the period, or still had them in the last month.
+    """
+    monthly = read.monthly or {}
+    values = [monthly.get(month, {}).get(metric, (0, 0))[0] for month in months]
+    last = max((i for i, value in enumerate(values) if value > 0), default=None)
+    if last is None or last == len(months) - 1:
+        return None
+    return months[last]
+
+
 def _optional_row(
-    read: PerformanceRead, metric: GBPPerformanceMetric, basis: Basis
+    read: PerformanceRead, metric: GBPPerformanceMetric, basis: Basis, months: Sequence[date]
 ) -> tuple[ReportActionRow, ReportDataNote | None] | None:
     """A row for an optional figure, only when this period or the comparison has a nonzero total.
 
@@ -214,6 +231,20 @@ def _optional_row(
     comparison = total_comparison(
         current, compared, _year_total(read, metric), basis, optional=True
     )
+    stopped = stopped_after(read, metric, months)
+    if stopped is not None:
+        # Values stopped part way through: the total is incomplete, so no change is drawn.
+        comparison = comparison.model_copy(update={"change": None, "change_percent": None})
+        return (
+            ReportActionRow(
+                metric=metric,
+                comparison=comparison,
+                reported=True,
+                comparable=False,
+                note=NoteCode.OPTIONAL_FIGURE_STOPPED,
+            ),
+            note(NoteCode.OPTIONAL_FIGURE_STOPPED, metric=metric, month=stopped),
+        )
     if (current.value or 0) == 0:
         # Not reported now: no change is drawn, and the comparison's own figure explains why.
         comparison = comparison.model_copy(update={"change": None, "change_percent": None})
@@ -231,7 +262,7 @@ def _optional_row(
 
 
 def _actions(
-    read: PerformanceRead, basis: Basis
+    read: PerformanceRead, basis: Basis, months: Sequence[date]
 ) -> tuple[ReportProfileActions, list[ReportDataNote]]:
     current = _sum(read, ACTION_METRICS, compared=False)
     compared = _sum(read, ACTION_METRICS, compared=True)
@@ -252,7 +283,7 @@ def _actions(
     optional: list[ReportActionRow] = []
     notes: list[ReportDataNote] = []
     for metric in OPTIONAL_METRICS:
-        found = _optional_row(read, metric, basis)
+        found = _optional_row(read, metric, basis, months)
         if found is None:
             continue
         optional.append(found[0])
@@ -483,7 +514,7 @@ async def build_gbp(
             rows.append(_location_row(item, single, basis))
     daily = _daily(read, windows.current)
     views = read.profile_views.current
-    actions, optional_notes = _actions(read, basis)
+    actions, optional_notes = _actions(read, basis, period.months)
     section = ReportGbpSection(
         availability=(
             Availability.UNAVAILABLE
