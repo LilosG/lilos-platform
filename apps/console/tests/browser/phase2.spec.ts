@@ -36,8 +36,16 @@ test("Integrations: Google states, explicit mapping and sync, with no system tex
     "Out of date",
   );
   // Sync detail sits behind the status chip.
-  await google.getByRole("button", { name: /Google: .*Open details/ }).click();
+  // The button only opens its dialog once the page's script has bound it; a click before that is
+  // lost. Wait for the app, and retry the click until the dialog is really open.
+  await page.locator('body[data-app-ready="true"]').waitFor();
   const details = page.getByRole("dialog");
+  await expect(async () => {
+    await google
+      .getByRole("button", { name: /Google: .*Open details/ })
+      .click();
+    await expect(details).toBeVisible({ timeout: 1500 });
+  }).toPass({ timeout: 15000 });
   await expect(details).toContainText(
     "Google limited the request; it will be retried.",
   );
