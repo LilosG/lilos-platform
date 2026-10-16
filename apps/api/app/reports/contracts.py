@@ -895,6 +895,13 @@ class ReportTopics(Model):
     brand_variants: list[str] = []
 
 
+class ReportMilestone(Model):
+    """A dated moment from the client's business facts, shown on the report's opening strip."""
+
+    day: date
+    label: str
+
+
 class ReportTopicResult(Model):
     key: str
     label: str
@@ -1006,6 +1013,8 @@ class ReportDetailView(Model):
     search_results: ReportSearchResults | None = None
     # The business name on its Google profile, shown on the cover when there is more than one.
     profile_names: list[str] = []
+    # Active business facts keyed ``milestone.*`` that began by the period's end; never invented.
+    milestones: list[ReportMilestone] = []
     permissions: ReportPermissions
 
 

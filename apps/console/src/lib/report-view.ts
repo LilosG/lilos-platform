@@ -475,6 +475,8 @@ export const draftFailureText: Record<NarrativeFailureCode, string> = {
   authorship_mentioned: "The draft mentioned who wrote it, so it was not used.",
   causal_claim:
     "The draft claimed one thing caused another, which the data cannot show, so it was not used.",
+  tone_not_supported:
+    "The draft called a result good or bad when its figure did not move that way, so it was not used.",
 };
 /** Why a period or comparison was refused, in words a person can act on. */
 export const periodErrorText: Record<PeriodErrorCode, string> = {
@@ -496,6 +498,8 @@ const FAILURES: Record<string, string> = {
   REPORT_DATA_MISSING:
     "This report is missing the Business Profile data it needs. Reconnect Google, then generate it again.",
   REPORT_NOT_EDITABLE: "An approved report cannot be edited.",
+  REPORT_CARD_FIGURE_UNAVAILABLE:
+    "A result card can only be about a figure this report has.",
   REPORT_REVISION_SUPERSEDED:
     "A newer version of this report exists. Reload to see it.",
   REPORT_ALREADY_APPROVED:
@@ -514,6 +518,14 @@ export const reportFailureText = (code: string): string =>
   "That did not go through. Reload to see the current state, then try again.";
 export interface NarrativeView {
   editable: boolean;
+  /** The result cards at the top of the document; their figures are fixed, only words change. */
+  cards: {
+    keys: string;
+    tone: string;
+    headline: boolean;
+    title: string;
+    text: string;
+  }[];
   sections: { title: string; paragraphs: string[]; field: string }[];
   empty: boolean;
   drafted: boolean;
@@ -545,6 +557,13 @@ export function narrativeView(report: ReportDetail): NarrativeView {
     ],
     empty: !narrative.what_changed.trim() || !narrative.next_work.trim(),
     drafted: narrative.origin === "hermes",
+    cards: narrative.result_cards.map((card) => ({
+      keys: card.figure_keys.join(","),
+      tone: card.tone,
+      headline: card.headline,
+      title: card.title,
+      text: card.text,
+    })),
   };
 }
 export interface ReportActions {

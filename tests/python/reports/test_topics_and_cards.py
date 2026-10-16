@@ -350,3 +350,79 @@ def test_a_person_can_edit_cards_but_not_their_figures(
     # Saving only the words keeps the cards.
     again = call(client, "put", url(org, f"/{SEPT}/1/narrative"), "manager", mine).json()
     assert again["narrative"]["result_cards"] == kept
+
+
+def test_milestones_come_only_from_active_business_facts_and_names_from_the_profile(
+    reports_app: tuple[TestClient, dict[str, UUID], Factory],
+) -> None:
+    import asyncio
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from apps.api.app.administration.models import BusinessFactRevision
+    from apps.api.app.authentication.models import UserProfile
+    from apps.api.app.products.gbp.models import GBPLocation
+    from reports.support import add_location
+
+    client, ids, factory = reports_app
+    org = ids["org"]
+    generate(client, org)
+    path = url(org, f"/{SEPT}/1")
+    # Nothing in the facts: no strip, and a single location has no names on the cover.
+    first = call(client, "get", path, "manager").json()
+    assert first["milestones"] == [] and first["profile_names"] == []
+
+    async def seed() -> None:
+        async with factory.begin() as session:
+            user = await session.scalar(select(UserProfile.id).limit(1))
+            assert user is not None
+
+            def fact(key: str, value: str, when: datetime, status: str) -> BusinessFactRevision:
+                return BusinessFactRevision(
+                    organization_id=org,
+                    fact_identity=uuid4(),
+                    fact_key=key,
+                    value_type="string",
+                    value=value,
+                    source="test",
+                    authority="operator_verified",
+                    status=status,
+                    revision=1,
+                    effective_from=when,
+                    proposed_by=user,
+                    change_reason="test",
+                    approved_at=when if status == "active" else None,
+                )
+
+            rows = [
+                ("milestone.gbp", "We began managing the profile.", (5, 1), "active"),
+                ("milestone.site", "New website launched.", (7, 17), "active"),
+                ("milestone.later", "After the period.", (10, 5), "active"),
+                ("milestone.draft", "Not approved.", (6, 1), "proposed"),
+                ("hours.monday", "9 to 5", (6, 1), "active"),
+            ]
+            session.add_all(
+                fact(key, text, datetime(2026, *day, 12, tzinfo=UTC), status)
+                for key, text, day, status in rows
+            )
+            gbp = await session.scalar(
+                select(GBPLocation).where(GBPLocation.organization_id == org)
+            )
+            assert gbp is not None
+            gbp.business_name = "Alpha by the Bay"
+
+    from uuid import uuid4
+
+    asyncio.run(seed())
+    asyncio.run(add_location(factory, org, "Beach"))
+
+    view = call(client, "get", path, "manager").json()
+
+    assert [(item["day"], item["label"]) for item in view["milestones"]] == [
+        ("2026-05-01", "We began managing the profile."),
+        ("2026-07-17", "New website launched."),
+    ]
+    # Two reportable locations: the Google profile titles, never the internal location names.
+    assert view["profile_names"] == ["Alpha by the Bay", "Beach"]
+    assert "Main" not in view["profile_names"]

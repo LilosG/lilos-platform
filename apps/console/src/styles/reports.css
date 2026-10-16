@@ -20,6 +20,19 @@
 .narrative p {
   line-height: 1.6;
 }
+.resultcard {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.resultcard input {
+  width: 100%;
+  font: inherit;
+  padding: 6px 8px;
+}
+.resultcard textarea {
+  min-height: 72px;
+}
 .tablenote {
   margin: 8px 22px;
   font-size: 13px;

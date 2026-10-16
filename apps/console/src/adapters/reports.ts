@@ -20,6 +20,8 @@ export type ComparisonBasis = Schemas["ComparisonBasis"];
 export type ComparedAs = Schemas["ComparedAs"];
 export type HeadlineKey = Schemas["HeadlineKey"];
 export type SeriesKey = Schemas["SeriesKey"];
+export type FigureKey = Schemas["FigureKey"];
+export type CardTone = Schemas["CardTone"];
 /** Compile-time proof that a list of codes is exactly the contract's enum. */
 type Exact<Contract extends string, Listed extends string> = [
   Contract,
@@ -124,8 +126,25 @@ export const FAILURE_CODES = [
   "number_not_in_data",
   "authorship_mentioned",
   "causal_claim",
+  "tone_not_supported",
 ] as const;
 const failureCode = codes<NarrativeFailureCode>()(FAILURE_CODES);
+export const FIGURE_KEYS = [
+  "profile_views",
+  "profile_actions",
+  "calls",
+  "website_clicks",
+  "direction_requests",
+  "search_clicks",
+  "search_impressions",
+  "organic_sessions",
+  "new_reviews",
+  "average_rating",
+  "searches_in_top_ten",
+  "new_to_page_one",
+] as const;
+const figureKey = codes<FigureKey>()(FIGURE_KEYS);
+const cardTone = codes<CardTone>()(["good", "bad", "neutral"]);
 const status = codes<ReportStatus>()(["draft", "ready", "sent"]);
 const readiness = codes<ReportReadiness>()([
   "ready",
@@ -486,6 +505,51 @@ const snapshot = z
         ),
       })
       .strict(),
+    search_movement: z
+      .object({
+        comparable: z.boolean(),
+        months_covered: z.number().int(),
+        months_expected: z.number().int(),
+        compared_months_covered: z.number().int(),
+        compared_months_expected: z.number().int(),
+        queries: z.array(
+          z
+            .object({
+              query: z.string(),
+              before_position: z.number().nullable(),
+              after_position: z.number().nullable(),
+              before_impressions: nullableInt,
+              after_impressions: z.number().int(),
+              before_clicks: nullableInt,
+              after_clicks: z.number().int(),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+  })
+  .strict();
+const cardFigure = z
+  .object({
+    key: figureKey,
+    unit: z.enum(["count", "stars"]),
+    current: z.number(),
+    monthly_average: z.boolean(),
+    compared: z.number().nullable().optional(),
+    change: z.number().nullable().optional(),
+    change_percent: z.number().nullable().optional(),
+  })
+  .strict();
+const resultCard = z
+  .object({
+    figure_keys: z.array(figureKey).min(1).max(2),
+    figures: z.array(cardFigure),
+    tone: cardTone,
+    headline: z.boolean(),
+    title: z.string(),
+    text: z.string(),
   })
   .strict();
 const narrative = z
@@ -493,6 +557,73 @@ const narrative = z
     what_changed: z.string(),
     next_work: z.string(),
     origin: z.enum(["none", "hermes", "manual"]),
+    result_cards: z.array(resultCard).max(4),
+  })
+  .strict();
+const topics = z
+  .object({
+    topics: z.array(
+      z
+        .object({
+          key: z.string(),
+          label: z.string(),
+          queries: z.array(z.string()),
+        })
+        .strict(),
+    ),
+    brand_variants: z.array(z.string()),
+  })
+  .strict();
+const searchResults = z
+  .object({
+    comparable: z.boolean(),
+    months_covered: z.number().int(),
+    months_expected: z.number().int(),
+    top_ten_before: nullableInt,
+    top_ten_after: z.number().int(),
+    new_to_page_one: nullableInt,
+    clicks_before: nullableInt,
+    clicks_after: z.number().int(),
+    impressions_before: nullableInt,
+    impressions_after: z.number().int(),
+    position_before: z.number().nullable(),
+    position_after: z.number().nullable(),
+    topics: z.array(
+      z
+        .object({
+          key: z.string(),
+          label: z.string(),
+          examples: z.array(z.string()),
+          top_ten_before: nullableInt,
+          top_ten_after: z.number().int(),
+          position_before: z.number().nullable(),
+          position_after: z.number().nullable(),
+          clicks_before: nullableInt,
+          clicks_after: z.number().int(),
+        })
+        .strict(),
+    ),
+    gains: z.array(
+      z
+        .object({
+          key: z.string(),
+          label: z.string(),
+          rows: z.array(
+            z
+              .object({
+                query: z.string(),
+                position_before: z.number().nullable(),
+                position_after: z.number(),
+                impressions_before: nullableInt,
+                impressions_after: z.number().int(),
+                clicks_before: nullableInt,
+                clicks_after: z.number().int(),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
   })
   .strict();
 const delivery = z.object({ sent_on: day, recorded_at: z.string() }).strict();
@@ -546,6 +677,9 @@ const detailSchema = z
     delivery: delivery.nullable(),
     snapshot,
     narrative,
+    topics: topics.nullable().optional(),
+    search_results: searchResults.nullable().optional(),
+    profile_names: z.array(z.string()),
     permissions,
   })
   .strict();
@@ -581,6 +715,7 @@ const draftResult = z
     report: detailSchema,
     outcome: z.enum(["drafted", "not_used"]),
     failure: failureCode.nullable().optional(),
+    cards_dropped: z.number().int(),
   })
   .strict();
 const generateResult = z
@@ -588,6 +723,8 @@ const generateResult = z
   .strict();
 export type ReportSnapshot = z.infer<typeof snapshot>;
 export type ReportNarrative = z.infer<typeof narrative>;
+export type ResultCard = z.infer<typeof resultCard>;
+export type SearchResults = z.infer<typeof searchResults>;
 export type ReportDetail = z.infer<typeof detailSchema>;
 export type ReportList = z.infer<typeof listSchema>;
 export type ReportRevisionRow = z.infer<typeof revisionRow>;

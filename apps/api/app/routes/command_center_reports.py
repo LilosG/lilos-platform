@@ -16,11 +16,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy import select
 
+from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.errors import NotFoundError, request_correlation_id
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.models import GBPLocation
+from apps.api.app.reporting_periods import calendar_month_window
 from apps.api.app.reports.cards import edited_cards, figure_table
 from apps.api.app.reports.contracts import (
     ComparisonSpec,
@@ -33,6 +35,7 @@ from apps.api.app.reports.contracts import (
     ReportGenerateResult,
     ReportListView,
     ReportMarkSentRequest,
+    ReportMilestone,
     ReportNarrative,
     ReportNarrativeDraftResult,
     ReportNarrativeUpdate,
@@ -44,7 +47,12 @@ from apps.api.app.reports.narrative import NarrativeDrafter
 from apps.api.app.reports.reads import portfolio_rows, revision_rows, upcoming
 from apps.api.app.reports.search_results import search_results
 from apps.api.app.reports.service import ReportService, StoredReport, status_of
-from apps.api.app.reports.snapshot import last_ended_month, reportable_locations, require_ended
+from apps.api.app.reports.snapshot import (
+    REPORT_TIMEZONE,
+    last_ended_month,
+    reportable_locations,
+    require_ended,
+)
 from apps.api.app.routes.command_center_portfolio import (
     permitted_organizations,
     visible_scope,
@@ -115,6 +123,41 @@ async def profile_names(session: Session, organization_id: UUID) -> list[str]:
     return list(dict.fromkeys(rows))
 
 
+MILESTONE_PREFIX = "milestone."
+MILESTONES_SHOWN = 4
+
+
+async def milestones_of(
+    session: Session, organization_id: UUID, period: ReportPeriod
+) -> list[ReportMilestone]:
+    """The client's dated milestones from its active business facts, up to the end of the period.
+
+    A milestone is an active fact whose key starts ``milestone.``; its value is the sentence and
+    its start date is the day. A client with none gets none: nothing is made up.
+    """
+    last = calendar_month_window(period.end_month)[1]
+    rows = await session.scalars(
+        select(BusinessFactRevision)
+        .where(
+            BusinessFactRevision.organization_id == organization_id,
+            BusinessFactRevision.status == "active",
+            BusinessFactRevision.fact_key.startswith(MILESTONE_PREFIX),
+            BusinessFactRevision.value_type == "string",
+            BusinessFactRevision.effective_from < last,
+        )
+        .order_by(BusinessFactRevision.effective_from, BusinessFactRevision.fact_key)
+    )
+    found = [
+        ReportMilestone(
+            day=row.effective_from.astimezone(REPORT_TIMEZONE).date(),
+            label=str(row.value).strip()[:140],
+        )
+        for row in rows
+        if str(row.value).strip()
+    ]
+    return found[-MILESTONES_SHOWN:]
+
+
 async def detail_of(
     session: Session,
     organization_id: UUID,
@@ -147,6 +190,7 @@ async def detail_of(
         topics=stored.topics,
         search_results=search_results(stored.snapshot, stored.topics),
         profile_names=await profile_names(session, organization_id),
+        milestones=await milestones_of(session, organization_id, stored.period),
         permissions=permissions,
     )
 

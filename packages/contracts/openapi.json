@@ -15358,6 +15358,14 @@
             "title": "Is Current",
             "type": "boolean"
           },
+          "milestones": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportMilestone"
+            },
+            "title": "Milestones",
+            "type": "array"
+          },
           "narrative": {
             "$ref": "#/components/schemas/ReportNarrative"
           },
@@ -15859,6 +15867,27 @@
           "sent_on"
         ],
         "title": "ReportMarkSentRequest",
+        "type": "object"
+      },
+      "ReportMilestone": {
+        "additionalProperties": false,
+        "description": "A dated moment from the client's business facts, shown on the report's opening strip.",
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "label"
+        ],
+        "title": "ReportMilestone",
         "type": "object"
       },
       "ReportMonthPoint": {

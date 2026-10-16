@@ -10689,6 +10689,11 @@ export interface components {
             delivery: components["schemas"]["ReportDeliveryView"] | null;
             /** Is Current */
             is_current: boolean;
+            /**
+             * Milestones
+             * @default []
+             */
+            milestones: components["schemas"]["ReportMilestone"][];
             narrative: components["schemas"]["ReportNarrative"];
             /**
              * Organization Id
@@ -10850,6 +10855,19 @@ export interface components {
              * Format: date
              */
             sent_on: string;
+        };
+        /**
+         * ReportMilestone
+         * @description A dated moment from the client's business facts, shown on the report's opening strip.
+         */
+        ReportMilestone: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Label */
+            label: string;
         };
         /** ReportMonthPoint */
         ReportMonthPoint: {
