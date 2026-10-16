@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
-from collections.abc import Iterator
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -25,128 +24,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
+from apps.api.app.reports.cards import (
+    card_failure,
+    evidence_figures,
+    figure_numbers,
+    figure_table,
+    one_headline,
+    parse_cards,
+    resolve_card,
+)
 from apps.api.app.reports.contracts import (
+    FigureKey,
     NarrativeFailureCode,
     NarrativeOrigin,
     ReportCountComparison,
+    ReportFigureValue,
     ReportNarrative,
     ReportPeriod,
     ReportRateComparison,
+    ReportSearchResults,
     ReportSnapshot,
+    ReportTopics,
+    ResultCard,
+)
+from apps.api.app.reports.search_results import clean_topics
+from apps.api.app.reports.verify import (
+    ISO_DATE,
+    MONTHS,
+    claims_cause,
+    decimal_of,
+    leaves,
+    mentions_authorship,
+    numbers_in,
+    variants,
 )
 
 AI_TASK_KEY = "reports.narrative_draft"
+TOPICS_TASK_KEY = "reports.topic_grouping"
 RETENTION_POLICY_KEY = "reports.ai_draft.default"
+TOPIC_QUERIES = 150
 MAXIMUM_LATENCY_MS = 60_000
 SECTION_LIMIT = 4_000
-
-_MONTHS = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-)
-_DATE_MENTION = re.compile(
-    rf"\b(?:{'|'.join(_MONTHS)}|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{{1,2}}"
-    r"(?:st|nd|rd|th)?\b(?:,?\s+\d{4})?",
-    re.IGNORECASE,
-)
-_ORDINAL = re.compile(r"\b\d+(?:st|nd|rd|th)\b", re.IGNORECASE)
-_LIST_MARKER = re.compile(r"^\s*\d+[.)]\s+", re.MULTILINE)
-_NUMBER = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?")
-_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-# "one" is left out on purpose: it is a pronoun far more often than a figure.
-_WORD_NUMBERS: dict[str, int] = {
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "eleven": 11,
-    "twelve": 12,
-    "thirteen": 13,
-    "fourteen": 14,
-    "fifteen": 15,
-    "sixteen": 16,
-    "seventeen": 17,
-    "eighteen": 18,
-    "nineteen": 19,
-    "twenty": 20,
-    "thirty": 30,
-    "forty": 40,
-    "fifty": 50,
-    "sixty": 60,
-    "seventy": 70,
-    "eighty": 80,
-    "ninety": 90,
-    "hundred": 100,
-    "thousand": 1000,
-    "million": 1_000_000,
-}
-_WORD_NUMBER = re.compile(rf"\b(?:{'|'.join(_WORD_NUMBERS)})\b", re.IGNORECASE)
-_AUTHORSHIP = re.compile(
-    r"\bAI\b|\b(?:Claude|LILOs|Hermes|Anthropic|OpenAI|ChatGPT|GPT|artificial intelligence|"
-    r"language model|machine[- ]generated|auto-?generated|assistant)\b",
-    re.IGNORECASE,
-)
-_CAUSAL = re.compile(
-    r"\b(?:because of|as a result of|resulted in|results? from|caused|causing|thanks to|"
-    r"led to|driven by|owing to|attributable to|due to)\b",
-    re.IGNORECASE,
-)
-
-
-def _decimal(value: object) -> Decimal | None:
-    try:
-        return Decimal(str(value))
-    except InvalidOperation:
-        return None
-
-
-def _variants(value: Decimal) -> Iterator[Decimal]:
-    """A stored figure, its magnitude and its roundings: how a sentence may quote it."""
-    for candidate in (value, abs(value)):
-        yield candidate
-        yield candidate.quantize(Decimal("1"))
-        yield candidate.quantize(Decimal("0.1"))
-        yield candidate.quantize(Decimal("0.01"))
-
-
-def _leaves(document: object) -> Iterator[object]:
-    if isinstance(document, dict):
-        for value in document.values():
-            yield from _leaves(value)
-    elif isinstance(document, list):
-        for value in document:
-            yield from _leaves(value)
-    else:
-        yield document
-
-
-def numbers_in(text: str) -> list[Decimal]:
-    """Every number a text states: digits (with commas and decimals) and spelled-out numbers."""
-    cleaned = _DATE_MENTION.sub(" ", text)
-    cleaned = _ORDINAL.sub(" ", cleaned)
-    cleaned = _LIST_MARKER.sub("", cleaned)
-    found: list[Decimal] = []
-    for whole, fraction in _NUMBER.findall(cleaned):
-        number = _decimal(whole.replace(",", "") + (f".{fraction}" if fraction else ""))
-        if number is not None:
-            found.append(number)
-    found.extend(Decimal(_WORD_NUMBERS[word.lower()]) for word in _WORD_NUMBER.findall(cleaned))
-    return found
 
 
 def allowed_numbers(snapshot: ReportSnapshot) -> set[Decimal]:
@@ -162,29 +80,33 @@ def allowed_numbers(snapshot: ReportSnapshot) -> set[Decimal]:
         for period in periods
         for month in (period.start_month, period.end_month)
     }
-    for leaf in _leaves(snapshot.model_dump(mode="json")):
+    for leaf in leaves(snapshot.model_dump(mode="json")):
         if isinstance(leaf, bool) or leaf is None:
             continue
         if isinstance(leaf, (int, float)):
-            number = _decimal(leaf)
+            number = decimal_of(leaf)
             if number is not None:
-                allowed.update(_variants(number))
-        elif isinstance(leaf, str) and not _ISO_DATE.match(leaf):
+                allowed.update(variants(number))
+        elif isinstance(leaf, str) and not ISO_DATE.match(leaf):
             # Titles, queries and search terms may carry digits a sentence can quote.
             allowed.update(numbers_in(leaf))
     return allowed
 
 
-def failure_of(narrative: ReportNarrative, snapshot: ReportSnapshot) -> NarrativeFailureCode | None:
+def failure_of(
+    narrative: ReportNarrative,
+    snapshot: ReportSnapshot,
+    table: Mapping[FigureKey, ReportFigureValue] | None = None,
+) -> NarrativeFailureCode | None:
     """Why this draft may not be used, or None when every check passes."""
     if narrative.is_empty:
         return NarrativeFailureCode.DRAFT_EMPTY
     text = f"{narrative.what_changed}\n{narrative.next_work}"
-    if _AUTHORSHIP.search(text):
+    if mentions_authorship(text):
         return NarrativeFailureCode.AUTHORSHIP_MENTIONED
-    if _CAUSAL.search(text):
+    if claims_cause(text):
         return NarrativeFailureCode.CAUSAL_CLAIM
-    allowed = allowed_numbers(snapshot)
+    allowed = allowed_numbers(snapshot) | figure_numbers((table or {}).values())
     if any(number not in allowed for number in numbers_in(text)):
         return NarrativeFailureCode.NUMBER_NOT_IN_DATA
     return None
@@ -194,9 +116,9 @@ def label_of(period: ReportPeriod) -> str:
     """ "September 2026", or "May to September 2026" (with both years when they differ)."""
     first, last = period.start_month, period.end_month
     if first == last:
-        return f"{_MONTHS[first.month - 1]} {first.year}"
-    start = _MONTHS[first.month - 1] + ("" if first.year == last.year else f" {first.year}")
-    return f"{start} to {_MONTHS[last.month - 1]} {last.year}"
+        return f"{MONTHS[first.month - 1]} {first.year}"
+    start = MONTHS[first.month - 1] + ("" if first.year == last.year else f" {first.year}")
+    return f"{start} to {MONTHS[last.month - 1]} {last.year}"
 
 
 def _figure(comparison: ReportCountComparison) -> dict[str, Any]:
@@ -227,7 +149,9 @@ def _rate(comparison: ReportRateComparison) -> dict[str, Any]:
     }
 
 
-def evidence_of(snapshot: ReportSnapshot) -> dict[str, Any]:
+def evidence_of(
+    snapshot: ReportSnapshot, table: Mapping[FigureKey, ReportFigureValue] | None = None
+) -> dict[str, Any]:
     """The compact facts the model may write from. Every number here is a snapshot value."""
     gbp = snapshot.gbp
     reviews = snapshot.reviews
@@ -277,13 +201,15 @@ def evidence_of(snapshot: ReportSnapshot) -> dict[str, Any]:
             group.kind.value: {"count": group.count, "examples": group.titles}
             for group in snapshot.work.groups
         },
+        # The only figures a result card may be about, keyed by the key a card answers with.
+        "result_figures": evidence_figures(table or {}),
         "data_gaps": sorted({note.code.value for note in snapshot.notes}),
         "local_rank_tracking": "not tracked yet",
     }
 
 
-def parse_draft(output: dict[str, Any]) -> ReportNarrative | None:
-    """The two sections from a gateway output; None when it is not shaped as asked."""
+def parse_draft(output: dict[str, Any]) -> tuple[ReportNarrative, list[Any], int] | None:
+    """The sections and the raw cards from a gateway output; None when it is not shaped as asked."""
     document = output.get("narrative")
     if not isinstance(document, dict):
         try:
@@ -295,17 +221,33 @@ def parse_draft(output: dict[str, Any]) -> ReportNarrative | None:
     what, nxt = document.get("what_changed"), document.get("next_work")
     if not isinstance(what, str) or not isinstance(nxt, str):
         return None
-    return ReportNarrative(
+    narrative = ReportNarrative(
         what_changed=what.strip()[:SECTION_LIMIT],
         next_work=nxt.strip()[:SECTION_LIMIT],
         origin=NarrativeOrigin.HERMES,
     )
+    cards, skipped = parse_cards(document.get("result_cards"))
+    return narrative, cards, skipped
+
+
+def checked_cards(
+    raw: list[Any], snapshot: ReportSnapshot, table: Mapping[FigureKey, ReportFigureValue]
+) -> tuple[list[ResultCard], int]:
+    """The cards that pass every check, in order (at most four), and how many were dropped."""
+    kept: list[ResultCard] = []
+    for item in raw:
+        card = resolve_card(item, table)
+        if card is not None and card_failure(card, snapshot, table) is None:
+            kept.append(card)
+    kept = kept[:4]
+    return one_headline(kept), len(raw) - len(kept)
 
 
 @dataclass(frozen=True, slots=True)
 class DraftResult:
     narrative: ReportNarrative | None
     failure: NarrativeFailureCode | None
+    cards_dropped: int = 0
 
 
 class NarrativeDrafter:
@@ -318,20 +260,22 @@ class NarrativeDrafter:
             self._gateway = build_ai_gateway()
         return self._gateway
 
-    async def _task(self, session: AsyncSession) -> AITaskDefinition:
+    async def _task(
+        self, session: AsyncSession, key: str, purpose: str, output_schema: dict[str, Any]
+    ) -> AITaskDefinition:
         task = await session.scalar(
             select(AITaskDefinition).where(
-                AITaskDefinition.key == AI_TASK_KEY, AITaskDefinition.status == "active"
+                AITaskDefinition.key == key, AITaskDefinition.status == "active"
             )
         )
         if task is None:
             task = AITaskDefinition(
-                key=AI_TASK_KEY,
+                key=key,
                 version=1,
                 owning_product="insights",
-                purpose="Draft the narrative sections of a monthly client report for human review.",
+                purpose=purpose,
                 input_schema={"evidence": "object"},
-                output_schema={"what_changed": "string", "next_work": "string"},
+                output_schema=output_schema,
                 risk_level="medium",
                 maximum_cost_microunits=0,
                 maximum_latency_ms=MAXIMUM_LATENCY_MS,
@@ -343,16 +287,16 @@ class NarrativeDrafter:
             await session.flush()
         return task
 
-    async def draft(
+    async def _execute(
         self,
         session: AsyncSession,
+        task: AITaskDefinition,
         *,
         organization_id: UUID,
         revision_id: UUID,
-        snapshot: ReportSnapshot,
-    ) -> DraftResult:
-        """Ask for a draft and judge it. The execution is recorded whatever the outcome."""
-        task = await self._task(session)
+        input_document: dict[str, Any],
+    ) -> tuple[dict[str, Any], bool, str]:
+        """Run one gateway task. Returns the output, whether the provider failed, and the key."""
         attempt = int(
             await session.scalar(
                 select(func.count(AIExecution.id)).where(
@@ -366,30 +310,32 @@ class NarrativeDrafter:
         request = AIGatewayRequest(
             organization_id=organization_id,
             location_id=None,
-            task_key=AI_TASK_KEY,
-            input_document={"evidence": evidence_of(snapshot)},
+            task_key=task.key,
+            input_document=input_document,
             input_references=(revision_id,),
             # The stored, immutable snapshot is what the draft is grounded in.
             approved_fact_revision_ids=(revision_id,),
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=task.maximum_latency_ms,
         )
-        key = hashlib.sha256(f"report-narrative:{revision_id}:{attempt + 1}".encode()).hexdigest()
-        output: dict[str, Any] = {}
-        failure: NarrativeFailureCode | None = None
-        narrative: ReportNarrative | None = None
+        key = hashlib.sha256(f"{task.key}:{revision_id}:{attempt + 1}".encode()).hexdigest()
         try:
-            output = await self.gateway.execute(request)
+            return await self.gateway.execute(request), False, key
         except Exception:
             # Whatever the provider did, the report is unaffected and a person can write it.
-            failure = NarrativeFailureCode.DRAFT_FAILED
-        if failure is None:
-            narrative = parse_draft(output)
-            failure = (
-                NarrativeFailureCode.DRAFT_MALFORMED
-                if narrative is None
-                else failure_of(narrative, snapshot)
-            )
+            return {}, True, key
+
+    @staticmethod
+    def _record(
+        session: AsyncSession,
+        task: AITaskDefinition,
+        *,
+        organization_id: UUID,
+        revision_id: UUID,
+        key: str,
+        output: dict[str, Any],
+        failure: NarrativeFailureCode | None,
+    ) -> None:
         usage = output.get("usage", {}) or {}
         session.add(
             AIExecution(
@@ -423,5 +369,114 @@ class NarrativeDrafter:
                 completed_at=datetime.now(UTC),
             )
         )
+
+    async def draft(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        revision_id: UUID,
+        snapshot: ReportSnapshot,
+        results: ReportSearchResults | None = None,
+    ) -> DraftResult:
+        """Ask for a draft (summary, next steps and result cards) and judge it.
+
+        The execution is recorded whatever the outcome. A summary that fails a check is not used;
+        a card that fails one is dropped alone.
+        """
+        task = await self._task(
+            session,
+            AI_TASK_KEY,
+            "Draft the narrative sections of a monthly client report for human review.",
+            {"what_changed": "string", "next_work": "string", "result_cards": "array"},
+        )
+        table = figure_table(snapshot, results)
+        output, provider_failed, key = await self._execute(
+            session,
+            task,
+            organization_id=organization_id,
+            revision_id=revision_id,
+            input_document={"evidence": evidence_of(snapshot, table)},
+        )
+        failure: NarrativeFailureCode | None = None
+        narrative: ReportNarrative | None = None
+        dropped = 0
+        if provider_failed:
+            failure = NarrativeFailureCode.DRAFT_FAILED
+        else:
+            parsed = parse_draft(output)
+            if parsed is None:
+                failure = NarrativeFailureCode.DRAFT_MALFORMED
+            else:
+                narrative, raw_cards, dropped = parsed
+                failure = failure_of(narrative, snapshot, table)
+                if failure is None:
+                    cards, refused = checked_cards(raw_cards, snapshot, table)
+                    dropped += refused
+                    narrative = narrative.model_copy(update={"result_cards": cards})
+        self._record(
+            session,
+            task,
+            organization_id=organization_id,
+            revision_id=revision_id,
+            key=key,
+            output=output,
+            failure=failure,
+        )
         await session.flush()
-        return DraftResult(None if failure else narrative, failure)
+        return DraftResult(None if failure else narrative, failure, dropped)
+
+    async def group_topics(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        revision_id: UUID,
+        snapshot: ReportSnapshot,
+    ) -> ReportTopics | None:
+        """Ask Hermes to group the period's non-branded searches into topics.
+
+        Only searches the report holds can be placed, each in one topic. None when there is nothing
+        to group, the provider failed, or too little of the answer was usable.
+        """
+        movement = snapshot.search_movement
+        if movement is None or not movement.queries:
+            return None
+        queries: list[dict[str, Any]] = [
+            {
+                "query": row.query,
+                "impressions": row.after_impressions,
+                "clicks": row.after_clicks,
+            }
+            for row in movement.queries[:TOPIC_QUERIES]
+        ]
+        task = await self._task(
+            session,
+            TOPICS_TASK_KEY,
+            "Group a client's non-branded searches into topics for the report.",
+            {"topics": "array", "brand_variants": "array"},
+        )
+        output, provider_failed, key = await self._execute(
+            session,
+            task,
+            organization_id=organization_id,
+            revision_id=revision_id,
+            input_document={"evidence": {"searches": queries}},
+        )
+        topics: ReportTopics | None = None
+        failure: NarrativeFailureCode | None = NarrativeFailureCode.DRAFT_FAILED
+        if not provider_failed:
+            document = output.get("topics_document")
+            topics = clean_topics(document, {str(item["query"]) for item in queries})
+            failure = None if topics else NarrativeFailureCode.DRAFT_MALFORMED
+        self._record(
+            session,
+            task,
+            organization_id=organization_id,
+            revision_id=revision_id,
+            key=key,
+            output=output,
+            failure=failure,
+        )
+        await session.flush()
+        return topics

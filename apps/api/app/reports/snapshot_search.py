@@ -44,10 +44,12 @@ from apps.api.app.reports.contracts import (
     ReportCountFigure,
     ReportDataNote,
     ReportMonthlySeries,
+    ReportMovementQuery,
     ReportPeriod,
     ReportRateComparison,
     ReportRateFigure,
     ReportSearchConsoleSection,
+    ReportSearchMovement,
     ReportSearchPageRow,
     ReportSearchQueryRow,
     SeriesKey,
@@ -66,6 +68,9 @@ from apps.api.app.reports.figures import (
 )
 
 TOP_ROWS = 50
+# A search needs this many impressions in a window to count as ranking there.
+MOVEMENT_MIN_IMPRESSIONS = 20
+MOVEMENT_ROWS = 400
 PROVIDER_MAPPED = "mapped"
 SEARCH_PROVIDER = "google_search_console"
 ORGANIC_SESSIONS_VERSION = 1
@@ -90,6 +95,7 @@ class SearchResult:
     notes: list[ReportDataNote]
     series: list[ReportMonthlySeries]
     last_synced: date | None
+    movement: ReportSearchMovement | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +270,57 @@ def _compared_clicks(totals: dict[str, Aggregate], name: str, basis: Basis) -> i
     return basis.compared_value(found.clicks) if found else None
 
 
+def build_movement(
+    period_rows: Sequence[SEOSearchObservation],
+    compared_rows: Sequence[SEOSearchObservation],
+    now: SearchMonths,
+    before: SearchMonths,
+    brand_terms: Sequence[str],
+    same_length: bool,
+) -> ReportSearchMovement | None:
+    """Every non-branded search over the period and over the comparison, from the stored rows.
+
+    Added up from the highest-ranking searches Google reports each month, so a search missing from
+    a window is unknown there, not zero. The two windows are set against each other only when both
+    have every month stored and settled and are the same length.
+    """
+    if not period_rows:
+        return None
+    comparable = now.complete and before.complete and same_length and bool(compared_rows)
+    after_totals = _aggregate(period_rows, "query")
+    before_totals = _aggregate(compared_rows, "query") if comparable else {}
+    rows: list[ReportMovementQuery] = []
+    for name in sorted(after_totals.keys() | before_totals.keys()):
+        if is_branded(name, brand_terms):
+            continue
+        after, earlier = after_totals.get(name), before_totals.get(name)
+        if (
+            max(after.impressions if after else 0, earlier.impressions if earlier else 0)
+            < MOVEMENT_MIN_IMPRESSIONS
+        ):
+            continue
+        rows.append(
+            ReportMovementQuery(
+                query=name,
+                before_position=earlier.position if earlier else None,
+                after_position=after.position if after else None,
+                before_impressions=earlier.impressions if earlier else None,
+                after_impressions=after.impressions if after else 0,
+                before_clicks=earlier.clicks if earlier else None,
+                after_clicks=after.clicks if after else 0,
+            )
+        )
+    rows.sort(key=lambda row: (-max(row.after_impressions, row.before_impressions or 0), row.query))
+    return ReportSearchMovement(
+        comparable=comparable,
+        months_covered=len(now.present),
+        months_expected=len(now.expected),
+        compared_months_covered=len(before.present),
+        compared_months_expected=len(before.expected),
+        queries=rows[:MOVEMENT_ROWS],
+    )
+
+
 async def build_search_console(
     session: AsyncSession,
     organization_id: UUID,
@@ -332,6 +389,14 @@ async def build_search_console(
     )
     before_queries = _aggregate(
         await _observations(session, prop.id, comparison.compared.months, MONTH_TOP_QUERY), "query"
+    )
+    movement = build_movement(
+        await _observations(session, prop.id, period.months, MONTH_TOP_QUERY),
+        await _observations(session, prop.id, comparison.compared.months, MONTH_TOP_QUERY),
+        current,
+        compared,
+        brand_terms,
+        period.span == comparison.compared.span,
     )
     pages = _aggregate(await _observations(session, prop.id, period.months, MONTH_TOP_PAGE), "page")
     before_pages = _aggregate(
@@ -404,6 +469,7 @@ async def build_search_console(
         notes,
         series,
         prop.last_synced_at.date() if prop.last_synced_at else None,
+        movement,
     )
 
 

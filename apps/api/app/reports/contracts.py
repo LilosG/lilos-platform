@@ -31,7 +31,8 @@ from apps.api.app.reports.errors import (
 from apps.api.app.routes.command_center_search import TrackedCount
 
 # 2: periods of 1 to 12 months, a comparison basis, headlines and monthly series.
-SNAPSHOT_SCHEMA_VERSION = 2
+# 3: search movement (every non-branded search, before and after) for topics and gains.
+SNAPSHOT_SCHEMA_VERSION = 3
 DEFINITION_KEY = "monthly-performance"
 MAX_PERIOD_MONTHS = 12
 
@@ -236,6 +237,38 @@ class NarrativeFailureCode(StrEnum):
     NUMBER_NOT_IN_DATA = "number_not_in_data"
     AUTHORSHIP_MENTIONED = "authorship_mentioned"
     CAUSAL_CLAIM = "causal_claim"
+    # A card is called good or bad but its figure did not move that way.
+    TONE_NOT_SUPPORTED = "tone_not_supported"
+
+
+class FigureKey(StrEnum):
+    """A figure a result card can be about. The numbers come from the stored report, never text."""
+
+    PROFILE_VIEWS = "profile_views"
+    PROFILE_ACTIONS = "profile_actions"
+    CALLS = "calls"
+    WEBSITE_CLICKS = "website_clicks"
+    DIRECTION_REQUESTS = "direction_requests"
+    SEARCH_CLICKS = "search_clicks"
+    SEARCH_IMPRESSIONS = "search_impressions"
+    ORGANIC_SESSIONS = "organic_sessions"
+    NEW_REVIEWS = "new_reviews"
+    AVERAGE_RATING = "average_rating"
+    SEARCHES_IN_TOP_TEN = "searches_in_top_ten"
+    NEW_TO_PAGE_ONE = "new_to_page_one"
+
+
+class FigureUnit(StrEnum):
+    COUNT = "count"
+    STARS = "stars"
+
+
+class CardTone(StrEnum):
+    """How a result reads: it improved, it got worse, or it is flat. Colours follow this."""
+
+    GOOD = "good"
+    BAD = "bad"
+    NEUTRAL = "neutral"
 
 
 class NarrativeOutcome(StrEnum):
@@ -641,6 +674,38 @@ class ReportSearchConsoleSection(Model):
     lag_days: int | None = None
 
 
+class ReportMovementQuery(Model):
+    """One non-branded search over the period and over the comparison, from the stored top rows.
+
+    A window with no stored row for the search has no position (never 0). Positions are weighted
+    by impressions across the window's months.
+    """
+
+    query: str
+    before_position: float | None
+    after_position: float | None
+    # Null when the window has no stored row for the search or the windows are not comparable.
+    before_impressions: int | None
+    after_impressions: int
+    before_clicks: int | None
+    after_clicks: int
+
+
+class ReportSearchMovement(Model):
+    """How the searches moved, added up from the highest-ranking searches Google reports.
+
+    ``comparable`` is true only when both windows have every month stored and settled and are the
+    same length; otherwise nothing is set against anything and only the period stands alone.
+    """
+
+    comparable: bool
+    months_covered: int
+    months_expected: int
+    compared_months_covered: int
+    compared_months_expected: int
+    queries: list[ReportMovementQuery]
+
+
 class ReportAnalyticsSection(Model):
     availability: Availability
     reason: UnavailableReason | None = None
@@ -754,18 +819,129 @@ class ReportSnapshot(Model):
     analytics: ReportAnalyticsSection
     local_rank: TrackedCount
     work: ReportWorkSection
+    # Absent when Search Console has no stored searches for the period.
+    search_movement: ReportSearchMovement | None = None
+
+
+class ReportFigureValue(Model):
+    """A figure a card is about, resolved by code from the stored report."""
+
+    key: FigureKey
+    unit: FigureUnit
+    current: float
+    # True when ``current`` is this period's monthly average, set against the comparison's.
+    monthly_average: bool = False
+    # Null when the figure has no comparison (for example a search count without a "before").
+    compared: float | None = None
+    change: float | None = None
+    change_percent: float | None = None
+
+
+class ResultCard(Model):
+    """One result at a glance: a figure, a short title and a sentence about what it means.
+
+    ``figures`` are filled by code from ``figure_keys``; only ``title``, ``text``, ``tone`` and
+    ``headline`` are words. Every number in ``text`` is checked against ``figures``.
+    """
+
+    figure_keys: list[FigureKey] = Field(min_length=1, max_length=2)
+    figures: list[ReportFigureValue] = []
+    tone: CardTone
+    headline: bool = False
+    title: str = Field(max_length=80)
+    text: str = Field(max_length=500)
+
+
+class ResultCardUpdate(Model):
+    """A card as a person edits it: the figures are looked up again, never typed."""
+
+    figure_keys: list[FigureKey] = Field(min_length=1, max_length=2)
+    tone: CardTone
+    headline: bool = False
+    title: str = Field(max_length=80)
+    text: str = Field(max_length=500)
 
 
 class ReportNarrative(Model):
-    """The two prose sections. Written by a person, or drafted and then reviewed by one."""
+    """The prose sections and result cards. Written by a person, or drafted and then reviewed."""
 
     what_changed: str = ""
     next_work: str = ""
     origin: NarrativeOrigin = NarrativeOrigin.NONE
+    # At most four, in the order they are shown; one may be the headline.
+    result_cards: list[ResultCard] = Field(default=[], max_length=4)
 
     @property
     def is_empty(self) -> bool:
         return not (self.what_changed.strip() and self.next_work.strip())
+
+
+# ---- Search topics and results ----------------------------------------------------------------
+
+
+class ReportTopic(Model):
+    """A group of the period's non-branded searches. A search belongs to at most one topic."""
+
+    key: str
+    label: str
+    queries: list[str]
+
+
+class ReportTopics(Model):
+    """Hermes's grouping, stored on the revision and changed only when a person regenerates."""
+
+    topics: list[ReportTopic]
+    # Misspellings of the business name that the plain name check cannot see; left out of results.
+    brand_variants: list[str] = []
+
+
+class ReportTopicResult(Model):
+    key: str
+    label: str
+    # A few of the topic's searches, for the line under its name.
+    examples: list[str]
+    top_ten_before: int | None
+    top_ten_after: int
+    position_before: float | None
+    position_after: float | None
+    clicks_before: int | None
+    clicks_after: int
+
+
+class ReportGain(Model):
+    query: str
+    # Null "before": the search had no ranking in the comparison window.
+    position_before: float | None
+    position_after: float
+    impressions_before: int | None
+    impressions_after: int
+    clicks_before: int | None
+    clicks_after: int
+
+
+class ReportGainGroup(Model):
+    key: str
+    label: str
+    rows: list[ReportGain]
+
+
+class ReportSearchResults(Model):
+    """Non-branded search results, worked out by code from the stored movement and the topics."""
+
+    comparable: bool
+    months_covered: int
+    months_expected: int
+    top_ten_before: int | None
+    top_ten_after: int
+    new_to_page_one: int | None
+    clicks_before: int | None
+    clicks_after: int
+    impressions_before: int | None
+    impressions_after: int
+    position_before: float | None
+    position_after: float | None
+    topics: list[ReportTopicResult]
+    gains: list[ReportGainGroup]
 
 
 # ---- API views -------------------------------------------------------------------------------
@@ -826,6 +1002,10 @@ class ReportDetailView(Model):
     delivery: ReportDeliveryView | None
     snapshot: ReportSnapshot
     narrative: ReportNarrative
+    topics: ReportTopics | None = None
+    search_results: ReportSearchResults | None = None
+    # The business name on its Google profile, shown on the cover when there is more than one.
+    profile_names: list[str] = []
     permissions: ReportPermissions
 
 
@@ -842,6 +1022,8 @@ class ReportGenerateRequest(Model):
 class ReportNarrativeUpdate(Model):
     what_changed: str = Field(max_length=4000)
     next_work: str = Field(max_length=4000)
+    # Null leaves the cards as they are; a list replaces them.
+    result_cards: list[ResultCardUpdate] | None = Field(default=None, max_length=4)
 
 
 class ReportMarkSentRequest(Model):
@@ -858,6 +1040,8 @@ class ReportNarrativeDraftResult(Model):
     report: ReportDetailView
     outcome: NarrativeOutcome
     failure: NarrativeFailureCode | None = None
+    # Cards the checks refused (a number not in their figures, or a causal claim).
+    cards_dropped: int = 0
 
 
 class PortfolioReportRow(Model):

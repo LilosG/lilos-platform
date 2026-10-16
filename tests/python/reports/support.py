@@ -518,3 +518,45 @@ async def seed_complete_month(
     await connect_analytics(factory, organization_id, website)
     await store_organic_month(factory, organization_id, website, month, 900)
     await store_organic_month(factory, organization_id, website, previous, 800)
+
+
+async def store_search_queries(
+    factory: Factory,
+    organization_id: UUID,
+    month: date,
+    queries: dict[str, tuple[int, int, float]],
+) -> None:
+    """More top-search rows for a month that already has its site summary: (clicks, impressions,
+    position) each, as the month sync stores them."""
+    from apps.api.app.products.seo.month_observations import MONTH_TOP_QUERY, dimension_hash
+
+    start, following = calendar_month_window(month)
+    async with factory.begin() as session:
+        prop = await session.scalar(
+            select(SEOSearchProperty).where(SEOSearchProperty.organization_id == organization_id)
+        )
+        assert prop is not None
+        for key, (clicks, impressions, position) in queries.items():
+            dims: dict[str, object] = {
+                "observation_type": MONTH_TOP_QUERY,
+                "website_id": str(prop.website_id),
+                "query": key,
+            }
+            session.add(
+                SEOSearchObservation(
+                    organization_id=organization_id,
+                    search_property_id=prop.id,
+                    website_id=prop.website_id,
+                    query=key,
+                    date_start=start,
+                    date_end=following,
+                    dimensions=dims,
+                    dimension_hash=dimension_hash(dims),
+                    clicks=clicks,
+                    impressions=impressions,
+                    ctr=Decimal(clicks) / Decimal(impressions) if impressions else None,
+                    position=Decimal(str(position)),
+                    quality_status="valid",
+                    partial=False,
+                )
+            )

@@ -16,6 +16,7 @@ from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.reports.narrative import (
     AI_TASK_KEY,
     RETENTION_POLICY_KEY,
+    TOPICS_TASK_KEY,
     NarrativeDrafter,
     numbers_in,
 )
@@ -37,14 +38,29 @@ GOOD = {
 class FakeGateway:
     """Stands in for the AI gateway: returns a scripted draft, or fails, and records requests."""
 
-    def __init__(self, draft: dict[str, str] | Exception) -> None:
+    def __init__(
+        self, draft: dict[str, Any] | Exception, topics: dict[str, Any] | None = None
+    ) -> None:
         self.draft = draft
+        self.topics = topics
         self.requests: list[AIGatewayRequest] = []
+
+    @property
+    def narrative_requests(self) -> list[AIGatewayRequest]:
+        return [item for item in self.requests if item.task_key == AI_TASK_KEY]
 
     async def execute(self, request: AIGatewayRequest) -> dict[str, Any]:
         self.requests.append(request)
         if isinstance(self.draft, Exception):
             raise self.draft
+        if request.task_key == TOPICS_TASK_KEY:
+            return {
+                "provider": "fake",
+                "model": "fixture",
+                "draft": json.dumps(self.topics or {}),
+                "topics_document": self.topics,
+                "usage": {},
+            }
         return {
             "provider": "fake",
             "model": "fixture",
@@ -67,8 +83,10 @@ def override(client: TestClient, gateway: object) -> None:
     app.dependency_overrides[get_narrative_drafter] = lambda: drafter
 
 
-def use(client: TestClient, draft: dict[str, str] | Exception) -> FakeGateway:
-    gateway = FakeGateway(draft)
+def use(
+    client: TestClient, draft: dict[str, Any] | Exception, topics: dict[str, Any] | None = None
+) -> FakeGateway:
+    gateway = FakeGateway(draft, topics)
     override(client, gateway)
     return gateway
 
@@ -89,12 +107,19 @@ def draft(client: TestClient, org: UUID, role: str = "manager") -> Any:
     return call(client, "post", url(org, f"/{SEPT}/1/draft-narrative"), role)
 
 
-def executions(factory: Factory) -> list[AIExecution]:
+def executions(factory: Factory, task_key: str = AI_TASK_KEY) -> list[AIExecution]:
     import asyncio
 
     async def read() -> list[AIExecution]:
         async with factory() as session:
-            return list(await session.scalars(select(AIExecution).order_by(AIExecution.created_at)))
+            return list(
+                await session.scalars(
+                    select(AIExecution)
+                    .join(AITaskDefinition, AITaskDefinition.id == AIExecution.task_definition_id)
+                    .where(AITaskDefinition.key == task_key)
+                    .order_by(AIExecution.created_at)
+                )
+            )
 
     return asyncio.run(read())
 
@@ -126,7 +151,7 @@ def test_a_draft_that_states_only_snapshot_numbers_is_kept_and_labeled(
     narrative = result["report"]["narrative"]
     assert narrative["what_changed"] == GOOD["what_changed"] and narrative["origin"] == "hermes"
     # The stored snapshot was the only evidence the model was given, and nothing else moved.
-    (request,) = gateway.requests
+    (request,) = gateway.narrative_requests
     assert request.task_key == AI_TASK_KEY and request.location_id is None
     evidence = request.input_document["evidence"]
     assert (
@@ -179,7 +204,15 @@ def test_a_draft_that_fails_a_check_is_not_used_and_the_narrative_is_unchanged(
     body = response.json()
     assert body["outcome"] == "not_used" and body["failure"] == failure
     after = call(client, "get", url(org, f"/{SEPT}/1"), "manager").json()
-    assert after["narrative"] == before["narrative"] == {**mine, "origin": "manual"}
+    assert (
+        after["narrative"]
+        == before["narrative"]
+        == {
+            **mine,
+            "origin": "manual",
+            "result_cards": [],
+        }
+    )
     assert after["snapshot"] == before["snapshot"]
     (record,) = executions(factory)
     assert record.status == "validation_failed" and record.safe_error_code == failure.upper()

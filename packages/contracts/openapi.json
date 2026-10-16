@@ -1352,6 +1352,16 @@
         "title": "CapabilitySnapshotRecord",
         "type": "object"
       },
+      "CardTone": {
+        "description": "How a result reads: it improved, it got worse, or it is flat. Colours follow this.",
+        "enum": [
+          "good",
+          "bad",
+          "neutral"
+        ],
+        "title": "CardTone",
+        "type": "string"
+      },
       "CatalogResponse": {
         "properties": {
           "data": {
@@ -3738,6 +3748,33 @@
         ],
         "title": "FeatureFlagCreate",
         "type": "object"
+      },
+      "FigureKey": {
+        "description": "A figure a result card can be about. The numbers come from the stored report, never text.",
+        "enum": [
+          "profile_views",
+          "profile_actions",
+          "calls",
+          "website_clicks",
+          "direction_requests",
+          "search_clicks",
+          "search_impressions",
+          "organic_sessions",
+          "new_reviews",
+          "average_rating",
+          "searches_in_top_ten",
+          "new_to_page_one"
+        ],
+        "title": "FigureKey",
+        "type": "string"
+      },
+      "FigureUnit": {
+        "enum": [
+          "count",
+          "stars"
+        ],
+        "title": "FigureUnit",
+        "type": "string"
       },
       "Frequency": {
         "additionalProperties": false,
@@ -9679,7 +9716,8 @@
           "draft_empty",
           "number_not_in_data",
           "authorship_mentioned",
-          "causal_claim"
+          "causal_claim",
+          "tone_not_supported"
         ],
         "title": "NarrativeFailureCode",
         "type": "string"
@@ -15334,6 +15372,14 @@
           "permissions": {
             "$ref": "#/components/schemas/ReportPermissions"
           },
+          "profile_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Profile Names",
+            "type": "array"
+          },
           "readiness": {
             "$ref": "#/components/schemas/ReportReadiness"
           },
@@ -15345,11 +15391,31 @@
             "title": "Revision Count",
             "type": "integer"
           },
+          "search_results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportSearchResults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "snapshot": {
             "$ref": "#/components/schemas/ReportSnapshot"
           },
           "status": {
             "$ref": "#/components/schemas/ReportStatus"
+          },
+          "topics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportTopics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -15371,6 +15437,159 @@
           "permissions"
         ],
         "title": "ReportDetailView",
+        "type": "object"
+      },
+      "ReportFigureValue": {
+        "additionalProperties": false,
+        "description": "A figure a card is about, resolved by code from the stored report.",
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "compared": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compared"
+          },
+          "current": {
+            "title": "Current",
+            "type": "number"
+          },
+          "key": {
+            "$ref": "#/components/schemas/FigureKey"
+          },
+          "monthly_average": {
+            "default": false,
+            "title": "Monthly Average",
+            "type": "boolean"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/FigureUnit"
+          }
+        },
+        "required": [
+          "key",
+          "unit",
+          "current"
+        ],
+        "title": "ReportFigureValue",
+        "type": "object"
+      },
+      "ReportGain": {
+        "additionalProperties": false,
+        "properties": {
+          "clicks_after": {
+            "title": "Clicks After",
+            "type": "integer"
+          },
+          "clicks_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Before"
+          },
+          "impressions_after": {
+            "title": "Impressions After",
+            "type": "integer"
+          },
+          "impressions_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions Before"
+          },
+          "position_after": {
+            "title": "Position After",
+            "type": "number"
+          },
+          "position_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position Before"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "position_before",
+          "position_after",
+          "impressions_before",
+          "impressions_after",
+          "clicks_before",
+          "clicks_after"
+        ],
+        "title": "ReportGain",
+        "type": "object"
+      },
+      "ReportGainGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ReportGain"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "rows"
+        ],
+        "title": "ReportGainGroup",
         "type": "object"
       },
       "ReportGbpSection": {
@@ -15701,9 +15920,82 @@
         "title": "ReportMonthlySeries",
         "type": "object"
       },
+      "ReportMovementQuery": {
+        "additionalProperties": false,
+        "description": "One non-branded search over the period and over the comparison, from the stored top rows.\n\nA window with no stored row for the search has no position (never 0). Positions are weighted\nby impressions across the window's months.",
+        "properties": {
+          "after_clicks": {
+            "title": "After Clicks",
+            "type": "integer"
+          },
+          "after_impressions": {
+            "title": "After Impressions",
+            "type": "integer"
+          },
+          "after_position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Position"
+          },
+          "before_clicks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Clicks"
+          },
+          "before_impressions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Impressions"
+          },
+          "before_position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Position"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "before_position",
+          "after_position",
+          "before_impressions",
+          "after_impressions",
+          "before_clicks",
+          "after_clicks"
+        ],
+        "title": "ReportMovementQuery",
+        "type": "object"
+      },
       "ReportNarrative": {
         "additionalProperties": false,
-        "description": "The two prose sections. Written by a person, or drafted and then reviewed by one.",
+        "description": "The prose sections and result cards. Written by a person, or drafted and then reviewed.",
         "properties": {
           "next_work": {
             "default": "",
@@ -15713,6 +16005,15 @@
           "origin": {
             "$ref": "#/components/schemas/NarrativeOrigin",
             "default": "none"
+          },
+          "result_cards": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ResultCard"
+            },
+            "maxItems": 4,
+            "title": "Result Cards",
+            "type": "array"
           },
           "what_changed": {
             "default": "",
@@ -15726,6 +16027,11 @@
       "ReportNarrativeDraftResult": {
         "additionalProperties": false,
         "properties": {
+          "cards_dropped": {
+            "default": 0,
+            "title": "Cards Dropped",
+            "type": "integer"
+          },
           "failure": {
             "anyOf": [
               {
@@ -15757,6 +16063,21 @@
             "maxLength": 4000,
             "title": "Next Work",
             "type": "string"
+          },
+          "result_cards": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResultCardUpdate"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Cards"
           },
           "what_changed": {
             "maxLength": 4000,
@@ -16201,6 +16522,49 @@
         "title": "ReportSearchConsoleSection",
         "type": "object"
       },
+      "ReportSearchMovement": {
+        "additionalProperties": false,
+        "description": "How the searches moved, added up from the highest-ranking searches Google reports.\n\n``comparable`` is true only when both windows have every month stored and settled and are the\nsame length; otherwise nothing is set against anything and only the period stands alone.",
+        "properties": {
+          "comparable": {
+            "title": "Comparable",
+            "type": "boolean"
+          },
+          "compared_months_covered": {
+            "title": "Compared Months Covered",
+            "type": "integer"
+          },
+          "compared_months_expected": {
+            "title": "Compared Months Expected",
+            "type": "integer"
+          },
+          "months_covered": {
+            "title": "Months Covered",
+            "type": "integer"
+          },
+          "months_expected": {
+            "title": "Months Expected",
+            "type": "integer"
+          },
+          "queries": {
+            "items": {
+              "$ref": "#/components/schemas/ReportMovementQuery"
+            },
+            "title": "Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "comparable",
+          "months_covered",
+          "months_expected",
+          "compared_months_covered",
+          "compared_months_expected",
+          "queries"
+        ],
+        "title": "ReportSearchMovement",
+        "type": "object"
+      },
       "ReportSearchPageRow": {
         "additionalProperties": false,
         "properties": {
@@ -16348,6 +16712,134 @@
           "clicks_change"
         ],
         "title": "ReportSearchQueryRow",
+        "type": "object"
+      },
+      "ReportSearchResults": {
+        "additionalProperties": false,
+        "description": "Non-branded search results, worked out by code from the stored movement and the topics.",
+        "properties": {
+          "clicks_after": {
+            "title": "Clicks After",
+            "type": "integer"
+          },
+          "clicks_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Before"
+          },
+          "comparable": {
+            "title": "Comparable",
+            "type": "boolean"
+          },
+          "gains": {
+            "items": {
+              "$ref": "#/components/schemas/ReportGainGroup"
+            },
+            "title": "Gains",
+            "type": "array"
+          },
+          "impressions_after": {
+            "title": "Impressions After",
+            "type": "integer"
+          },
+          "impressions_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions Before"
+          },
+          "months_covered": {
+            "title": "Months Covered",
+            "type": "integer"
+          },
+          "months_expected": {
+            "title": "Months Expected",
+            "type": "integer"
+          },
+          "new_to_page_one": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New To Page One"
+          },
+          "position_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position After"
+          },
+          "position_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position Before"
+          },
+          "top_ten_after": {
+            "title": "Top Ten After",
+            "type": "integer"
+          },
+          "top_ten_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Ten Before"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTopicResult"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "comparable",
+          "months_covered",
+          "months_expected",
+          "top_ten_before",
+          "top_ten_after",
+          "new_to_page_one",
+          "clicks_before",
+          "clicks_after",
+          "impressions_before",
+          "impressions_after",
+          "position_before",
+          "position_after",
+          "topics",
+          "gains"
+        ],
+        "title": "ReportSearchResults",
         "type": "object"
       },
       "ReportSearchTerm": {
@@ -16505,12 +16997,22 @@
             "$ref": "#/components/schemas/ReportReviewsSection"
           },
           "schema_version": {
-            "default": 2,
+            "default": 3,
             "title": "Schema Version",
             "type": "integer"
           },
           "search_console": {
             "$ref": "#/components/schemas/ReportSearchConsoleSection"
+          },
+          "search_movement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportSearchMovement"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sync": {
             "$ref": "#/components/schemas/ReportSync",
@@ -16678,6 +17180,145 @@
           }
         },
         "title": "ReportSync",
+        "type": "object"
+      },
+      "ReportTopic": {
+        "additionalProperties": false,
+        "description": "A group of the period's non-branded searches. A search belongs to at most one topic.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "queries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "queries"
+        ],
+        "title": "ReportTopic",
+        "type": "object"
+      },
+      "ReportTopicResult": {
+        "additionalProperties": false,
+        "properties": {
+          "clicks_after": {
+            "title": "Clicks After",
+            "type": "integer"
+          },
+          "clicks_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks Before"
+          },
+          "examples": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "position_after": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position After"
+          },
+          "position_before": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position Before"
+          },
+          "top_ten_after": {
+            "title": "Top Ten After",
+            "type": "integer"
+          },
+          "top_ten_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Ten Before"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "examples",
+          "top_ten_before",
+          "top_ten_after",
+          "position_before",
+          "position_after",
+          "clicks_before",
+          "clicks_after"
+        ],
+        "title": "ReportTopicResult",
+        "type": "object"
+      },
+      "ReportTopics": {
+        "additionalProperties": false,
+        "description": "Hermes's grouping, stored on the revision and changed only when a person regenerates.",
+        "properties": {
+          "brand_variants": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Brand Variants",
+            "type": "array"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/ReportTopic"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "topics"
+        ],
+        "title": "ReportTopics",
         "type": "object"
       },
       "ReportUpcoming": {
@@ -16980,6 +17621,96 @@
           "history"
         ],
         "title": "ResponseState",
+        "type": "object"
+      },
+      "ResultCard": {
+        "additionalProperties": false,
+        "description": "One result at a glance: a figure, a short title and a sentence about what it means.\n\n``figures`` are filled by code from ``figure_keys``; only ``title``, ``text``, ``tone`` and\n``headline`` are words. Every number in ``text`` is checked against ``figures``.",
+        "properties": {
+          "figure_keys": {
+            "items": {
+              "$ref": "#/components/schemas/FigureKey"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Figure Keys",
+            "type": "array"
+          },
+          "figures": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReportFigureValue"
+            },
+            "title": "Figures",
+            "type": "array"
+          },
+          "headline": {
+            "default": false,
+            "title": "Headline",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 500,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 80,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "$ref": "#/components/schemas/CardTone"
+          }
+        },
+        "required": [
+          "figure_keys",
+          "tone",
+          "title",
+          "text"
+        ],
+        "title": "ResultCard",
+        "type": "object"
+      },
+      "ResultCardUpdate": {
+        "additionalProperties": false,
+        "description": "A card as a person edits it: the figures are looked up again, never typed.",
+        "properties": {
+          "figure_keys": {
+            "items": {
+              "$ref": "#/components/schemas/FigureKey"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Figure Keys",
+            "type": "array"
+          },
+          "headline": {
+            "default": false,
+            "title": "Headline",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 500,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 80,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "$ref": "#/components/schemas/CardTone"
+          }
+        },
+        "required": [
+          "figure_keys",
+          "tone",
+          "title",
+          "text"
+        ],
+        "title": "ResultCardUpdate",
         "type": "object"
       },
       "ReviewDetail": {

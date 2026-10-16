@@ -14,11 +14,14 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Request
+from sqlalchemy import select
 
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.errors import NotFoundError, request_correlation_id
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.gbp.models import GBPLocation
+from apps.api.app.reports.cards import edited_cards, figure_table
 from apps.api.app.reports.contracts import (
     ComparisonSpec,
     NarrativeOrigin,
@@ -39,6 +42,7 @@ from apps.api.app.reports.contracts import (
 from apps.api.app.reports.errors import ReportScopeNotReadableError
 from apps.api.app.reports.narrative import NarrativeDrafter
 from apps.api.app.reports.reads import portfolio_rows, revision_rows, upcoming
+from apps.api.app.reports.search_results import search_results
 from apps.api.app.reports.service import ReportService, StoredReport, status_of
 from apps.api.app.reports.snapshot import last_ended_month, reportable_locations, require_ended
 from apps.api.app.routes.command_center_portfolio import (
@@ -94,6 +98,23 @@ async def permissions_of(
     )
 
 
+async def profile_names(session: Session, organization_id: UUID) -> list[str]:
+    """The Google profile names of the locations, only when there is more than one to tell apart.
+
+    The cover uses the business title on the profile, never the internal location name.
+    """
+    locations = await reportable_locations(session, organization_id)
+    if len(locations) < 2:
+        return []
+    ids = [item.gbp_location_id for item in locations if item.gbp_location_id is not None]
+    rows = await session.scalars(
+        select(GBPLocation.business_name)
+        .where(GBPLocation.organization_id == organization_id, GBPLocation.id.in_(ids))
+        .order_by(GBPLocation.business_name)
+    )
+    return list(dict.fromkeys(rows))
+
+
 async def detail_of(
     session: Session,
     organization_id: UUID,
@@ -123,6 +144,9 @@ async def detail_of(
         else None,
         snapshot=stored.snapshot,
         narrative=stored.narrative,
+        topics=stored.topics,
+        search_results=search_results(stored.snapshot, stored.topics),
+        profile_names=await profile_names(session, organization_id),
         permissions=permissions,
     )
 
@@ -239,6 +263,11 @@ async def update_narrative(
 ) -> ReportDetailView:
     """Replace a draft's narrative. An approved revision cannot be edited."""
     when, spec = report_of(period, comparison)
+    current = await service.get(session, organization_id, when, spec, revision)
+    cards = current.narrative.result_cards
+    if body.result_cards is not None:
+        table = figure_table(current.snapshot, search_results(current.snapshot, current.topics))
+        cards = edited_cards(body.result_cards, table)
     stored = await service.set_narrative(
         session,
         organization_id,
@@ -249,6 +278,7 @@ async def update_narrative(
             what_changed=body.what_changed.strip(),
             next_work=body.next_work.strip(),
             origin=NarrativeOrigin.MANUAL,
+            result_cards=cards,
         ),
         actor_id=principal.platform_user_id,
         correlation_id=str(request_correlation_id(request)),
@@ -280,11 +310,30 @@ async def draft_narrative(
     stored = await service.get(session, organization_id, when, spec, revision, lock=True)
     # Refuse before any spend: only the current draft has a narrative to draft.
     await service.assert_editable(session, organization_id, stored)
+    # Regenerating regroups the searches first; the cards are written from that grouping.
+    topics = await drafter.group_topics(
+        session,
+        organization_id=organization_id,
+        revision_id=stored.revision.id,
+        snapshot=stored.snapshot,
+    )
+    if topics is not None:
+        stored = await service.set_topics(
+            session,
+            organization_id,
+            when,
+            spec,
+            revision,
+            topics,
+            actor_id=principal.platform_user_id,
+            correlation_id=str(request_correlation_id(request)),
+        )
     result = await drafter.draft(
         session,
         organization_id=organization_id,
         revision_id=stored.revision.id,
         snapshot=stored.snapshot,
+        results=search_results(stored.snapshot, stored.topics),
     )
     if result.narrative is not None:
         stored = await service.set_narrative(
@@ -303,6 +352,7 @@ async def draft_narrative(
         report=await detail_of(session, organization_id, stored, permissions),
         outcome=NarrativeOutcome.DRAFTED if result.narrative else NarrativeOutcome.NOT_USED,
         failure=result.failure,
+        cards_dropped=result.cards_dropped,
     )
 
 

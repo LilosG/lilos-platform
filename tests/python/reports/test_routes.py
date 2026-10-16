@@ -135,7 +135,12 @@ def test_generate_edit_approve_and_mark_sent_end_to_end(
     assert (first["revision"], first["status"]) == (1, "draft")
     assert first["readiness"] == "ready" and first["is_current"] is True
     assert first["snapshot"]["local_rank"] == {"state": "not_tracked", "value": None}
-    assert first["narrative"] == {"what_changed": "", "next_work": "", "origin": "none"}
+    assert first["narrative"] == {
+        "what_changed": "",
+        "next_work": "",
+        "origin": "none",
+        "result_cards": [],
+    }
     # Identical data: the same revision comes back.
     again = generate(client, org, "owner").json()
     assert again["created"] is False and again["report"]["revision"] == 1
