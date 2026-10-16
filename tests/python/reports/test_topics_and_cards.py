@@ -426,3 +426,19 @@ def test_milestones_come_only_from_active_business_facts_and_names_from_the_prof
     # Two reportable locations: the Google profile titles, never the internal location names.
     assert view["profile_names"] == ["Alpha by the Bay", "Beach"]
     assert "Main" not in view["profile_names"]
+
+
+def test_a_post_is_named_by_its_first_sentence_cut_at_a_word() -> None:
+    from apps.api.app.reports.snapshot_work import TITLE_LENGTH, _short, _titles
+
+    assert _short("Happy hour is back! Join us Monday to Friday.") == "Happy hour is back!"
+    assert _short("  New cocktail menu\n\nis live. ") == "New cocktail menu is live."
+    long = (
+        "Come celebrate the long weekend with live music on the rooftop and a special menu for all"
+    )
+    cut = _short(long + ". More.")
+    # Cut on a word, never through one, and the ellipsis shows it was cut.
+    assert cut == "Come celebrate the long weekend with live music on the rooftop and a special…"
+    assert len(cut) <= TITLE_LENGTH
+    assert _short(None) is None and _short("   ") is None
+    assert len(_titles([f"Post {n}." for n in range(14)])) == 10
