@@ -139,6 +139,7 @@ async def build_snapshot(
         analytics=analytics.section,
         local_rank=not_tracked(),
         work=work,
+        search_movement=search.movement,
     )
 
 

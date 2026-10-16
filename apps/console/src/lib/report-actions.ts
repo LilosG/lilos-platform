@@ -148,9 +148,22 @@ function bindPage() {
   };
   const field = (name: string) =>
     page.querySelector<HTMLTextAreaElement>(`textarea[name="${name}"]`);
+  const cards = () =>
+    [...page.querySelectorAll<HTMLElement>("[data-result-card]")].map(
+      (card) => ({
+        figure_keys: card.dataset.keys!.split(","),
+        tone: card.dataset.tone!,
+        headline: card.dataset.headline === "true",
+        title: card.querySelector("input")?.value ?? "",
+        text: card.querySelector("textarea")?.value ?? "",
+      }),
+    );
   const body = () => ({
     what_changed: field("what_changed")?.value ?? "",
     next_work: field("next_work")?.value ?? "",
+    ...(page.querySelector("[data-result-card] input")
+      ? { result_cards: cards() }
+      : {}),
   });
   const buttons = (selector: string) =>
     page.querySelectorAll<HTMLButtonElement>(selector);

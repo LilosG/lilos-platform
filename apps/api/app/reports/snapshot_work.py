@@ -7,6 +7,7 @@ website change applied. Nothing here is inferred or invented.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -26,8 +27,9 @@ from apps.api.app.reports.contracts import (
 )
 from apps.api.app.reports.snapshot_reviews import RESPONSE_PUBLISHED, period_bounds
 
-TITLE_LIMIT = 5
+TITLE_LIMIT = 10
 TITLE_LENGTH = 80
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s")
 POST_VERIFIED = "verified"
 CONTENT_PUBLISHED = "published"
 SITE_CHANGE = "site_change"
@@ -35,10 +37,17 @@ SITE_CHANGE_LIVE = ("deployed", "verified")
 
 
 def _short(text: str | None) -> str | None:
+    """A post's first sentence, cut at a word boundary when it is long, with an ellipsis."""
     line = " ".join((text or "").split())
     if not line:
         return None
-    return line if len(line) <= TITLE_LENGTH else line[: TITLE_LENGTH - 1].rstrip() + "…"
+    first = _SENTENCE_END.split(line, maxsplit=1)[0]
+    if len(first) <= TITLE_LENGTH:
+        return first
+    room = first[: TITLE_LENGTH - 1]
+    # Back up to the last whole word; a single very long word is cut where it stands.
+    cut = room.rsplit(" ", 1)[0] if " " in room and first[TITLE_LENGTH - 1] != " " else room
+    return cut.rstrip(" ,;:-") + "…"
 
 
 def _titles(values: Sequence[str | None]) -> list[str]:

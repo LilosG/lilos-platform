@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 from apps.api.app.locations.enums import LocationStatus
 from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
+from apps.api.app.reports.cards import figure_table
 from apps.api.app.reports.contracts import (
     NOTE_EFFECT,
     Availability,
@@ -206,6 +208,73 @@ async def test_an_optional_figure_that_drops_to_zero_is_not_comparable_and_says_
     assert NOTE_EFFECT[NoteCode.OPTIONAL_FIGURE_NOT_REPORTED] is NoteEffect.INFORMATIONAL
     # It is never a headline.
     assert all(h.key.value != "bookings" for h in result.headlines)
+
+
+def booked_per_day(booked: int) -> Callable[[GBPPerformanceMetric, date], int]:
+    """Daily values: every core figure 4 a day, bookings ``booked`` a day."""
+    bookings = GBPPerformanceMetric.BUSINESS_BOOKINGS
+    return lambda metric, day: booked if metric is bookings else 4
+
+
+@pytest.mark.anyio
+async def test_an_optional_figure_that_stops_part_way_through_the_period_is_marked_incomplete(
+    factory: Factory,
+) -> None:
+    org, gbp, _ = await seed_org(factory)
+    bookings = GBPPerformanceMetric.BUSINESS_BOOKINGS
+    per_day = {4: 2, 5: 2, 6: 2, 7: 3, 8: 1, 9: 0}
+    # Bookings are reported through August and then Google stores zeros: July 93, August 31, then 0.
+    for month_number, booked in per_day.items():
+        await store_metrics(
+            factory,
+            org,
+            gbp,
+            date(2026, month_number, 1),
+            booked_per_day(booked),
+            metrics=(*CORE, bookings),
+        )
+
+    result = await snapshot(
+        factory, org, date(2026, 7, 1), end=SEPTEMBER, comparison=ComparisonSpec()
+    )
+
+    (row,) = result.gbp.actions.optional
+    assert row.metric is bookings and row.comparable is False
+    assert row.note is NoteCode.OPTIONAL_FIGURE_STOPPED
+    # The total so far is kept, but no change is drawn against an incomplete period.
+    assert row.comparison.current.value == 3 * 31 + 1 * 31 and row.comparison.compared.value
+    assert row.comparison.change is None and row.comparison.change_percent is None
+    stopped = next(n for n in result.notes if n.code is NoteCode.OPTIONAL_FIGURE_STOPPED)
+    assert stopped.metric is bookings and stopped.month == AUGUST
+    assert NoteCode.OPTIONAL_FIGURE_NOT_REPORTED not in codes(result)
+    assert NOTE_EFFECT[NoteCode.OPTIONAL_FIGURE_STOPPED] is NoteEffect.INFORMATIONAL
+    # Never a headline and never a result card.
+    assert all(h.key.value != "bookings" for h in result.headlines)
+    assert all("booking" not in key.value for key in figure_table(result, None))
+
+
+@pytest.mark.anyio
+async def test_an_optional_figure_still_reported_in_the_last_month_is_not_stopped(
+    factory: Factory,
+) -> None:
+    org, gbp, _ = await seed_org(factory)
+    bookings = GBPPerformanceMetric.BUSINESS_BOOKINGS
+    for month_number, booked in {4: 2, 5: 2, 6: 2, 7: 0, 8: 1, 9: 3}.items():
+        await store_metrics(
+            factory,
+            org,
+            gbp,
+            date(2026, month_number, 1),
+            booked_per_day(booked),
+            metrics=(*CORE, bookings),
+        )
+
+    result = await snapshot(factory, org, date(2026, 7, 1), end=SEPTEMBER)
+
+    # A quiet July followed by bookings again is an ordinary figure, not a stopped one.
+    (row,) = result.gbp.actions.optional
+    assert row.comparable and row.note is None
+    assert NoteCode.OPTIONAL_FIGURE_STOPPED not in codes(result)
 
 
 @pytest.mark.anyio

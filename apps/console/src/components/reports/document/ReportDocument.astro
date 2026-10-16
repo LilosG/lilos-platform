@@ -3,139 +3,154 @@ import type { ReportDetail } from "../../../adapters/reports";
 import { documentView } from "../../../lib/report-document";
 import BarChart from "./BarChart.astro";
 import HorizontalChart from "./HorizontalChart.astro";
+import Pair from "./Pair.astro";
+import SectionHead from "./SectionHead.astro";
 import EmptyState from "../../ui/EmptyState.astro";
 interface Props {
   report: ReportDetail;
 }
 const { report } = Astro.props;
 const view = documentView(report);
-const { cover, scorecard: card } = view;
+const { cover, scorecard: score } = view;
 // Sections are numbered in the order they appear; one with nothing to say is left out entirely.
 const sections = [
-  "glance",
+  ...(view.glance ? ["glance"] : []),
   "scorecard",
   ...(view.gbp ? ["gbp"] : []),
   ...(view.search ? ["search"] : []),
+  ...(view.visits ? ["visits"] : []),
   ...(view.reviews ? ["reviews"] : []),
-  "work",
-  "ahead",
+  ...(view.work ? ["work"] : []),
+  ...(view.ahead ? ["ahead"] : []),
   "notes",
-] as const;
-const number = (id: (typeof sections)[number]) => sections.indexOf(id) + 1;
+] as string[];
+const number = (id: string) => sections.indexOf(id) + 1;
 const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
 ---
 
-<article class="doc" data-report-document>
+<article class="doc" data-report-document data-draft={view.draft}>
+  {
+    view.draft && (
+      <p class="draftbanner" data-draft-banner>
+        Draft - not for sending
+      </p>
+    )
+  }
   <header class="cover">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">L</span>
-      <span>Lilos Growth</span>
-    </div>
-    <div class="covertitle">
-      <p class="eyebrow">{cover.title}</p>
-      <h1>{cover.client}</h1>
-      <p class="period">{cover.period}</p>
-      <p class="range">{cover.range}</p>
-    </div>
-    <dl class="coverfacts">
-      <div>
-        <dt>Comparison</dt>
-        <dd>{cover.compared}</dd>
-      </div>
-      {
-        cover.locations.length > 0 && (
-          <div>
-            <dt>
-              {cover.locations.length === 1 ? "Location" : "Locations covered"}
-            </dt>
-            <dd>{cover.locations.join(", ")}</dd>
-          </div>
-        )
-      }
-      <div>
-        <dt>Prepared by</dt>
-        <dd>{cover.preparedBy}</dd>
-      </div>
-      <div>
-        <dt>Date</dt>
-        <dd>{cover.preparedOn}</dd>
-      </div>
-    </dl>
+    <p class="kicker mono">{cover.kicker}</p>
+    <h1>{cover.title}</h1>
+    <p class="lede">{cover.intro}</p>
+    <p class="prepared">Prepared by {cover.preparedBy} · {cover.preparedOn}</p>
+    {
+      cover.milestones && (
+        <ol class="timeline" data-timeline>
+          {cover.milestones.map((item) => (
+            <li>
+              <span class="when mono">{item.date}</span>
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ol>
+      )
+    }
   </header>
 
-  <section class="numbered" data-section="glance" aria-labelledby="s-glance">
-    <h2 id="s-glance">
-      <span>{number("glance")}</span> This period at a glance
-    </h2>
-    {
-      view.headlines.length ? (
-        <div class="cards">
-          {view.headlines.map((card) => (
-            <div class="card" data-headline={card.key}>
-              <p class="cardlabel">{card.label}</p>
-              <p class="cardvalue">{card.value}</p>
-              <p class:list={["cardchange", card.tone]}>
-                <span aria-hidden="true">{arrow[card.direction]}</span>
-                {card.change}
-              </p>
-              <p class="cardline">{card.line}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <EmptyState title="No headline figures yet">
-          None of the headline figures could be compared with the earlier
-          period. They are listed under “Not included in this report”.
-        </EmptyState>
-      )
-    }
-    <h3>What changed</h3>
-    {
-      view.whatChanged.length ? (
-        view.whatChanged.map((text) => <p class="prose">{text}</p>)
-      ) : (
-        <p class="prose muted">
-          The summary of what changed has not been written yet.
-        </p>
-      )
-    }
-  </section>
+  {
+    view.glance && (
+      <section data-section="glance" aria-labelledby="s-glance">
+        <SectionHead
+          head={view.glance.head}
+          number={number("glance")}
+          id="s-glance"
+        />
+        {view.glance.cards.length > 0 && (
+          <div class="results">
+            {view.glance.cards.map((card) => (
+              <div
+                class:list={["result", { headline: card.headline }]}
+                data-result
+              >
+                <p class:list={["big", card.tone]}>{card.value}</p>
+                <div>
+                  <h3>{card.title}</h3>
+                  <p>{card.text}</p>
+                </div>
+                <p class="foot mono">{card.footer}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {view.glance.prose.map((text) => (
+          <p class="prose">{text}</p>
+        ))}
+      </section>
+    )
+  }
 
-  <section class="numbered" data-section="scorecard" aria-labelledby="s-score">
-    <h2 id="s-score"><span>{number("scorecard")}</span> Scorecard</h2>
+  <section data-section="scorecard" aria-labelledby="s-score">
+    <SectionHead head={score.head} number={number("scorecard")} id="s-score" />
     {
-      card.groups.length ? (
-        <div class="block" role="region" tabindex="0" aria-label="Scorecard">
+      score.card.groups.length ? (
+        <div
+          class="card flush"
+          role="region"
+          tabindex="0"
+          aria-label="Scorecard"
+        >
           <table class="score">
             <thead>
               <tr>
-                <th scope="col">Measure</th>
-                <th scope="col">This period</th>
-                <th scope="col">Compared with</th>
-                <th scope="col">Change</th>
-                {card.hasYear && <th scope="col">Same period last year</th>}
+                <th scope="col">What we measured</th>
+                <th scope="col" class="dnum">
+                  This period
+                </th>
+                <th scope="col" class="dnum">
+                  Compared with
+                </th>
+                <th scope="col" class="dnum">
+                  Change
+                </th>
+                {score.card.hasYear && (
+                  <th scope="col" class="dnum">
+                    Same months last year
+                  </th>
+                )}
               </tr>
             </thead>
-            {card.groups.map((group) => (
+            {score.card.groups.map((group) => (
               <tbody>
                 <tr class="group">
-                  <th scope="colgroup" colspan={card.hasYear ? 5 : 4}>
-                    {group.title}
+                  <th scope="colgroup" colspan={score.card.hasYear ? 5 : 4}>
+                    {group.kicker}
                   </th>
                 </tr>
                 {group.rows.map((row) => (
                   <tr>
-                    <th scope="row">{row.label}</th>
-                    <td class="num strong">{row.current}</td>
-                    <td class="num">{row.compared}</td>
-                    <td class:list={["num", "change", row.tone]}>
+                    <th scope="row">
+                      {row.label}
+                      <span class="dsub">{row.source}</span>
+                      {row.note && <span class="dsub note">{row.note}</span>}
+                    </th>
+                    <td class="dnum strong">
+                      {row.current}
+                      {row.currentSub && (
+                        <span class="dsub">{row.currentSub}</span>
+                      )}
+                    </td>
+                    <td class="dnum">{row.compared}</td>
+                    <td class:list={["dnum", "change", row.tone]}>
                       {arrow[row.direction] && (
                         <span aria-hidden="true">{arrow[row.direction]} </span>
                       )}
                       {row.change}
                     </td>
-                    {card.hasYear && (
-                      <td class="num">{row.year ?? "No comparison"}</td>
+                    {score.card.hasYear && (
+                      <td class="dnum">
+                        {row.year ?? "No comparison"}
+                        {row.yearChange && (
+                          <span class="dsub">{row.yearChange}</span>
+                        )}
+                      </td>
                     )}
                   </tr>
                 ))}
@@ -146,44 +161,51 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
       ) : (
         <EmptyState title="No figures to compare yet">
           Nothing in this report could be stated for the period. The reasons are
-          listed under “Not included in this report”.
+          listed under “Notes and definitions”.
         </EmptyState>
       )
     }
-    {card.footnotes.map((text) => <p class="footnote">{text}</p>)}
-    {card.rowNotes.map((text) => <p class="footnote">{text}</p>)}
+    {score.card.footnotes.map((text) => <p class="dcaption">{text}</p>)}
   </section>
 
   {
     view.gbp && (
-      <section class="numbered" data-section="gbp" aria-labelledby="s-gbp">
-        <h2 id="s-gbp">
-          <span>{number("gbp")}</span> Google Business Profile
-        </h2>
-        {view.gbp.charts.map((chart) => (
-          <BarChart chart={chart} />
-        ))}
+      <section data-section="gbp" aria-labelledby="s-gbp">
+        <SectionHead head={view.gbp.head} number={number("gbp")} id="s-gbp" />
         {view.gbp.splits.length > 0 && (
           <div class="splits">
             {view.gbp.splits.map((split) => (
-              <HorizontalChart title={split.title} model={split.model} />
+              <HorizontalChart
+                title={split.title}
+                model={split.model}
+                caption={
+                  split.title === "Device people used"
+                    ? "How many people looked at the profile on a phone and how many on a computer."
+                    : "Whether people met the profile in Google Maps or in regular Google Search."
+                }
+              />
             ))}
           </div>
         )}
+        <div class="charts">
+          {view.gbp.charts.map((chart) => (
+            <BarChart chart={chart} />
+          ))}
+        </div>
         {view.gbp.terms && (
           <div
-            class="block"
+            class="card flush"
             role="region"
             tabindex="0"
             aria-label="Top search terms"
           >
-            <h3>Top search terms</h3>
+            <h3 class="cardtitle">Searches that showed the profile</h3>
             <table class="plain">
               <thead>
                 <tr>
-                  <th scope="col">What people searched for</th>
-                  <th scope="col" class="num">
-                    Searches
+                  <th scope="col">Search</th>
+                  <th scope="col" class="dnum">
+                    Times shown
                   </th>
                 </tr>
               </thead>
@@ -191,39 +213,38 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
                 {view.gbp.terms.rows.map((row) => (
                   <tr>
                     <th scope="row">{row.keyword}</th>
-                    <td class="num">{row.value}</td>
+                    <td class="dnum">{row.value}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {view.gbp.terms.more > 0 && (
-              <p class="footnote">
-                and {view.gbp.terms.more.toLocaleString("en-US")} more
-              </p>
-            )}
-            {view.gbp.terms.note && (
-              <p class="footnote">{view.gbp.terms.note}</p>
-            )}
+            <p class="dcaption inset">
+              Google reports a count for common searches and only “fewer than” a
+              number for rare ones, shown as “&lt; N”.
+              {view.gbp.terms.more > 0 &&
+                ` and ${view.gbp.terms.more.toLocaleString("en-US")} more searches are not listed.`}
+              {view.gbp.terms.note && ` ${view.gbp.terms.note}`}
+            </p>
           </div>
         )}
         {view.gbp.actions && (
           <div
-            class="block"
+            class="card flush"
             role="region"
             tabindex="0"
             aria-label="Actions by month"
           >
-            <h3>Actions by month</h3>
+            <h3 class="cardtitle">Actions taken on the profile</h3>
             <table class="plain months">
               <thead>
                 <tr>
                   <th scope="col">Action</th>
                   {view.gbp.actions.months.map((month) => (
-                    <th scope="col" class="num">
+                    <th scope="col" class="dnum">
                       {month}
                     </th>
                   ))}
-                  <th scope="col" class="num">
+                  <th scope="col" class="dnum">
                     Total
                   </th>
                 </tr>
@@ -233,37 +254,41 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
                   <tr>
                     <th scope="row">{row.label}</th>
                     {row.cells.map((cell) => (
-                      <td class="num">{cell}</td>
+                      <td class="dnum">{cell}</td>
                     ))}
-                    <td class="num strong">{row.total}</td>
+                    <td class="dnum strong">{row.total}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <p class="dcaption inset">
+              Calls, website clicks and direction requests are the actions
+              closest to a visit.
+            </p>
           </div>
         )}
         {view.gbp.locations.length > 0 && (
           <div
-            class="block"
+            class="card flush"
             role="region"
             tabindex="0"
             aria-label="By location"
           >
-            <h3>By location</h3>
+            <h3 class="cardtitle">By location</h3>
             <table class="plain">
               <thead>
                 <tr>
                   <th scope="col">Location</th>
-                  <th scope="col" class="num">
+                  <th scope="col" class="dnum">
                     Profile views
                   </th>
-                  <th scope="col" class="num">
+                  <th scope="col" class="dnum">
                     Calls
                   </th>
-                  <th scope="col" class="num">
+                  <th scope="col" class="dnum">
                     Website clicks
                   </th>
-                  <th scope="col" class="num">
+                  <th scope="col" class="dnum">
                     Directions
                   </th>
                 </tr>
@@ -272,10 +297,10 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
                 {view.gbp.locations.map((row) => (
                   <tr>
                     <th scope="row">{row.name}</th>
-                    <td class="num">{row.views}</td>
-                    <td class="num">{row.calls}</td>
-                    <td class="num">{row.website}</td>
-                    <td class="num">{row.directions}</td>
+                    <td class="dnum">{row.views}</td>
+                    <td class="dnum">{row.calls}</td>
+                    <td class="dnum">{row.website}</td>
+                    <td class="dnum">{row.directions}</td>
                   </tr>
                 ))}
               </tbody>
@@ -288,149 +313,275 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
 
   {
     view.search && (
-      <section
-        class="numbered"
-        data-section="search"
-        aria-labelledby="s-search"
-      >
-        <h2 id="s-search">
-          <span>{number("search")}</span> Website search
-        </h2>
-        {view.search.charts.map((chart) => (
-          <BarChart chart={chart} />
-        ))}
-        <div class="block" role="region" tabindex="0" aria-label="Top searches">
-          <h3>Top searches that did not name {cover.client}</h3>
-          {view.search.view.queries.length ? (
-            <table class="plain">
-              <thead>
-                <tr>
-                  <th scope="col">Search</th>
-                  <th scope="col" class="num">
-                    Position
-                  </th>
-                  <th scope="col" class="num">
-                    Impressions
-                  </th>
-                  <th scope="col" class="num">
-                    Clicks
-                  </th>
-                  <th scope="col" class="num">
-                    Change in clicks
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.search.view.queries.map((row) => (
+      <section data-section="search" aria-labelledby="s-search">
+        <SectionHead
+          head={view.search.head}
+          number={number("search")}
+          id="s-search"
+        />
+        {view.search.view.tiles.length > 0 && (
+          <div class="tiles" data-search-tiles>
+            {view.search.view.tiles.map((tile) => (
+              <div>
+                <p class="tilelabel">{tile.label}</p>
+                <p class="tilevalue">{tile.value}</p>
+                {tile.line && (
+                  <p class:list={["tileline", tile.tone]}>{tile.line}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {view.search.view.topics.length > 0 && (
+          <div data-topics>
+            <h3 class="dsubhead">Results by search topic</h3>
+            <div
+              class="card flush"
+              role="region"
+              tabindex="0"
+              aria-label="Results by search topic"
+            >
+              <table class="plain topics">
+                <thead>
                   <tr>
-                    <th scope="row">{row.label}</th>
-                    <td class="num">{row.position}</td>
-                    <td class="num">{row.impressions}</td>
-                    <td class="num">{row.clicks}</td>
-                    <td class="num">{row.change}</td>
+                    <th scope="col">Topic</th>
+                    <th scope="col" class="dnum">
+                      Top 10 searches
+                      {view.search.view.comparable && (
+                        <span class="dsub">before → after</span>
+                      )}
+                    </th>
+                    <th scope="col" class="dnum">
+                      Average position
+                      {view.search.view.comparable && (
+                        <span class="dsub">before → after</span>
+                      )}
+                    </th>
+                    <th scope="col" class="dnum">
+                      Clicks
+                      {view.search.view.comparable && (
+                        <span class="dsub">before → after</span>
+                      )}
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p class="muted">
-              Google reported no searches of this kind for the period.
+                </thead>
+                <tbody>
+                  {view.search.view.topics.map((topic) => (
+                    <tr>
+                      <th scope="row">
+                        {topic.label}
+                        <span class="dsub">{topic.examples}</span>
+                      </th>
+                      <td class="dnum">
+                        <Pair value={topic.top10} />
+                      </td>
+                      <td class="dnum">
+                        <Pair value={topic.position} />
+                      </td>
+                      <td class="dnum">
+                        <Pair value={topic.clicks} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="dcaption">
+              {view.search.view.topicNote}
+              {view.search.view.positionNote &&
+                ` ${view.search.view.positionNote}`}
             </p>
-          )}
-          {view.search.view.brandedNote && (
-            <p class="footnote">{view.search.view.brandedNote}</p>
-          )}
-          <p class="footnote">{view.search.view.topNote}</p>
-          {view.search.view.lagNote && (
-            <p class="footnote">{view.search.view.lagNote}</p>
-          )}
+          </div>
+        )}
+        {view.search.view.gains.length > 0 && (
+          <div data-gains>
+            <h3 class="dsubhead">Searches that gained ground</h3>
+            <div
+              class="card flush"
+              role="region"
+              tabindex="0"
+              aria-label="Searches that gained ground"
+            >
+              <table class="plain gains">
+                <thead>
+                  <tr>
+                    <th scope="col">Search</th>
+                    <th scope="col" class="dnum">
+                      Position
+                      <span class="dsub">before → after</span>
+                    </th>
+                    <th scope="col" class="dnum">
+                      Impressions
+                      <span class="dsub">before → after</span>
+                    </th>
+                    <th scope="col" class="dnum">
+                      Clicks
+                      <span class="dsub">before → after</span>
+                    </th>
+                  </tr>
+                </thead>
+                {view.search.view.gains.map((group) => (
+                  <tbody>
+                    <tr class="group">
+                      <th scope="colgroup" colspan="4">
+                        {group.label}
+                      </th>
+                    </tr>
+                    {group.rows.map((row) => (
+                      <tr>
+                        <th scope="row">{row.query}</th>
+                        <td class="dnum">
+                          <Pair value={row.position} />
+                        </td>
+                        <td class="dnum">
+                          <Pair value={row.impressions} />
+                        </td>
+                        <td class="dnum">
+                          <Pair value={row.clicks} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
+              </table>
+            </div>
+            {view.search.view.gainNote && (
+              <p class="dcaption">{view.search.view.gainNote}</p>
+            )}
+          </div>
+        )}
+        <div class="charts">
+          {view.search.view.charts.map((chart) => (
+            <BarChart chart={chart} />
+          ))}
         </div>
         {view.search.view.pages.length > 0 && (
-          <div class="block" role="region" tabindex="0" aria-label="Top pages">
-            <h3>Top pages</h3>
-            <table class="plain">
-              <thead>
-                <tr>
-                  <th scope="col">Page</th>
-                  <th scope="col" class="num">
-                    Position
-                  </th>
-                  <th scope="col" class="num">
-                    Impressions
-                  </th>
-                  <th scope="col" class="num">
-                    Clicks
-                  </th>
-                  <th scope="col" class="num">
-                    Change in clicks
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.search.view.pages.map((row) => (
+          <div>
+            <h3 class="dsubhead">Pages people landed on</h3>
+            <div
+              class="card flush"
+              role="region"
+              tabindex="0"
+              aria-label="Top pages"
+            >
+              <table class="plain">
+                <thead>
                   <tr>
-                    <th scope="row">{row.label}</th>
-                    <td class="num">{row.position}</td>
-                    <td class="num">{row.impressions}</td>
-                    <td class="num">{row.clicks}</td>
-                    <td class="num">{row.change}</td>
+                    <th scope="col">Page</th>
+                    <th scope="col" class="dnum">
+                      Position
+                    </th>
+                    <th scope="col" class="dnum">
+                      Impressions
+                    </th>
+                    <th scope="col" class="dnum">
+                      Clicks
+                    </th>
+                    <th scope="col" class="dnum">
+                      Change in clicks
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {view.search.view.pages.map((row) => (
+                    <tr>
+                      <th scope="row">{row.label}</th>
+                      <td class="dnum">{row.position}</td>
+                      <td class="dnum">{row.impressions}</td>
+                      <td class="dnum">{row.clicks}</td>
+                      <td class="dnum">{row.change}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p class="dcaption">{view.search.view.pagesNote}</p>
           </div>
+        )}
+        {view.search.view.lagNote && (
+          <p class="dcaption">{view.search.view.lagNote}</p>
         )}
       </section>
     )
   }
 
   {
-    view.reviews && (
-      <section
-        class="numbered"
-        data-section="reviews"
-        aria-labelledby="s-reviews"
-      >
-        <h2 id="s-reviews">
-          <span>{number("reviews")}</span> Reviews
-        </h2>
-        <div class="reviewhead">
-          {view.reviews.rating && (
-            <div class="rating">
-              <p class="cardvalue">{view.reviews.rating}</p>
-              <p class="cardline">
-                Average Google rating
-                {view.reviews.total && ` across ${view.reviews.total} reviews`}
+    view.visits && (
+      <section data-section="visits" aria-labelledby="s-visits">
+        <SectionHead
+          head={view.visits.head}
+          number={number("visits")}
+          id="s-visits"
+        />
+        <div class="tiles" data-visits-tile>
+          <div>
+            <p class="tilelabel">Visits from search</p>
+            <p class="tilevalue">{view.visits.tile.value}</p>
+            {view.visits.tile.line && (
+              <p class:list={["tileline", view.visits.tile.tone]}>
+                {view.visits.tile.line}
               </p>
-            </div>
-          )}
-          {view.reviews.distribution && (
-            <HorizontalChart
-              title="Star ratings across all reviews"
-              model={view.reviews.distribution}
-            />
-          )}
+            )}
+          </div>
         </div>
-        <div class="cards three">
-          {view.reviews.stats.map((stat) => (
-            <div class="card">
-              <p class="cardlabel">{stat.label}</p>
-              <p class="cardvalue small">{stat.value}</p>
-              <p class="cardline">{stat.detail}</p>
-            </div>
-          ))}
+        <div class="charts">
+          <BarChart chart={view.visits.chart} />
         </div>
       </section>
     )
   }
 
-  <section class="numbered" data-section="work" aria-labelledby="s-work">
-    <h2 id="s-work"><span>{number("work")}</span> Work completed</h2>
-    {
-      view.work.length ? (
+  {
+    view.reviews && (
+      <section data-section="reviews" aria-labelledby="s-reviews">
+        <SectionHead
+          head={view.reviews.head}
+          number={number("reviews")}
+          id="s-reviews"
+        />
+        <div class="tiles">
+          {view.reviews.view.stats.map((stat) => (
+            <div>
+              <p class="tilelabel">{stat.label}</p>
+              <p class="tilevalue">{stat.value}</p>
+              <p class="tileline">{stat.detail}</p>
+            </div>
+          ))}
+        </div>
+        <div class="dreviewhead">
+          {view.reviews.view.rating && (
+            <div class="card rating">
+              <p class="big">{view.reviews.view.rating}</p>
+              <p class="dcaption">
+                Average Google rating
+                {view.reviews.view.total &&
+                  ` across ${view.reviews.view.total} reviews`}
+              </p>
+            </div>
+          )}
+          {view.reviews.view.distribution && (
+            <HorizontalChart
+              title="Star ratings across all reviews"
+              model={view.reviews.view.distribution}
+              caption={view.reviews.view.caption}
+            />
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  {
+    view.work && (
+      <section data-section="work" aria-labelledby="s-work">
+        <SectionHead
+          head={view.work.head}
+          number={number("work")}
+          id="s-work"
+        />
         <ul class="work">
-          {view.work.map((line) => (
-            <li>
+          {view.work.lines.map((line) => (
+            <li class="card">
               <p class="worklabel">
                 <strong>{line.count}</strong> {line.label}
               </p>
@@ -439,86 +590,63 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
                   {line.titles.map((title) => (
                     <li>{title}</li>
                   ))}
+                  {line.more > 0 && (
+                    <li class="more">
+                      and {line.more.toLocaleString("en-US")} more
+                    </li>
+                  )}
                 </ul>
               )}
             </li>
           ))}
         </ul>
-      ) : (
-        <p class="prose muted">
-          No finished work was recorded for this period.
-        </p>
-      )
-    }
-  </section>
+      </section>
+    )
+  }
 
-  <section class="numbered" data-section="ahead" aria-labelledby="s-ahead">
-    <h2 id="s-ahead"><span>{number("ahead")}</span> Looking ahead</h2>
-    {
-      view.nextWork.length ? (
-        view.nextWork.map((text) => <p class="prose">{text}</p>)
-      ) : (
-        <p class="prose muted">
-          The plan for the next period has not been written yet.
-        </p>
-      )
-    }
-  </section>
-
-  <section
-    class="numbered notes"
-    data-section="notes"
-    aria-labelledby="s-notes"
-  >
-    <h2 id="s-notes"><span>{number("notes")}</span> Notes and definitions</h2>
-    <h3>This report</h3>
-    <p class="small">{view.notes.period}</p>
-    {
-      view.notes.sync.length > 0 && (
-        <p class="small">{view.notes.sync.join(" ")}</p>
-      )
-    }
-    {
-      view.notes.definitions.length > 0 && (
-        <Fragment>
-          <h3>What the figures mean</h3>
-          <dl class="defs">
-            {view.notes.definitions.map((item) => (
-              <div>
-                <dt>{item.term}</dt>
-                <dd>{item.text}</dd>
-              </div>
-            ))}
-          </dl>
-        </Fragment>
-      )
-    }
-    {
-      (view.notes.dataNotes.length > 0 || view.notes.footnotes.length > 0) && (
-        <Fragment>
-          <h3>About the data</h3>
-          <ul class="small">
-            {view.notes.footnotes.map((text) => (
-              <li>{text}</li>
-            ))}
-            {view.notes.dataNotes.map((text) => (
-              <li>{text}</li>
-            ))}
-          </ul>
-        </Fragment>
-      )
-    }
-    <h3>Not included in this report</h3>
-    {
-      view.notes.notIncluded.length ? (
-        <ul class="small">
-          {view.notes.notIncluded.map((text) => (
-            <li>{text}</li>
+  {
+    view.ahead && (
+      <section data-section="ahead" aria-labelledby="s-ahead">
+        <SectionHead
+          head={view.ahead.head}
+          number={number("ahead")}
+          id="s-ahead"
+        />
+        <div class="card ahead">
+          {view.ahead.paragraphs.map((text) => (
+            <p class="prose">{text}</p>
           ))}
-        </ul>
-      ) : (
-        <p class="small">Everything this report measures is included.</p>
-      )
-    }
+        </div>
+      </section>
+    )
+  }
+
+  <section class="notes" data-section="notes" aria-labelledby="s-notes">
+    <SectionHead head={view.notes.head} number={number("notes")} id="s-notes" />
+    <ul class="notelist">
+      <li>
+        <b>This report.</b>
+        {view.notes.period}
+        {view.notes.sync.join(" ")}
+      </li>
+      {
+        view.notes.definitions.map((item) => (
+          <li>
+            <b>{item.term}.</b>
+            {item.text}
+          </li>
+        ))
+      }
+      {view.notes.footnotes.map((text) => <li>{text}</li>)}
+      {view.notes.dataNotes.map((text) => <li>{text}</li>)}
+      {
+        view.notes.notIncluded.length > 0 && (
+          <li>
+            <b>Not included in this report.</b>
+            {view.notes.notIncluded.join("; ")}.
+          </li>
+        )
+      }
+    </ul>
   </section>
 </article>

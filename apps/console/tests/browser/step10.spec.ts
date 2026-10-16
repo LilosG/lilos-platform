@@ -76,7 +76,7 @@ test("portfolio to client to report: generate, draft, approve and mark sent", as
 
   await page.getByRole("button", { name: "Draft with Hermes" }).click();
   await expect(page.locator("textarea[name=what_changed]")).toHaveValue(
-    /1,800 times/,
+    /Your profile was viewed [\d,]+ times in September, up from [\d,]+ in August/,
   );
   await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
   await page.getByRole("button", { name: "Approve" }).click();

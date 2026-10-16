@@ -110,7 +110,8 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
         href={printHref}
         target="_blank"
         rel="noopener"
-        data-report-download>Download PDF</a
+        data-report-download
+        >{report.status === "draft" ? "Download draft PDF" : "Download PDF"}</a
       >
       {
         narrative.editable && (
@@ -217,7 +218,10 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
               </tr>
               {group.rows.map((row) => (
                 <tr>
-                  <th scope="row">{row.label}</th>
+                  <th scope="row">
+                    {row.label}
+                    {row.note && <small class="muted">{row.note}</small>}
+                  </th>
                   <td>{row.current}</td>
                   <td>{row.compared}</td>
                   <td>{row.change}</td>
@@ -228,9 +232,6 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
           ))}
         </DataTable>
         {card.footnotes.map((text) => (
-          <p class="muted tablenote">{text}</p>
-        ))}
-        {card.rowNotes.map((text) => (
           <p class="muted tablenote">{text}</p>
         ))}
       </section>
@@ -288,6 +289,53 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
           )}
         </div>
       ))
+    }
+    {
+      narrative.cards.length > 0 && (
+        <div>
+          <h3>Result cards</h3>
+          <p class="muted">
+            The results at the top of the client document. The figures are
+            fixed; edit the wording.
+          </p>
+          {narrative.cards.map((card, index) => (
+            <div
+              class="resultcard"
+              data-result-card
+              data-keys={card.keys}
+              data-tone={card.tone}
+              data-headline={String(card.headline)}
+            >
+              {narrative.editable ? (
+                <>
+                  <input
+                    type="text"
+                    name={`card_title_${index}`}
+                    maxlength="80"
+                    value={card.title}
+                    aria-label={`Card ${index + 1} title`}
+                  />
+                  <textarea
+                    name={`card_text_${index}`}
+                    rows="3"
+                    maxlength="500"
+                    aria-label={`Card ${index + 1} sentence`}
+                  >
+                    {card.text}
+                  </textarea>
+                </>
+              ) : (
+                <>
+                  <p>
+                    <strong>{card.title}</strong>
+                  </p>
+                  <p>{card.text}</p>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )
     }
   </section>
 

@@ -3,6 +3,7 @@ import {
   comparisonSlug,
   detail,
   monthsOf,
+  narrativeFor,
   periodSlug,
 } from "../fixtures/report.mjs";
 const json = (status, body) => ({ status, body });
@@ -13,13 +14,8 @@ const names = {
 };
 const LAST_ENDED = "2026-09-01";
 export const state = { clients: {}, mode: "default" };
-const words = {
-  what_changed:
-    "Your profile was viewed 1,800 times in September, up from 1,530 in August, a rise of 18%. Calls, website clicks and direction requests together came to 515.",
-  next_work:
-    "We will keep publishing weekly posts, answer every review, and watch the private events search terms.",
-  origin: "hermes",
-};
+// A drafted narrative whose numbers are worked out from the fixture's own report when it is stored.
+const words = { auto: true, origin: "hermes" };
 const rangeWords = {
   what_changed:
     "Across May to September, more people found Coco Maya on Google than in the five months before.\n\nSearch clicks and website visits from search both grew, and every new review was answered.",
@@ -32,6 +28,11 @@ const PREVIOUS = {
   baseline_start: null,
   baseline_end: null,
 };
+const BASELINE = {
+  basis: "custom_baseline",
+  baseline_start: "2025-12-01",
+  baseline_end: "2026-04-01",
+};
 const key = (period, spec) =>
   `${periodSlug(period.start_month, period.end_month)}/${comparisonSlug(spec)}`;
 const SEPTEMBER = { start_month: LAST_ENDED, end_month: LAST_ENDED };
@@ -40,7 +41,15 @@ const MAY_SEPTEMBER = { start_month: "2026-05-01", end_month: LAST_ENDED };
 const report = (period, comparison, revisions, options = {}) => ({
   period,
   comparison,
-  revisions,
+  revisions: revisions.map((row) => {
+    if (!row.narrative.auto) return row;
+    const rest = { ...row.narrative };
+    delete rest.auto;
+    return {
+      ...row,
+      narrative: { ...rest, ...narrativeFor(period, comparison, options) },
+    };
+  }),
   options,
 });
 const revision = (number, status, narrative, extra = {}) => ({
@@ -68,6 +77,55 @@ export function reset(mode = "default") {
         [key(SEPTEMBER, PREVIOUS)]: report(SEPTEMBER, PREVIOUS, [
           revision(1, mode === "sent" ? "sent" : "draft", words),
         ]),
+      },
+    };
+  if (mode === "document")
+    // A full report: cards, topics, gains, milestones and two locations.
+    state.clients.a = {
+      reports: {
+        [key(SEPTEMBER, PREVIOUS)]: report(
+          SEPTEMBER,
+          PREVIOUS,
+          [revision(1, "ready", words)],
+          {
+            search: "results",
+            cards: true,
+            names: ["Synthetic Alpha Downtown", "Synthetic Alpha Beach"],
+            milestones: [
+              {
+                day: "2026-05-01",
+                label:
+                  "Lilos Growth begins Google Business Profile management.",
+              },
+              { day: "2026-07-17", label: "New website launches." },
+            ],
+          },
+        ),
+      },
+    };
+  if (mode === "sparse")
+    // Shaped like a client with thin data: a draft, no search before May, four addresses for
+    // the home page, a misspelled brand search, and Google no longer reporting bookings.
+    state.clients.b = {
+      reports: {
+        [key(MAY_SEPTEMBER, BASELINE)]: report(
+          MAY_SEPTEMBER,
+          BASELINE,
+          [revision(1, "draft", words)],
+          {
+            search: "alone",
+            searchAlone: true,
+            cards: true,
+            urlVariants: true,
+            // Bookings: 101 in July, 28 in August, 0 in September; the comparison had some.
+            bookingsStopped: {
+              after: "2026-08-01",
+              total: 129,
+              compared: 318,
+            },
+            internalNames: ["Main"],
+          },
+        ),
       },
     };
   if (mode === "range" || mode === "gaps")
@@ -241,15 +299,27 @@ export function reports(req, url, claims, ids, body) {
   if (!action) return json(200, view(ids, client, stored, row, p));
   if (action === "narrative") {
     if (row.status !== "draft") return fail(409, "REPORT_NOT_EDITABLE");
-    row.narrative = { ...body, origin: "manual" };
+    row.narrative = {
+      ...body,
+      origin: "manual",
+      // The figures of a card are looked up again by their keys; only the words change.
+      result_cards: body.result_cards
+        ? body.result_cards.map((card) => ({
+            ...card,
+            figures:
+              row.narrative.result_cards?.find(
+                (old) => old.figure_keys.join() === card.figure_keys.join(),
+              )?.figures ?? [],
+          }))
+        : (row.narrative.result_cards ?? undefined),
+    };
     return json(200, view(ids, client, stored, row, p));
   }
   if (action === "draft-narrative") {
     row.narrative = {
-      what_changed:
-        "Your profile was viewed 1,800 times in September, up from 1,530 in August.",
-      next_work: "We will keep publishing posts and replying to every review.",
+      ...narrativeFor(stored.period, stored.comparison, stored.options),
       origin: "hermes",
+      result_cards: row.narrative.result_cards,
     };
     return json(200, {
       report: view(ids, client, stored, row, p),

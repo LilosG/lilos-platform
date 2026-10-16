@@ -114,3 +114,10 @@ class ReportSentDateInvalidError(ApiError):
     code = "REPORT_SENT_DATE_INVALID"
     category = ErrorCategory.VALIDATION
     public_message = "The sent date must be after the report's last month and not in the future."
+
+
+class ReportCardFigureUnavailableError(ApiError):
+    status_code = HTTPStatus.UNPROCESSABLE_ENTITY
+    code = "REPORT_CARD_FIGURE_UNAVAILABLE"
+    category = ErrorCategory.VALIDATION
+    public_message = "A result card can only be about a figure this report has."

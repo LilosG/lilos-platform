@@ -6,9 +6,12 @@
  */
 import type {
   CountComparison,
+  FigureKey,
   RateComparison,
   ReportDetail,
   ReportSnapshot,
+  ResultCard,
+  SearchResults,
   SeriesKey,
 } from "../adapters/reports";
 import {
@@ -22,13 +25,14 @@ import {
   changeText,
   comparedLabel,
   comparedPhrase,
+  comparisonText,
   countText,
   directionOf,
   gapText,
-  headlineCards,
   isPartial,
   metricLabel,
   monthLabel,
+  monthName,
   monthShort,
   narrativeParagraphs,
   noteText,
@@ -40,10 +44,9 @@ import {
   rateText,
   toneOf,
   type Better,
-  type HeadlineCard,
   type Tone,
 } from "./report-view";
-import { DISPLAY_TIME_ZONE, dateText, fmt, positionText } from "./present";
+import { DISPLAY_TIME_ZONE, dateText, fmt, signed } from "./present";
 import { monthsOf } from "./report-period";
 
 const longDay = (iso: string) =>
@@ -57,28 +60,42 @@ const plural = (count: number, one: string, many: string) =>
   `${fmt(count)} ${count === 1 ? one : many}`;
 
 export type Direction = "up" | "down" | "flat" | "none";
+const SOURCE = {
+  gbp: "Google Business Profile",
+  search: "Google Search Console",
+  traffic: "Google Analytics",
+  reviews: "Google reviews",
+} as const;
 export interface ScoreRow {
   label: string;
+  /** Where the figure comes from, under the label. */
+  source: string;
+  /** Why a figure reads the way it does, when it would otherwise be bare. */
+  note: string | null;
   current: string;
+  /** A second line under the figure, such as "1,800 a month". */
+  currentSub: string | null;
   compared: string;
   change: string;
   direction: Direction;
   tone: Tone;
-  /** The same period a year earlier, with its change; null when this row has none to show. */
+  /** The same period a year earlier; null when this row has none to show. */
   year: string | null;
+  /** Its change, for the muted second line under the value. */
+  yearChange: string | null;
   partial: boolean;
 }
 export interface ScoreGroup {
   id: "gbp" | "search" | "traffic" | "reviews";
   title: string;
+  /** The small mono line above the group: what it is and what it is compared with. */
+  kicker: string;
   rows: ScoreRow[];
 }
 export interface Scorecard {
   groups: ScoreGroup[];
   /** Whether the "same period last year" column is drawn: only when some row has it. */
   hasYear: boolean;
-  /** Notes that explain a row, such as a figure Google stopped reporting. */
-  rowNotes: string[];
   footnotes: string[];
 }
 const PARTIAL_FOOTNOTE: Record<ScoreGroup["id"], string> = {
@@ -94,10 +111,11 @@ function countCells(comparison: CountComparison) {
   const current = countText(comparison.current) ?? "";
   const compared = countText(comparison.compared);
   return {
-    current:
+    current,
+    currentSub:
       averaged && comparison.current_monthly_average != null
-        ? `${current} (${fmt(comparison.current_monthly_average)} a month)`
-        : current,
+        ? `${fmt(comparison.current_monthly_average)} a month`
+        : null,
     compared: compared
       ? averaged
         ? `${compared} a month`
@@ -105,33 +123,43 @@ function countCells(comparison: CountComparison) {
       : gapText(comparison.compared),
   };
 }
-function yearCell(comparison: CountComparison): string | null {
+function yearCell(comparison: CountComparison): {
+  year: string | null;
+  yearChange: string | null;
+} {
   const year = comparison.year_ago;
-  if (year === null || year === undefined) return null;
+  if (year === null || year === undefined)
+    return { year: null, yearChange: null };
   const value = countText(year);
-  if (!value) return gapText(year);
-  const change = changeText(comparison, "year");
-  return change ? `${value} (${change})` : value;
+  if (!value) return { year: gapText(year), yearChange: null };
+  return { year: value, yearChange: changeText(comparison, "year") };
 }
-function countRow(label: string, comparison: CountComparison): ScoreRow | null {
+function countRow(
+  label: string,
+  source: string,
+  comparison: CountComparison,
+  note: string | null = null,
+): ScoreRow | null {
   if (!present(comparison.current)) return null;
-  const { current, compared } = countCells(comparison);
+  const cells = countCells(comparison);
   const change = changeText(comparison);
   const partial =
     isPartial(comparison.current) || isPartial(comparison.compared);
   return {
     label,
-    current,
-    compared,
+    source,
+    note,
+    ...cells,
     change: change ?? (partial ? "Not comparable" : "No comparison"),
     direction: directionOf(comparison.change),
     tone: toneOf(directionOf(comparison.change)),
-    year: yearCell(comparison),
+    ...yearCell(comparison),
     partial: isPartial(comparison.current),
   };
 }
 function rateRow(
   label: string,
+  source: string,
   comparison: RateComparison,
   format: (value: number) => string,
   unit: string,
@@ -147,7 +175,10 @@ function rateRow(
   const year = comparison.year_ago;
   return {
     label,
+    source,
+    note: null,
     current: rateText(comparison.current, format) ?? "",
+    currentSub: null,
     compared:
       rateText(comparison.compared, format) ?? gapText(comparison.compared),
     change:
@@ -159,23 +190,83 @@ function rateRow(
       year === null || year === undefined
         ? null
         : present(year)
-          ? `${rateText(year, format)}${point(comparison.year_change) ? ` (${point(comparison.year_change)})` : ""}`
+          ? rateText(year, format)
           : gapText(year),
+    yearChange:
+      year !== null && year !== undefined && present(year)
+        ? point(comparison.year_change)
+        : null,
     partial: isPartial(comparison.current),
   };
 }
 const keep = (rows: (ScoreRow | null)[]): ScoreRow[] =>
   rows.filter((row): row is ScoreRow => row !== null);
-export function scorecard(snapshot: ReportSnapshot): Scorecard {
+/** "+76 searches (+80%)": a count of searches before and after. */
+function searchCountRow(
+  label: string,
+  before: number | null,
+  after: number,
+): ScoreRow {
+  const change = before === null ? null : after - before;
+  const percent = before ? ((after - before) / before) * 100 : null;
+  const direction = directionOf(change);
+  return {
+    label,
+    source: "Search Console, non-branded searches",
+    note: null,
+    current: fmt(after),
+    currentSub: null,
+    compared: before === null ? "No comparison" : fmt(before),
+    change:
+      change === null
+        ? "No comparison"
+        : `${change > 0 ? "+" : change < 0 ? "−" : ""}${fmt(Math.abs(change))}${percent === null ? "" : ` (${signed(percent, 0)})`}`,
+    direction,
+    tone: toneOf(direction),
+    year: null,
+    yearChange: null,
+    partial: false,
+  };
+}
+export function scorecard(
+  snapshot: ReportSnapshot,
+  results: SearchResults | null = null,
+): Scorecard {
   const { gbp, search_console: search, analytics, reviews } = snapshot;
-  const rowNotes: string[] = [];
   const groups: ScoreGroup[] = [];
+  const versus = `${periodLabel(periodOf(snapshot.period))} vs. ${comparedLabel(snapshot)}${snapshot.comparison.compared_as === "monthly_average" ? ", as monthly averages" : ""}`;
   if (gbp.availability !== "unavailable") {
     const optional = gbp.actions.optional.flatMap((row): ScoreRow[] => {
       const label = metricLabel(row.metric);
       if (row.comparable) {
-        const made = countRow(label, row.comparison);
+        const made = countRow(label, SOURCE.gbp, row.comparison);
         return made ? [made] : [];
+      }
+      if (row.note === "optional_figure_stopped") {
+        // Values stopped part way through: the total so far stands, marked incomplete, with no change.
+        const stopped = snapshot.notes.find(
+          (item) =>
+            item.code === "optional_figure_stopped" &&
+            item.metric === row.metric,
+        );
+        return [
+          {
+            label,
+            source: SOURCE.gbp,
+            note: stopped ? noteText(stopped) : null,
+            current: `${countText(row.comparison.current) ?? "Not reported"}*`,
+            currentSub: null,
+            compared:
+              countText(row.comparison.compared) ??
+              gapText(row.comparison.compared),
+            change: "Not comparable",
+            direction: "none",
+            tone: "neutral",
+            year: null,
+            yearChange: null,
+            partial: false,
+          },
+        ];
       }
       // Google reported none this period but some before: not a result, and not a change.
       const note = snapshot.notes.find(
@@ -183,11 +274,13 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
           item.code === "optional_figure_not_reported" &&
           item.metric === row.metric,
       );
-      if (note) rowNotes.push(noteText(note));
       return [
         {
           label,
+          source: SOURCE.gbp,
+          note: note ? noteText(note) : null,
           current: "Not reported",
+          currentSub: null,
           compared:
             countText(row.comparison.compared) ??
             gapText(row.comparison.compared),
@@ -195,6 +288,7 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
           direction: "none",
           tone: "neutral",
           year: null,
+          yearChange: null,
           partial: false,
         },
       ];
@@ -202,15 +296,19 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
     groups.push({
       id: "gbp",
       title: "Google Business Profile",
+      kicker: `Google Business Profile · ${versus}`,
       rows: keep([
-        countRow("Profile views", gbp.profile_views.total),
-        countRow("Profile actions", gbp.actions.total),
+        countRow("Profile views", SOURCE.gbp, gbp.profile_views.total),
+        countRow("Profile actions", SOURCE.gbp, gbp.actions.total),
         ...gbp.actions.actions
           .filter((row) => row.reported)
-          .map((row) => countRow(metricLabel(row.metric), row.comparison)),
+          .map((row) =>
+            countRow(metricLabel(row.metric), SOURCE.gbp, row.comparison),
+          ),
         ...optional,
         rateRow(
           "Actions per profile view",
+          SOURCE.gbp,
           gbp.actions.action_rate,
           percentText,
           "pts",
@@ -221,40 +319,77 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
   if (search.availability !== "unavailable")
     groups.push({
       id: "search",
-      title: "Website search",
+      title: "Website and Google search",
+      kicker: `Website & Google search · ${versus}`,
       rows: keep([
-        countRow("Search clicks", search.clicks),
-        countRow("Search impressions", search.impressions),
-        rateRow("Click-through rate", search.ctr_percent, percentText, "pts"),
+        countRow("Search clicks", SOURCE.search, search.clicks),
+        countRow("Search impressions", SOURCE.search, search.impressions),
+        rateRow(
+          "Click-through rate",
+          SOURCE.search,
+          search.ctr_percent,
+          percentText,
+          "pts",
+        ),
         rateRow(
           "Average position (lower is better)",
+          SOURCE.search,
           search.average_position,
-          positionText,
+          (value) => value.toFixed(1),
           "places",
           "lower",
         ),
+        results
+          ? searchCountRow(
+              "Non-branded searches in Google’s top 10",
+              results.top_ten_before ?? null,
+              results.top_ten_after,
+            )
+          : null,
+        results && results.new_to_page_one !== null && results.comparable
+          ? {
+              ...searchCountRow(
+                "Searches new to page one",
+                null,
+                results.new_to_page_one ?? 0,
+              ),
+              change: "New",
+              direction: "none" as const,
+              tone: "neutral" as const,
+            }
+          : null,
       ]),
     });
   if (analytics.availability !== "unavailable")
     groups.push({
       id: "traffic",
-      title: "Website traffic",
-      rows: keep([countRow("Visits from search", analytics.organic_sessions)]),
+      title: "Website visits",
+      kicker: `Website visits · ${versus}`,
+      rows: keep([
+        countRow(
+          "Visits from search",
+          SOURCE.traffic,
+          analytics.organic_sessions,
+        ),
+      ]),
     });
   if (reviews.availability !== "unavailable")
     groups.push({
       id: "reviews",
       title: "Reviews",
+      kicker: `Reviews · ${versus}`,
       rows: keep([
-        countRow("New reviews", reviews.new_reviews),
+        countRow("New reviews", SOURCE.reviews, reviews.new_reviews),
         rateRow(
           "Average rating (all reviews)",
+          SOURCE.reviews,
           reviews.average_rating_overall,
           ratingText,
           "stars",
         ),
         rateRow(
           "Share of new reviews answered",
+          SOURCE.reviews,
           reviews.response_rate_percent,
           (value) => `${Math.round(value)}%`,
           "pts",
@@ -265,7 +400,6 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
   return {
     groups: shown,
     hasYear: shown.some((group) => group.rows.some((row) => row.year !== null)),
-    rowNotes,
     footnotes: shown
       .filter((group) => group.rows.some((row) => row.partial))
       .map((group) => PARTIAL_FOOTNOTE[group.id])
@@ -275,6 +409,10 @@ export function scorecard(snapshot: ReportSnapshot): Scorecard {
 
 export interface MonthlyChart {
   title: string;
+  /** A chart of a few bars, drawn narrow so two sit side by side. */
+  compact: boolean;
+  /** One line on what to take from the chart. */
+  caption: string;
   model: BarChartModel;
 }
 function barsOf(snapshot: ReportSnapshot, key: SeriesKey): BarInput[] | null {
@@ -299,11 +437,41 @@ function barsOf(snapshot: ReportSnapshot, key: SeriesKey): BarInput[] | null {
     };
   });
 }
+/**
+ * What to take from a monthly chart, in one line: the period's figure against its comparison.
+ * Months with no data are named as blank, never as zero.
+ */
+export function chartCaption(
+  noun: string,
+  comparison: CountComparison | null,
+  snapshot: ReportSnapshot,
+  missing: number,
+): string {
+  const gap =
+    missing > 0
+      ? ` ${plural(missing, "month", "months")} without data ${missing === 1 ? "is" : "are"} left blank, not shown as zero.`
+      : "";
+  if (!comparison || !present(comparison.current))
+    return `${noun}.${gap}`.trim();
+  const total = countText(comparison.current);
+  const averaged = comparison.compared_as === "monthly_average";
+  const change = changeText(comparison);
+  const against = comparedPhrase({
+    compared_as: comparison.compared_as,
+    compared: periodOf(snapshot.comparison.compared),
+  });
+  return `${noun} totalled ${total} in ${periodLabel(periodOf(snapshot.period))}${
+    change && !isPartial(comparison.current)
+      ? `, ${change} against ${against}${averaged ? " (monthly averages)" : ""}`
+      : ""
+  }.${gap}`;
+}
 /** The monthly bars for one figure, with the comparison's monthly average as a dashed line. */
 export function monthlyChart(
   snapshot: ReportSnapshot,
   key: SeriesKey,
   title: string,
+  comparison: CountComparison | null = null,
 ): MonthlyChart | null {
   const bars = barsOf(snapshot, key);
   const series = snapshot.monthly.find((item) => item.key === key);
@@ -321,8 +489,19 @@ export function monthlyChart(
   const average = settled.length
     ? settled.reduce((total, value) => total + value, 0) / settled.length
     : null;
+  const missing = [...series.period, ...series.compared].filter(
+    (point) => point.availability === "unavailable",
+  ).length;
+  const compact = bars.length <= 4;
   return {
     title,
+    compact,
+    caption: chartCaption(
+      title.replace(/ by month$/, ""),
+      comparison,
+      snapshot,
+      missing,
+    ),
     model: barChart({
       title,
       bars,
@@ -332,6 +511,7 @@ export function monthlyChart(
           ? ""
           : `Comparison average: ${fmt(average)} a month (${comparedLabel(snapshot)})`,
       format: fmt,
+      ...(compact ? { width: 320, height: 210 } : {}),
     }),
   };
 }
@@ -509,70 +689,268 @@ export const locationLines = (snapshot: ReportSnapshot): LocationLine[] =>
       : "Not connected",
   }));
 
-export interface SearchLine {
+/** A page address without its scheme, host, query or index file: "/menu", or "/" for home. */
+export function pagePath(url: string): string {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    path = url.split(/[?#]/)[0];
+  }
+  path = path.replace(/\/index(?:\.html?|\.php)?$/i, "/");
+  if (path.length > 1) path = path.replace(/\/+$/, "");
+  return path || "/";
+}
+export const pageLabel = (url: string): string => {
+  const path = pagePath(url);
+  return path === "/" ? "Home page" : path;
+};
+type PageRow = ReportSnapshot["search_console"]["top_pages"][number];
+/** Addresses that are the same page (http and https, www, a trailing slash, index.html) added up. */
+export function mergePages(rows: PageRow[]): PageRow[] {
+  const merged = new Map<string, PageRow>();
+  for (const row of rows) {
+    const path = pagePath(row.page);
+    const found = merged.get(path);
+    if (!found) {
+      merged.set(path, { ...row, page: path });
+      continue;
+    }
+    const impressions = found.impressions + row.impressions;
+    const weigh = (
+      a: number | null,
+      ai: number,
+      b: number | null,
+      bi: number,
+    ) =>
+      a === null && b === null
+        ? null
+        : impressions
+          ? ((a ?? 0) * ai + (b ?? 0) * bi) / impressions
+          : null;
+    const clicks = found.clicks + row.clicks;
+    const compared =
+      found.compared_clicks == null && row.compared_clicks == null
+        ? null
+        : (found.compared_clicks ?? 0) + (row.compared_clicks ?? 0);
+    merged.set(path, {
+      page: path,
+      clicks,
+      impressions,
+      ctr: impressions ? (clicks / impressions) * 100 : null,
+      position: weigh(
+        found.position,
+        found.impressions,
+        row.position,
+        row.impressions,
+      ),
+      compared_clicks: compared,
+      clicks_change:
+        found.clicks_change == null && row.clicks_change == null
+          ? null
+          : (found.clicks_change ?? 0) + (row.clicks_change ?? 0),
+    });
+  }
+  return [...merged.values()].sort(
+    (a, b) => b.clicks - a.clicks || b.impressions - a.impressions,
+  );
+}
+export interface PageLine {
   label: string;
   position: string;
   impressions: string;
   clicks: string;
   change: string;
 }
-type SearchRowLike = Omit<
-  ReportSnapshot["search_console"]["top_pages"][number],
-  "page"
->;
-const rowChange = (row: SearchRowLike, averaged: boolean) =>
-  row.clicks_change === null || row.clicks_change === undefined
-    ? "No comparison"
-    : `${row.clicks_change > 0 ? "+" : row.clicks_change < 0 ? "−" : ""}${fmt(Math.abs(row.clicks_change))}${averaged ? " a month" : ""}`;
-/** A page address without its scheme and host: "/menu/", or "Home page". */
-export function pageLabel(url: string): string {
-  try {
-    const { pathname } = new URL(url);
-    return pathname === "/" ? "Home page" : pathname;
-  } catch {
-    return url;
-  }
+
+/** "#7.5": a position as people read it on the results page. */
+const place = (value: number) => `#${value.toFixed(1)}`;
+export interface Pair {
+  before: string | null;
+  after: string;
+}
+const pair = (before: number | null, after: number): Pair => ({
+  before: before === null ? null : fmt(before),
+  after: fmt(after),
+});
+export interface TopicLine {
+  label: string;
+  examples: string;
+  top10: Pair;
+  position: { before: string | null; after: string };
+  clicks: Pair;
+}
+export interface GainLine {
+  query: string;
+  position: Pair;
+  impressions: Pair;
+  clicks: Pair;
+}
+export interface Tile {
+  label: string;
+  value: string;
+  line: string | null;
+  tone: Tone;
 }
 export interface SearchView {
-  queries: SearchLine[];
-  brandedNote: string | null;
-  pages: SearchLine[];
-  topNote: string;
+  tiles: Tile[];
+  topics: TopicLine[];
+  gains: { label: string; rows: GainLine[] }[];
+  comparable: boolean;
+  /** What the topic table shows, in a line under it. */
+  topicNote: string;
+  gainNote: string | null;
+  coverage: string;
+  positionNote: string | null;
+  charts: MonthlyChart[];
+  pages: PageLine[];
+  pagesNote: string;
   lagNote: string | null;
 }
+const delta = (after: number, before: number | null, noun = "") => {
+  if (before === null) return null;
+  const change = after - before;
+  const percent = before
+    ? ` (${signed(((after - before) / before) * 100, 0)})`
+    : "";
+  return `${change > 0 ? "+" : change < 0 ? "−" : ""}${fmt(Math.abs(change))}${noun}${percent}`;
+};
+const toneOfChange = (after: number, before: number | null): Tone =>
+  before === null ? "neutral" : toneOf(directionOf(after - before));
+function topicLine(topic: SearchResults["topics"][number]): TopicLine {
+  return {
+    label: topic.label,
+    examples: topic.examples.join(", "),
+    top10: pair(topic.top_ten_before ?? null, topic.top_ten_after),
+    position: {
+      before:
+        topic.position_before === null
+          ? null
+          : place(topic.position_before).slice(1),
+      after:
+        topic.position_after === null
+          ? "—"
+          : place(topic.position_after).slice(1),
+    },
+    clicks: pair(topic.clicks_before ?? null, topic.clicks_after),
+  };
+}
+function gainLine(
+  row: SearchResults["gains"][number]["rows"][number],
+): GainLine {
+  return {
+    query: row.query,
+    position: {
+      before: row.position_before === null ? "New" : place(row.position_before),
+      after: place(row.position_after),
+    },
+    impressions:
+      row.impressions_before === null
+        ? { before: "New", after: fmt(row.impressions_after) }
+        : pair(row.impressions_before, row.impressions_after),
+    clicks:
+      (row.clicks_before ?? 0) === 0 && row.clicks_after === 0
+        ? { before: null, after: "—" }
+        : pair(row.clicks_before ?? null, row.clicks_after),
+  };
+}
+const COVERAGE =
+  "Added up from the highest-ranking searches Google reports each month, so these are not totals of every search.";
 export function searchView(
   snapshot: ReportSnapshot,
-  client: string,
+  results: SearchResults | null,
+  chartList: MonthlyChart[],
 ): SearchView | null {
   const search = snapshot.search_console;
   if (search.availability === "unavailable") return null;
-  const averaged = snapshot.comparison.compared_as === "monthly_average";
-  const line = (label: string, row: SearchRowLike): SearchLine => ({
-    label,
-    position:
-      row.position === null ? "Not available" : positionText(row.position),
-    impressions: fmt(row.impressions),
-    clicks: fmt(row.clicks),
-    change: rowChange(row, averaged),
-  });
-  const share = search.branded_share_percent;
-  return {
-    queries: search.top_queries
-      .filter((row) => !row.is_branded)
-      .slice(0, TOP)
-      .map((row) => line(row.query, row)),
-    brandedNote:
-      share === null || share === undefined
+  const tiles: Tile[] = [];
+  if (results) {
+    const from = (line: string | null, before: number | null) =>
+      line === null || before === null
         ? null
-        : `Searches that name ${client} made up ${Math.round(share)}% of the clicks from the top searches. They are left out of this list.`,
-    pages: search.top_pages
+        : `${line} from\u00a0${fmt(before)}`;
+    tiles.push({
+      label: "Searches in Google’s top 10",
+      value: fmt(results.top_ten_after),
+      line: from(
+        delta(results.top_ten_after, results.top_ten_before, " searches"),
+        results.top_ten_before,
+      ),
+      tone: toneOfChange(results.top_ten_after, results.top_ten_before),
+    });
+    if (results.new_to_page_one !== null)
+      tiles.push({
+        label: "Searches new to page one",
+        value: fmt(results.new_to_page_one),
+        line: "since the comparison period",
+        tone: results.new_to_page_one > 0 ? "good" : "neutral",
+      });
+    tiles.push(
+      {
+        label: "Clicks to the website",
+        value: fmt(results.clicks_after),
+        line: from(
+          delta(results.clicks_after, results.clicks_before),
+          results.clicks_before,
+        ),
+        tone: toneOfChange(results.clicks_after, results.clicks_before),
+      },
+      {
+        label: "Times shown in Google results",
+        value: fmt(results.impressions_after),
+        line: from(
+          delta(results.impressions_after, results.impressions_before),
+          results.impressions_before,
+        ),
+        tone: toneOfChange(
+          results.impressions_after,
+          results.impressions_before,
+        ),
+      },
+    );
+  }
+  const averaged =
+    results?.position_before != null && results.position_after != null;
+  const lag = search.lag_days;
+  return {
+    tiles,
+    topics: results?.topics.map(topicLine) ?? [],
+    gains:
+      results?.gains.map((group) => ({
+        label: group.label,
+        rows: group.rows.map(gainLine),
+      })) ?? [],
+    comparable: !!results?.comparable,
+    topicNote: `Position is where the site ranked on average; a lower number is higher on the page, and positions 1–10 are page one. Topics can overlap, so a search such as “little italy happy hour” can count in both. ${COVERAGE}`,
+    gainNote: results?.comparable
+      ? "Impressions are the number of times the site appeared in Google results for that search. A search that is new to the site’s rankings may not have clicks yet; they usually follow as positions keep climbing."
+      : null,
+    coverage: results
+      ? results.comparable
+        ? `Google Search Console, non-branded searches only · ${COVERAGE.replace(", so these are not totals of every search.", ".")}`
+        : "Google Search Console, non-branded searches only"
+      : "Google Search Console",
+    positionNote: averaged
+      ? `Across all non-branded searches, average position ${(results!.position_after as number) < (results!.position_before as number) ? "improved" : (results!.position_after as number) > (results!.position_before as number) ? "slipped" : "held"} from ${(results!.position_before as number).toFixed(1)} to ${(results!.position_after as number).toFixed(1)}.`
+      : null,
+    charts: chartList,
+    pages: mergePages(search.top_pages)
       .slice(0, TOP)
-      .map((row) => line(pageLabel(row.page), row)),
-    topNote:
-      "Top searches and pages are added up from the highest-ranking ones Google reports each month. They are not totals of every search.",
+      .map((row) => ({
+        label: row.page === "/" ? "Home page" : row.page,
+        position:
+          row.position === null ? "Not available" : row.position.toFixed(1),
+        impressions: fmt(row.impressions),
+        clicks: fmt(row.clicks),
+        change:
+          row.clicks_change == null
+            ? "No comparison"
+            : `${row.clicks_change > 0 ? "+" : row.clicks_change < 0 ? "−" : ""}${fmt(Math.abs(row.clicks_change))}${snapshot.comparison.compared_as === "monthly_average" ? " a month" : ""}`,
+      })),
+    pagesNote: `Pages people landed on from Google Search. Addresses that are the same page, such as with and without a trailing slash or “www”, are added together. ${COVERAGE}`,
     lagNote:
-      search.lag_days != null
-        ? `Google is still finalizing the last ${plural(search.lag_days, "day", "days")} of search data, so these figures may rise.`
+      lag != null
+        ? `Google is still finalizing the last ${plural(lag, "day", "days")} of search data, so these figures may rise.`
         : null,
   };
 }
@@ -582,6 +960,7 @@ export interface ReviewsView {
   total: string | null;
   stats: { label: string; value: string; detail: string }[];
   distribution: HorizontalModel | null;
+  caption: string | null;
 }
 export function reviewsView(snapshot: ReportSnapshot): ReviewsView | null {
   const reviews = snapshot.reviews;
@@ -612,6 +991,9 @@ export function reviewsView(snapshot: ReportSnapshot): ReviewsView | null {
   const inPeriod = rateText(
     reviews.average_rating_in_period.current,
     ratingText,
+  );
+  const best = rows.find(
+    (row) => row.value === Math.max(...rows.map((r) => r.value)),
   );
   return {
     rating: rateText(reviews.average_rating_overall.current, ratingText),
@@ -657,8 +1039,12 @@ export function reviewsView(snapshot: ReportSnapshot): ReviewsView | null {
         : []),
     ],
     distribution: total
-      ? horizontalBars("Star ratings across all reviews", rows)
+      ? horizontalBars("Star ratings across all reviews", rows, 520)
       : null,
+    caption:
+      total && best
+        ? `${best.share}% of all reviews are ${best.label.toLowerCase()}; every review counted is on Google.`
+        : null,
   };
 }
 
@@ -666,6 +1052,8 @@ export interface WorkLine {
   label: string;
   count: string;
   titles: string[];
+  /** "and 12 more": the items beyond those named. */
+  more: number;
 }
 const WORK_LABEL = {
   gbp_post: "Business Profile posts published",
@@ -681,7 +1069,8 @@ export const workLines = (snapshot: ReportSnapshot): WorkLine[] =>
     .map((group) => ({
       label: WORK_LABEL[group.kind],
       count: fmt(group.count),
-      titles: group.titles,
+      titles: group.titles.slice(0, TOP),
+      more: Math.max(0, group.count - Math.min(group.titles.length, TOP)),
     }));
 
 /** The figures this report could not state, each with the reason, for "Not included". */
@@ -711,6 +1100,12 @@ export function notIncluded(snapshot: ReportSnapshot): string[] {
       out.push("Click-through rate: not available");
     if (!present(search.average_position.current))
       out.push("Average position: not available");
+    if (!snapshot.search_movement)
+      out.push("Search topics and gains: no stored searches for this period");
+    else if (!snapshot.search_movement.comparable)
+      out.push(
+        "Search gains and top 10 changes: the comparison months are not all stored, so nothing is set against them",
+      );
   }
   if (analytics.availability === "unavailable")
     out.push(
@@ -761,8 +1156,9 @@ export function definitions(
   client: string,
 ): Definition[] {
   const list: Definition[] = [];
+  const groups = scorecard(snapshot).groups;
   const has = (group: ScoreGroup["id"]) =>
-    scorecard(snapshot).groups.some((item) => item.id === group);
+    groups.some((item) => item.id === group);
   if (has("gbp"))
     list.push(
       {
@@ -789,12 +1185,16 @@ export function definitions(
         text: "Where your pages ranked in Google Search on average, weighted by how often each appeared. Lower is better. Source: Google Search Console.",
       },
       {
-        term: "Top searches and top pages",
-        text: "Added up from the highest-ranking searches and pages Google reports for each month. They show what mattered most; they are not totals of every search.",
+        term: "Searches in Google’s top 10",
+        text: "Searches that did not name the business, where the site appeared at least 20 times and ranked 10th or better on average. Position is weighted by how often the site appeared each month.",
+      },
+      {
+        term: "Topics and gains",
+        text: "The searches are grouped into topics by wording, and each search is in one topic. A search gained ground when it ranks a place or more better than before, or is new to the site’s rankings. Both are added up from the highest-ranking searches Google reports each month, not from every search.",
       },
       {
         term: "Branded searches",
-        text: `A search is branded when, ignoring capital letters, apostrophes and punctuation, it contains the name of the business (${client}) or one of its locations. Branded searches are left out of the list of top searches.`,
+        text: `A search is branded when, ignoring capital letters, apostrophes and punctuation, it contains the name of the business (${client}) or one of its locations. Common misspellings of the name are treated the same way. Branded searches are left out of the search results.`,
       },
     );
   if (has("traffic"))
@@ -821,36 +1221,111 @@ export function definitions(
   return list;
 }
 
+const PLAIN_DAY = (iso: string) => {
+  const [year, month, day] = iso.split("-").map(Number);
+  return `${monthName(`${year}-${String(month).padStart(2, "0")}-01`)} ${day}, ${year}`;
+};
+export interface Milestone {
+  date: string;
+  label: string;
+}
 export interface CoverView {
-  client: string;
+  /** The small mono line over the title: who this is for, and where. */
+  kicker: string;
   title: string;
-  period: string;
-  range: string;
-  compared: string;
-  locations: string[];
+  intro: string;
   preparedBy: string;
   preparedOn: string;
+  /** Dated milestones from the client's business facts; null when it has none. */
+  milestones: Milestone[] | null;
 }
+export interface Head {
+  kicker: string;
+  title: string;
+  intro: string;
+  measured: string;
+  compared: string | null;
+}
+export interface GlanceCard {
+  value: string;
+  tone: Tone;
+  headline: boolean;
+  title: string;
+  text: string;
+  footer: string;
+}
+const CARD_SOURCE: Record<FigureKey, string> = {
+  profile_views: SOURCE.gbp,
+  profile_actions: SOURCE.gbp,
+  calls: SOURCE.gbp,
+  website_clicks: SOURCE.gbp,
+  direction_requests: SOURCE.gbp,
+  search_clicks: "Search Console",
+  search_impressions: "Search Console",
+  organic_sessions: SOURCE.traffic,
+  new_reviews: SOURCE.reviews,
+  average_rating: SOURCE.reviews,
+  searches_in_top_ten: "Search Console",
+  new_to_page_one: "Search Console",
+};
+/** A result card as the page draws it: the big number is the figure's own change, never text. */
+export function glanceCard(
+  card: ResultCard,
+  snapshot: ReportSnapshot,
+): GlanceCard {
+  const figure = card.figures[0];
+  const percent = figure?.change_percent;
+  const value = !figure
+    ? ""
+    : figure.unit === "stars"
+      ? figure.current.toFixed(1)
+      : percent !== null && percent !== undefined && figure.compared
+        ? `${percent > 0 ? "+" : percent < 0 ? "−" : ""}${fmt(Math.abs(percent))}%`
+        : fmt(figure.current);
+  const period = periodLabel(periodOf(snapshot.period));
+  const versus =
+    figure && figure.compared != null ? ` vs. ${comparedLabel(snapshot)}` : "";
+  return {
+    value,
+    tone: card.tone,
+    headline: card.headline,
+    title: card.title,
+    text: card.text,
+    footer: [
+      `${period}${versus}`,
+      figure?.monthly_average ? "per month" : null,
+      figure ? CARD_SOURCE[figure.key] : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  };
+}
+
 export interface DocumentView {
+  /** A draft prints "Draft - not for sending" and is downloaded as a draft. */
+  draft: boolean;
   cover: CoverView;
-  headlines: HeadlineCard[];
-  whatChanged: string[];
-  scorecard: Scorecard;
+  glance: {
+    head: Head;
+    cards: GlanceCard[];
+    prose: string[];
+  } | null;
+  scorecard: { head: Head; card: Scorecard };
   gbp: {
+    head: Head;
     charts: MonthlyChart[];
     splits: SplitView[];
     terms: TermsView | null;
     actions: ActionsTable | null;
     locations: LocationLine[];
   } | null;
-  search: {
-    charts: MonthlyChart[];
-    view: SearchView;
-  } | null;
-  reviews: ReviewsView | null;
-  work: WorkLine[];
-  nextWork: string[];
+  search: { head: Head; view: SearchView } | null;
+  visits: { head: Head; tile: Tile; chart: MonthlyChart } | null;
+  reviews: { head: Head; view: ReviewsView } | null;
+  work: { head: Head; lines: WorkLine[] } | null;
+  ahead: { head: Head; paragraphs: string[] } | null;
   notes: {
+    head: Head;
     definitions: Definition[];
     dataNotes: string[];
     footnotes: string[];
@@ -859,17 +1334,41 @@ export interface DocumentView {
     period: string;
   };
 }
+/** The one figure of the website visits section, set against its comparison. */
+function visitsTile(snapshot: ReportSnapshot): Tile {
+  const sessions = snapshot.analytics.organic_sessions;
+  const change = changeText(sessions);
+  const compared = countText(sessions.compared);
+  const averaged = sessions.compared_as === "monthly_average";
+  return {
+    label: "Visits from search",
+    value: countText(sessions.current) ?? "",
+    line:
+      change && compared && !isPartial(sessions.current)
+        ? `${change} from ${compared}${averaged ? " a month" : ""}`
+        : null,
+    tone: toneOf(directionOf(sessions.change)),
+  };
+}
 /** The whole client document for one stored revision. */
 export function documentView(report: ReportDetail): DocumentView {
   const snapshot = report.snapshot;
+  const client = report.client_name;
   const period = periodOf(snapshot.period);
-  const card = scorecard(snapshot);
-  const charts = (specs: [SeriesKey, string][]): MonthlyChart[] =>
-    specs.flatMap(([key, title]) => {
-      const chart = monthlyChart(snapshot, key, title);
+  const periodName = periodLabel(period);
+  const results = report.search_results ?? null;
+  const versus = comparedText(snapshot);
+  const card = scorecard(snapshot, results);
+  const chartOf = (
+    key: SeriesKey,
+    title: string,
+    comparison: CountComparison | null,
+  ) => monthlyChart(snapshot, key, title, comparison);
+  const charts = (specs: [SeriesKey, string, CountComparison | null][]) =>
+    specs.flatMap(([key, title, comparison]) => {
+      const chart = chartOf(key, title, comparison);
       return chart ? [chart] : [];
     });
-  const search = searchView(snapshot, report.client_name);
   const sync: string[] = [];
   const when = (iso: string | null | undefined, source: string) =>
     iso ? sync.push(`${source} last synced ${dateText(iso)}.`) : undefined;
@@ -877,25 +1376,100 @@ export function documentView(report: ReportDetail): DocumentView {
   when(snapshot.sync.search_console, "Search Console");
   when(snapshot.sync.analytics, "Google Analytics");
   const gbpShown = snapshot.gbp.availability !== "unavailable";
+  const compared = comparedLabel(snapshot);
+  const searchCharts = charts([
+    ["search_clicks", "Search clicks by month", snapshot.search_console.clicks],
+    [
+      "search_impressions",
+      "Search impressions by month",
+      snapshot.search_console.impressions,
+    ],
+  ]);
+  const search = searchView(snapshot, results, searchCharts);
+  const visitsChart =
+    snapshot.analytics.availability !== "unavailable"
+      ? chartOf(
+          "organic_sessions",
+          "Visits from search by month",
+          snapshot.analytics.organic_sessions,
+        )
+      : null;
+  const reviews = reviewsView(snapshot);
+  const work = workLines(snapshot);
+  const cards = report.narrative.result_cards.map((item) =>
+    glanceCard(item, snapshot),
+  );
+  const prose = narrativeParagraphs(report.narrative.what_changed);
+  const ahead = narrativeParagraphs(report.narrative.next_work);
+  const names = report.profile_names;
+  const milestones = report.milestones;
   return {
+    draft: report.status === "draft",
     cover: {
-      client: report.client_name,
-      title: "Performance report",
-      period: periodLabel(period),
-      range: periodLabelRange(report),
-      compared: `Compared with: ${comparedText(snapshot)}`,
-      locations: snapshot.location_names,
+      kicker: ["Lilos Growth", client, ...(names.length > 1 ? names : [])].join(
+        " · ",
+      ),
+      title: `${periodName} performance report`,
+      intro: `How ${client} performed in ${periodName}, compared with ${versus}.`,
       preparedBy: "Lilos Growth",
       preparedOn: longDay(report.approved_at ?? report.created_at),
+      milestones: milestones.length
+        ? [
+            ...milestones.map((item) => ({
+              date: PLAIN_DAY(item.day),
+              label: item.label,
+            })),
+            { date: periodName, label: "The period this report covers." },
+          ]
+        : null,
     },
-    headlines: headlineCards(snapshot),
-    whatChanged: narrativeParagraphs(report.narrative.what_changed),
-    scorecard: card,
+    glance:
+      cards.length || prose.length
+        ? {
+            head: {
+              kicker: "Summary",
+              title: `${periodName} at a glance`,
+              intro: cards.length
+                ? "The results that matter most this period, each with what it means."
+                : "What changed this period and why it matters.",
+              measured: "",
+              compared: null,
+            },
+            cards,
+            prose,
+          }
+        : null,
+    scorecard: {
+      head: {
+        kicker: "Scorecard",
+        title: "How the numbers moved",
+        intro: `Each row states what was measured, where it comes from and what it is compared with. Figures compare ${periodName} with ${versus}.`,
+        measured: `${periodName}${snapshot.comparison.compared_as === "monthly_average" ? ", as monthly averages" : ""}`,
+        compared: compared,
+      },
+      card,
+    },
     gbp: gbpShown
       ? {
+          head: {
+            kicker: "Google profile",
+            title: "How people found and used the Google profile",
+            intro:
+              "The Google profile is the front door for a local business. It is where many people check hours, photos and the menu, and where they decide to call, visit the website or get directions.",
+            measured: "Google Business Profile Performance data, by month",
+            compared,
+          },
           charts: charts([
-            ["profile_views", "Profile views by month"],
-            ["profile_actions", "Profile actions by month"],
+            [
+              "profile_views",
+              "Profile views by month",
+              snapshot.gbp.profile_views.total,
+            ],
+            [
+              "profile_actions",
+              "Profile actions by month",
+              snapshot.gbp.actions.total,
+            ],
           ]),
           splits: splitViews(snapshot),
           terms: termsView(snapshot),
@@ -905,38 +1479,96 @@ export function documentView(report: ReportDetail): DocumentView {
       : null,
     search: search
       ? {
-          charts: charts([
-            ["search_clicks", "Search clicks by month"],
-            ["search_impressions", "Search impressions by month"],
-          ]),
+          head: {
+            kicker: "Search topics",
+            title: `Getting found by people who aren’t searching for ${client}`,
+            intro:
+              "Non-branded searches are the ones that don’t include the business’s name. These are people deciding where to go, and they are the new customers a business wants to reach.",
+            measured: search.coverage,
+            compared: search.comparable
+              ? `${periodName} vs. ${compared}`
+              : null,
+          },
           view: search,
         }
       : null,
-    reviews: reviewsView(snapshot),
-    work: workLines(snapshot),
-    nextWork: narrativeParagraphs(report.narrative.next_work),
+    visits: visitsChart
+      ? {
+          head: {
+            kicker: "Website visits",
+            title: "Visits that began with a Google search",
+            intro:
+              "Visits to the website that started from an unpaid Google search, month by month.",
+            measured: "Google Analytics, search visits, by month",
+            compared,
+          },
+          tile: visitsTile(snapshot),
+          chart: visitsChart,
+        }
+      : null,
+    reviews: reviews
+      ? {
+          head: {
+            kicker: "Reviews",
+            title: "What customers are saying",
+            intro:
+              "Reviews are one of the first things people read before choosing. This shows the rating, how many new reviews arrived and how many were answered.",
+            measured: "Google reviews",
+            compared,
+          },
+          view: reviews,
+        }
+      : null,
+    work: work.length
+      ? {
+          head: {
+            kicker: "Work completed",
+            title: "What we did this period",
+            intro: `The work finished in ${periodName}, counted from the platform’s own records.`,
+            measured: "Finished work recorded in the platform",
+            compared: null,
+          },
+          lines: work,
+        }
+      : null,
+    ahead: ahead.length
+      ? {
+          head: {
+            kicker: "Looking ahead",
+            title: "What we’re building next",
+            intro: "What happens next to keep results growing.",
+            measured: "",
+            compared: null,
+          },
+          paragraphs: ahead,
+        }
+      : null,
     notes: {
-      definitions: definitions(snapshot, report.client_name),
+      head: {
+        kicker: "Notes",
+        title: "Notes and definitions",
+        intro: "",
+        measured: "",
+        compared: null,
+      },
+      definitions: definitions(snapshot, client),
       dataNotes: snapshot.notes.map(noteText),
       footnotes: card.footnotes,
       sync,
       notIncluded: notIncluded(snapshot),
-      period: `${periodLabel(period)} (${periodLabelRange(report)}). Compared with ${comparedText(snapshot)}.`,
+      period: `${periodName} (${rangeOf(snapshot)}). Compared with ${versus}.`,
     },
   };
 }
-const periodLabelRange = (report: ReportDetail) => rangeOf(report.snapshot);
 function rangeOf(snapshot: ReportSnapshot) {
   const { start, end } = snapshot.gbp.current_range;
   return `${dateText(start)} – ${dateText(end)}`;
 }
-/** The comparison in words for the cover: "February – April 2026" or "the same months last year". */
+/** The comparison in words: "the month before (July 2026)" or "the same months last year". */
 function comparedText(snapshot: ReportSnapshot): string {
   const label = comparedLabel(snapshot);
   const { basis, compared_as: as } = snapshot.comparison;
-  if (basis === "same_period_last_year")
-    return `the same period last year (${label})`;
   if (basis === "custom_baseline")
     return `${label}${as === "monthly_average" ? ", as monthly averages" : ""}`;
-  return label;
+  return comparisonText(snapshot);
 }

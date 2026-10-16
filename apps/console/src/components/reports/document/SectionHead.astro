@@ -1,0 +1,32 @@
+---
+import type { Head } from "../../../lib/report-document";
+interface Props {
+  head: Head;
+  /** The section's number, shown before its small label ("03 · GOOGLE PROFILE"). */
+  number: number;
+  id: string;
+}
+const { head, number, id } = Astro.props;
+---
+
+<header class="sechead">
+  <p class="kicker">{String(number).padStart(2, "0")} · {head.kicker}</p>
+  <h2 id={id}>{head.title}</h2>
+  {head.intro && <p class="intro">{head.intro}</p>}
+  {
+    (head.measured || head.compared) && (
+      <p class="dchips">
+        {head.measured && (
+          <span class="dchip">
+            <b>Measured:</b> {head.measured}
+          </span>
+        )}
+        {head.compared && (
+          <span class="dchip">
+            <b>Compared:</b> {head.compared}
+          </span>
+        )}
+      </p>
+    )
+  }
+</header>

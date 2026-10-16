@@ -6131,6 +6131,12 @@ export interface components {
             /** Observed At */
             observed_at: string;
         };
+        /**
+         * CardTone
+         * @description How a result reads: it improved, it got worse, or it is flat. Colours follow this.
+         * @enum {string}
+         */
+        CardTone: "good" | "bad" | "neutral";
         /** CatalogResponse */
         CatalogResponse: {
             /** Data */
@@ -6983,6 +6989,17 @@ export interface components {
              */
             scope_type: "organization" | "location";
         };
+        /**
+         * FigureKey
+         * @description A figure a result card can be about. The numbers come from the stored report, never text.
+         * @enum {string}
+         */
+        FigureKey: "profile_views" | "profile_actions" | "calls" | "website_clicks" | "direction_requests" | "search_clicks" | "search_impressions" | "organic_sessions" | "new_reviews" | "average_rating" | "searches_in_top_ten" | "new_to_page_one";
+        /**
+         * FigureUnit
+         * @enum {string}
+         */
+        FigureUnit: "count" | "stars";
         /**
          * Frequency
          * @description A schedule as a typed value; the console formats it in the schedule's timezone.
@@ -8866,7 +8883,7 @@ export interface components {
          * @description Why a narrative draft was not kept. The previous narrative is left exactly as it was.
          * @enum {string}
          */
-        NarrativeFailureCode: "draft_failed" | "draft_malformed" | "draft_empty" | "number_not_in_data" | "authorship_mentioned" | "causal_claim";
+        NarrativeFailureCode: "draft_failed" | "draft_malformed" | "draft_empty" | "number_not_in_data" | "authorship_mentioned" | "causal_claim" | "tone_not_supported";
         /**
          * NarrativeOrigin
          * @enum {string}
@@ -8882,7 +8899,7 @@ export interface components {
          * @description Why part of a report is missing or approximate. The console turns each into a sentence.
          * @enum {string}
          */
-        NoteCode: "gbp_not_connected" | "gbp_period_not_synced" | "gbp_period_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_compared_period_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_months_missing" | "search_console_compared_period_unavailable" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_months_missing" | "analytics_compared_period_unavailable" | "optional_figure_not_reported";
+        NoteCode: "gbp_not_connected" | "gbp_period_not_synced" | "gbp_period_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_compared_period_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_months_missing" | "search_console_compared_period_unavailable" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_months_missing" | "analytics_compared_period_unavailable" | "optional_figure_not_reported" | "optional_figure_stopped";
         /** OffboardingCreate */
         OffboardingCreate: {
             /** Reason */
@@ -10640,6 +10657,8 @@ export interface components {
             /** Location Id */
             location_id?: string | null;
             metric?: components["schemas"]["GBPPerformanceMetric"] | null;
+            /** Month */
+            month?: string | null;
             section: components["schemas"]["SectionKey"];
         };
         /** ReportDeliveryView */
@@ -10672,6 +10691,11 @@ export interface components {
             delivery: components["schemas"]["ReportDeliveryView"] | null;
             /** Is Current */
             is_current: boolean;
+            /**
+             * Milestones
+             * @default []
+             */
+            milestones: components["schemas"]["ReportMilestone"][];
             narrative: components["schemas"]["ReportNarrative"];
             /**
              * Organization Id
@@ -10680,13 +10704,67 @@ export interface components {
             organization_id: string;
             period: components["schemas"]["ReportPeriod"];
             permissions: components["schemas"]["ReportPermissions"];
+            /**
+             * Profile Names
+             * @default []
+             */
+            profile_names: string[];
             readiness: components["schemas"]["ReportReadiness"];
             /** Revision */
             revision: number;
             /** Revision Count */
             revision_count: number;
+            search_results?: components["schemas"]["ReportSearchResults"] | null;
             snapshot: components["schemas"]["ReportSnapshot"];
             status: components["schemas"]["ReportStatus"];
+            topics?: components["schemas"]["ReportTopics"] | null;
+        };
+        /**
+         * ReportFigureValue
+         * @description A figure a card is about, resolved by code from the stored report.
+         */
+        ReportFigureValue: {
+            /** Change */
+            change?: number | null;
+            /** Change Percent */
+            change_percent?: number | null;
+            /** Compared */
+            compared?: number | null;
+            /** Current */
+            current: number;
+            key: components["schemas"]["FigureKey"];
+            /**
+             * Monthly Average
+             * @default false
+             */
+            monthly_average: boolean;
+            unit: components["schemas"]["FigureUnit"];
+        };
+        /** ReportGain */
+        ReportGain: {
+            /** Clicks After */
+            clicks_after: number;
+            /** Clicks Before */
+            clicks_before: number | null;
+            /** Impressions After */
+            impressions_after: number;
+            /** Impressions Before */
+            impressions_before: number | null;
+            /** Position After */
+            position_after: number;
+            /** Position Before */
+            position_before: number | null;
+            /** Query */
+            query: string;
+        };
+        /** ReportGainGroup */
+        ReportGainGroup: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Rows */
+            rows: components["schemas"]["ReportGain"][];
         };
         /** ReportGbpSection */
         ReportGbpSection: {
@@ -10780,6 +10858,19 @@ export interface components {
              */
             sent_on: string;
         };
+        /**
+         * ReportMilestone
+         * @description A dated moment from the client's business facts, shown on the report's opening strip.
+         */
+        ReportMilestone: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Label */
+            label: string;
+        };
         /** ReportMonthPoint */
         ReportMonthPoint: {
             availability: components["schemas"]["Availability"];
@@ -10800,8 +10891,31 @@ export interface components {
             period: components["schemas"]["ReportMonthPoint"][];
         };
         /**
+         * ReportMovementQuery
+         * @description One non-branded search over the period and over the comparison, from the stored top rows.
+         *
+         *     A window with no stored row for the search has no position (never 0). Positions are weighted
+         *     by impressions across the window's months.
+         */
+        ReportMovementQuery: {
+            /** After Clicks */
+            after_clicks: number;
+            /** After Impressions */
+            after_impressions: number;
+            /** After Position */
+            after_position: number | null;
+            /** Before Clicks */
+            before_clicks: number | null;
+            /** Before Impressions */
+            before_impressions: number | null;
+            /** Before Position */
+            before_position: number | null;
+            /** Query */
+            query: string;
+        };
+        /**
          * ReportNarrative
-         * @description The two prose sections. Written by a person, or drafted and then reviewed by one.
+         * @description The prose sections and result cards. Written by a person, or drafted and then reviewed.
          */
         ReportNarrative: {
             /**
@@ -10812,6 +10926,11 @@ export interface components {
             /** @default none */
             origin: components["schemas"]["NarrativeOrigin"];
             /**
+             * Result Cards
+             * @default []
+             */
+            result_cards: components["schemas"]["ResultCard"][];
+            /**
              * What Changed
              * @default
              */
@@ -10819,6 +10938,11 @@ export interface components {
         };
         /** ReportNarrativeDraftResult */
         ReportNarrativeDraftResult: {
+            /**
+             * Cards Dropped
+             * @default 0
+             */
+            cards_dropped: number;
             failure?: components["schemas"]["NarrativeFailureCode"] | null;
             outcome: components["schemas"]["NarrativeOutcome"];
             report: components["schemas"]["ReportDetailView"];
@@ -10827,6 +10951,8 @@ export interface components {
         ReportNarrativeUpdate: {
             /** Next Work */
             next_work: string;
+            /** Result Cards */
+            result_cards?: components["schemas"]["ResultCardUpdate"][] | null;
             /** What Changed */
             what_changed: string;
         };
@@ -10959,6 +11085,27 @@ export interface components {
             /** Top Queries */
             top_queries: components["schemas"]["ReportSearchQueryRow"][];
         };
+        /**
+         * ReportSearchMovement
+         * @description How the searches moved, added up from the highest-ranking searches Google reports.
+         *
+         *     ``comparable`` is true only when both windows have every month stored and settled and are the
+         *     same length; otherwise nothing is set against anything and only the period stands alone.
+         */
+        ReportSearchMovement: {
+            /** Comparable */
+            comparable: boolean;
+            /** Compared Months Covered */
+            compared_months_covered: number;
+            /** Compared Months Expected */
+            compared_months_expected: number;
+            /** Months Covered */
+            months_covered: number;
+            /** Months Expected */
+            months_expected: number;
+            /** Queries */
+            queries: components["schemas"]["ReportMovementQuery"][];
+        };
         /** ReportSearchPageRow */
         ReportSearchPageRow: {
             /** Clicks */
@@ -10994,6 +11141,40 @@ export interface components {
             position: number | null;
             /** Query */
             query: string;
+        };
+        /**
+         * ReportSearchResults
+         * @description Non-branded search results, worked out by code from the stored movement and the topics.
+         */
+        ReportSearchResults: {
+            /** Clicks After */
+            clicks_after: number;
+            /** Clicks Before */
+            clicks_before: number | null;
+            /** Comparable */
+            comparable: boolean;
+            /** Gains */
+            gains: components["schemas"]["ReportGainGroup"][];
+            /** Impressions After */
+            impressions_after: number;
+            /** Impressions Before */
+            impressions_before: number | null;
+            /** Months Covered */
+            months_covered: number;
+            /** Months Expected */
+            months_expected: number;
+            /** New To Page One */
+            new_to_page_one: number | null;
+            /** Position After */
+            position_after: number | null;
+            /** Position Before */
+            position_before: number | null;
+            /** Top Ten After */
+            top_ten_after: number;
+            /** Top Ten Before */
+            top_ten_before: number | null;
+            /** Topics */
+            topics: components["schemas"]["ReportTopicResult"][];
         };
         /** ReportSearchTerm */
         ReportSearchTerm: {
@@ -11044,10 +11225,11 @@ export interface components {
             reviews: components["schemas"]["ReportReviewsSection"];
             /**
              * Schema Version
-             * @default 2
+             * @default 3
              */
             schema_version: number;
             search_console: components["schemas"]["ReportSearchConsoleSection"];
+            search_movement?: components["schemas"]["ReportSearchMovement"] | null;
             /** @default {} */
             sync: components["schemas"]["ReportSync"];
             work: components["schemas"]["ReportWorkSection"];
@@ -11096,6 +11278,52 @@ export interface components {
             gbp?: string | null;
             /** Search Console */
             search_console?: string | null;
+        };
+        /**
+         * ReportTopic
+         * @description A group of the period's non-branded searches. A search belongs to at most one topic.
+         */
+        ReportTopic: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Queries */
+            queries: string[];
+        };
+        /** ReportTopicResult */
+        ReportTopicResult: {
+            /** Clicks After */
+            clicks_after: number;
+            /** Clicks Before */
+            clicks_before: number | null;
+            /** Examples */
+            examples: string[];
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Position After */
+            position_after: number | null;
+            /** Position Before */
+            position_before: number | null;
+            /** Top Ten After */
+            top_ten_after: number;
+            /** Top Ten Before */
+            top_ten_before: number | null;
+        };
+        /**
+         * ReportTopics
+         * @description Hermes's grouping, stored on the revision and changed only when a person regenerates.
+         */
+        ReportTopics: {
+            /**
+             * Brand Variants
+             * @default []
+             */
+            brand_variants: string[];
+            /** Topics */
+            topics: components["schemas"]["ReportTopic"][];
         };
         /** ReportUpcoming */
         ReportUpcoming: {
@@ -11197,6 +11425,50 @@ export interface components {
             workflow_id: string | null;
             /** Workflow Status */
             workflow_status: string | null;
+        };
+        /**
+         * ResultCard
+         * @description One result at a glance: a figure, a short title and a sentence about what it means.
+         *
+         *     ``figures`` are filled by code from ``figure_keys``; only ``title``, ``text``, ``tone`` and
+         *     ``headline`` are words. Every number in ``text`` is checked against ``figures``.
+         */
+        ResultCard: {
+            /** Figure Keys */
+            figure_keys: components["schemas"]["FigureKey"][];
+            /**
+             * Figures
+             * @default []
+             */
+            figures: components["schemas"]["ReportFigureValue"][];
+            /**
+             * Headline
+             * @default false
+             */
+            headline: boolean;
+            /** Text */
+            text: string;
+            /** Title */
+            title: string;
+            tone: components["schemas"]["CardTone"];
+        };
+        /**
+         * ResultCardUpdate
+         * @description A card as a person edits it: the figures are looked up again, never typed.
+         */
+        ResultCardUpdate: {
+            /** Figure Keys */
+            figure_keys: components["schemas"]["FigureKey"][];
+            /**
+             * Headline
+             * @default false
+             */
+            headline: boolean;
+            /** Text */
+            text: string;
+            /** Title */
+            title: string;
+            tone: components["schemas"]["CardTone"];
         };
         /** ReviewDetail */
         ReviewDetail: {

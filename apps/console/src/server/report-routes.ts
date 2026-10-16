@@ -12,6 +12,21 @@ export const narrativeBody = z
   .object({
     what_changed: z.string().max(4000),
     next_work: z.string().max(4000),
+    // Absent leaves the cards as they are.
+    result_cards: z
+      .array(
+        z
+          .object({
+            figure_keys: z.array(z.string()).min(1).max(2),
+            tone: z.enum(["good", "bad", "neutral"]),
+            headline: z.boolean(),
+            title: z.string().max(80),
+            text: z.string().max(500),
+          })
+          .strict(),
+      )
+      .max(4)
+      .optional(),
   })
   .strict();
 const firstOfMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/);

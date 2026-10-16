@@ -35,6 +35,7 @@ from apps.api.app.reports.contracts import (
     ReportReadiness,
     ReportSnapshot,
     ReportStatus,
+    ReportTopics,
 )
 from apps.api.app.reports.errors import (
     ReportAlreadyApprovedError,
@@ -81,6 +82,8 @@ class StoredReport:
     snapshot: ReportSnapshot
     narrative: ReportNarrative
     data_hash: str
+    # Hermes's grouping of the searches; changed only when a person regenerates the draft.
+    topics: ReportTopics | None = None
 
     @property
     def period(self) -> ReportPeriod:
@@ -98,14 +101,20 @@ class StoredReport:
 
 
 def envelope(
-    snapshot: ReportSnapshot, narrative: ReportNarrative, digest: str
+    snapshot: ReportSnapshot,
+    narrative: ReportNarrative,
+    digest: str,
+    topics: ReportTopics | None = None,
 ) -> dict[str, object]:
-    """What ``metric_snapshot`` holds: the numbers and, beside them, the narrative."""
-    return {
+    """What ``metric_snapshot`` holds: the numbers and, beside them, the narrative and topics."""
+    document: dict[str, object] = {
         "snapshot": snapshot.model_dump(mode="json"),
         "narrative": narrative.model_dump(mode="json"),
         "data_hash": digest,
     }
+    if topics is not None:
+        document["topics"] = topics.model_dump(mode="json")
+    return document
 
 
 def open_envelope(revision: ReportRevision) -> StoredReport:
@@ -115,6 +124,7 @@ def open_envelope(revision: ReportRevision) -> StoredReport:
         snapshot=ReportSnapshot.model_validate(document["snapshot"]),
         narrative=ReportNarrative.model_validate(document["narrative"]),
         data_hash=str(document["data_hash"]),
+        topics=ReportTopics.model_validate(document["topics"]) if document.get("topics") else None,
     )
 
 
@@ -340,7 +350,10 @@ class ReportService:
         digest = data_hash(snapshot)
         previous = await self.latest(session, organization_id, period, comparison)
         narrative = ReportNarrative()
+        topics: ReportTopics | None = None
         if previous is not None:
+            # The grouping of the searches is kept until a person asks for a new one.
+            topics = previous.topics
             if previous.data_hash == digest:
                 if previous.is_approved:
                     raise ReportAlreadyApprovedError
@@ -360,7 +373,7 @@ class ReportService:
             snapshot_hash=snapshot_hash(
                 organization_id, definition.id, period, comparison, number, digest, narrative
             ),
-            metric_snapshot=envelope(snapshot, narrative, digest),
+            metric_snapshot=envelope(snapshot, narrative, digest, topics),
             metric_versions=list(METRIC_VERSIONS),
             limitations=sorted({note.code.value for note in snapshot.notes}),
             status=REVISION_DRAFT,
@@ -425,7 +438,7 @@ class ReportService:
         """Replace a draft's narrative; the revision's hash follows its content."""
         stored = await self._editable(session, organization_id, period, comparison, revision)
         row = stored.revision
-        row.metric_snapshot = envelope(stored.snapshot, narrative, stored.data_hash)
+        row.metric_snapshot = envelope(stored.snapshot, narrative, stored.data_hash, stored.topics)
         row.snapshot_hash = snapshot_hash(
             organization_id,
             row.report_definition_id,
@@ -448,6 +461,39 @@ class ReportService:
                 **self._where(period, comparison),
                 "revision": row.revision,
                 "origin": narrative.origin.value,
+            },
+        )
+        return open_envelope(row)
+
+    async def set_topics(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        period: ReportPeriod,
+        comparison: ComparisonSpec,
+        revision: int,
+        topics: ReportTopics,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> StoredReport:
+        """Replace a draft's grouping of searches. Identity of the revision does not change."""
+        stored = await self._editable(session, organization_id, period, comparison, revision)
+        row = stored.revision
+        row.metric_snapshot = envelope(stored.snapshot, stored.narrative, stored.data_hash, topics)
+        await session.flush()
+        await self._record(
+            session,
+            event="reports.topics.grouped",
+            organization_id=organization_id,
+            actor_id=actor_id,
+            revision=row,
+            correlation_id=correlation_id,
+            summary="Report search topics grouped.",
+            metadata={
+                **self._where(period, comparison),
+                "revision": row.revision,
+                "topics": len(topics.topics),
             },
         )
         return open_envelope(row)
