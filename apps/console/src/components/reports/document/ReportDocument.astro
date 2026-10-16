@@ -145,7 +145,12 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
                       {row.change}
                     </td>
                     {score.card.hasYear && (
-                      <td class="dnum">{row.year ?? "No comparison"}</td>
+                      <td class="dnum">
+                        {row.year ?? "No comparison"}
+                        {row.yearChange && (
+                          <span class="dsub">{row.yearChange}</span>
+                        )}
+                      </td>
                     )}
                   </tr>
                 ))}
@@ -319,10 +324,7 @@ const arrow = { up: "▲", down: "▼", flat: "■", none: "" } as const;
             {view.search.view.tiles.map((tile) => (
               <div>
                 <p class="tilelabel">{tile.label}</p>
-                <p class="tilevalue">
-                  {tile.value}
-                  {tile.was && <span class="dwas">{tile.was}</span>}
-                </p>
+                <p class="tilevalue">{tile.value}</p>
                 {tile.line && (
                   <p class:list={["tileline", tile.tone]}>{tile.line}</p>
                 )}

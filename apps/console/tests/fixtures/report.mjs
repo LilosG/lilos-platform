@@ -48,6 +48,31 @@ const valueOf = (key, month) =>
   Math.round(BASE[key] * GROWTH ** (index(month) - index(anchor)));
 const sum = (key, months) =>
   months.reduce((total, month) => total + valueOf(key, month), 0);
+/**
+ * What the same months a year earlier held. Each figure grew by its own amount since then, and
+ * each month wobbles a little, so no two rows share one ratio.
+ */
+const YEAR_AGO = {
+  profile_views: 0.78,
+  calls: 0.91,
+  website_clicks: 0.64,
+  direction_requests: 0.83,
+  search_clicks: 0.55,
+  search_impressions: 0.7,
+  organic_sessions: 0.6,
+  new_reviews: 1.08,
+};
+const sumYear = (key, months) =>
+  months.reduce(
+    (total, month) =>
+      total +
+      Math.round(
+        valueOf(key, month) *
+          YEAR_AGO[key] *
+          (1 + 0.07 * Math.sin(index(month) * 2.3 + key.length)),
+      ),
+    0,
+  );
 const pct = (change, base) =>
   base ? Math.round((change / base) * 1000) / 10 : null;
 const resolve = (period, spec) => {
@@ -100,7 +125,7 @@ const count = (key, period, resolved, options = {}) => {
   const base = averaged ? total / resolved.comparedSpan : total;
   const change = Math.round(against) - Math.round(base);
   const year = resolved.year_ago
-    ? sum(
+    ? sumYear(
         key,
         monthsOf(resolved.year_ago.start_month, resolved.year_ago.end_month),
       )

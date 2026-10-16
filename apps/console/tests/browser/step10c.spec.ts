@@ -73,7 +73,9 @@ test.describe("the client document reads like a report", () => {
     await expect(page.locator(".cover")).not.toContainText("Main");
     // No search data before May: nothing is set against it, and no gains are invented.
     await expect(page.locator("[data-gains]")).toHaveCount(0);
-    await expect(page.locator("[data-search-tiles]")).not.toContainText("was ");
+    await expect(page.locator("[data-search-tiles]")).not.toContainText(
+      " from ",
+    );
     await expect(page.locator("[data-section=search]")).toContainText(
       "Google Search Console, non-branded searches only",
     );

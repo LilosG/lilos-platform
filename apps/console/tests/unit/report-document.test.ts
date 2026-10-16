@@ -199,7 +199,11 @@ describe("sections", () => {
       "542",
       "37,290",
     ]);
-    expect(view.tiles[0]).toMatchObject({ was: "was 95", tone: "good" });
+    expect(view.tiles[0]).toMatchObject({
+      line: "+76 searches (+80%) from 95",
+      tone: "good",
+    });
+    expect(view.tiles[3].line).toBe("+7,304 (+24%) from 29,986");
     expect(view.topics[0]).toMatchObject({
       label: "Private events & groups",
       top10: { before: "2", after: "32" },
@@ -215,7 +219,7 @@ describe("sections", () => {
     // No comparison months: only where the period stands, never a "before" of zero.
     expect(bare.comparable).toBe(false);
     expect(bare.gains).toEqual([]);
-    expect(bare.tiles[0].was).toBeNull();
+    expect(bare.tiles[0].line).toBeNull();
     expect(bare.topics.every((topic) => topic.top10.before === null)).toBe(
       true,
     );

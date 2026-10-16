@@ -344,7 +344,9 @@
 /* Tables */
 .doc table {
   width: 100%;
-  border-collapse: collapse;
+  /* Separate borders: a divider belongs to its own row, so it always spans the whole table. */
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 9pt;
   line-height: 1.35;
 }
@@ -371,6 +373,13 @@
 }
 .doc tbody th[scope="row"] {
   font-weight: 500;
+}
+.doc .change {
+  white-space: nowrap;
+  min-width: 1.2in;
+}
+.doc .score td.dnum {
+  white-space: nowrap;
 }
 .doc .dnum {
   text-align: right;

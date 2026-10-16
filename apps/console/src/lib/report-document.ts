@@ -79,8 +79,10 @@ export interface ScoreRow {
   change: string;
   direction: Direction;
   tone: Tone;
-  /** The same period a year earlier, with its change; null when this row has none to show. */
+  /** The same period a year earlier; null when this row has none to show. */
   year: string | null;
+  /** Its change, for the muted second line under the value. */
+  yearChange: string | null;
   partial: boolean;
 }
 export interface ScoreGroup {
@@ -121,13 +123,16 @@ function countCells(comparison: CountComparison) {
       : gapText(comparison.compared),
   };
 }
-function yearCell(comparison: CountComparison): string | null {
+function yearCell(comparison: CountComparison): {
+  year: string | null;
+  yearChange: string | null;
+} {
   const year = comparison.year_ago;
-  if (year === null || year === undefined) return null;
+  if (year === null || year === undefined)
+    return { year: null, yearChange: null };
   const value = countText(year);
-  if (!value) return gapText(year);
-  const change = changeText(comparison, "year");
-  return change ? `${value} (${change})` : value;
+  if (!value) return { year: gapText(year), yearChange: null };
+  return { year: value, yearChange: changeText(comparison, "year") };
 }
 function countRow(
   label: string,
@@ -148,7 +153,7 @@ function countRow(
     change: change ?? (partial ? "Not comparable" : "No comparison"),
     direction: directionOf(comparison.change),
     tone: toneOf(directionOf(comparison.change)),
-    year: yearCell(comparison),
+    ...yearCell(comparison),
     partial: isPartial(comparison.current),
   };
 }
@@ -185,8 +190,12 @@ function rateRow(
       year === null || year === undefined
         ? null
         : present(year)
-          ? `${rateText(year, format)}${point(comparison.year_change) ? ` (${point(comparison.year_change)})` : ""}`
+          ? rateText(year, format)
           : gapText(year),
+    yearChange:
+      year !== null && year !== undefined && present(year)
+        ? point(comparison.year_change)
+        : null,
     partial: isPartial(comparison.current),
   };
 }
@@ -215,6 +224,7 @@ function searchCountRow(
     direction,
     tone: toneOf(direction),
     year: null,
+    yearChange: null,
     partial: false,
   };
 }
@@ -252,6 +262,7 @@ export function scorecard(
           direction: "none",
           tone: "neutral",
           year: null,
+          yearChange: null,
           partial: false,
         },
       ];
@@ -752,7 +763,6 @@ export interface GainLine {
 export interface Tile {
   label: string;
   value: string;
-  was: string | null;
   line: string | null;
   tone: Tone;
 }
@@ -829,24 +839,21 @@ export function searchView(
   if (search.availability === "unavailable") return null;
   const tiles: Tile[] = [];
   if (results) {
+    const from = (line: string | null, before: number | null) =>
+      line === null || before === null ? null : `${line} from ${fmt(before)}`;
     tiles.push({
       label: "Searches in Google’s top 10",
       value: fmt(results.top_ten_after),
-      was:
-        results.top_ten_before === null
-          ? null
-          : `was ${fmt(results.top_ten_before)}`,
-      line:
-        results.top_ten_before === null
-          ? null
-          : delta(results.top_ten_after, results.top_ten_before, " searches"),
+      line: from(
+        delta(results.top_ten_after, results.top_ten_before, " searches"),
+        results.top_ten_before,
+      ),
       tone: toneOfChange(results.top_ten_after, results.top_ten_before),
     });
     if (results.new_to_page_one !== null)
       tiles.push({
         label: "Searches new to page one",
         value: fmt(results.new_to_page_one),
-        was: null,
         line: "since the comparison period",
         tone: results.new_to_page_one > 0 ? "good" : "neutral",
       });
@@ -854,27 +861,19 @@ export function searchView(
       {
         label: "Clicks to the website",
         value: fmt(results.clicks_after),
-        was:
-          results.clicks_before === null
-            ? null
-            : `from ${fmt(results.clicks_before)}`,
-        line:
-          results.clicks_before === null
-            ? null
-            : delta(results.clicks_after, results.clicks_before),
+        line: from(
+          delta(results.clicks_after, results.clicks_before),
+          results.clicks_before,
+        ),
         tone: toneOfChange(results.clicks_after, results.clicks_before),
       },
       {
         label: "Times shown in Google results",
         value: fmt(results.impressions_after),
-        was:
-          results.impressions_before === null
-            ? null
-            : `from ${fmt(results.impressions_before)}`,
-        line:
-          results.impressions_before === null
-            ? null
-            : delta(results.impressions_after, results.impressions_before),
+        line: from(
+          delta(results.impressions_after, results.impressions_before),
+          results.impressions_before,
+        ),
         tone: toneOfChange(
           results.impressions_after,
           results.impressions_before,
