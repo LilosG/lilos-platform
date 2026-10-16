@@ -2,16 +2,17 @@
 import type { HorizontalModel } from "../../../lib/report-charts";
 interface Props {
   title: string;
+  caption?: string | null;
   model: HorizontalModel;
   /** Draw each row's share beside its figure. */
   shares?: boolean;
 }
-const { title, model, shares = true } = Astro.props;
+const { title, model, shares = true, caption = null } = Astro.props;
 const id = `bars-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 const room = model.width - model.labelWidth - model.valueWidth;
 ---
 
-<figure class="docchart small">
+<figure class="docchart small chartcard">
   <figcaption class="doccharttitle">{title}</figcaption>
   <div
     class="svgbox"
@@ -61,4 +62,5 @@ const room = model.width - model.labelWidth - model.valueWidth;
       }
     </svg>
   </div>
+  {caption && <p class="dcaption">{caption}</p>}
 </figure>

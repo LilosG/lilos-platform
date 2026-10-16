@@ -9,7 +9,7 @@ const id = `chart-${chart.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 const hasCompared = model.bars.some((bar) => bar.group === "compared");
 ---
 
-<figure class="docchart">
+<figure class:list={["docchart", "chartcard", { compact: chart.compact }]}>
   <figcaption class="doccharttitle">{chart.title}</figcaption>
   <div
     class="svgbox"
@@ -36,7 +36,7 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
             <text
               class="tick"
               x={model.plot.left - 8}
-              y={tick.y + 3}
+              y={tick.y + 4}
               text-anchor="end"
             >
               {tick.label}
@@ -51,7 +51,7 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
             x1={model.divider}
             x2={model.divider}
             y1={model.plot.top - 6}
-            y2={model.plot.bottom + 28}
+            y2={model.plot.bottom + 32}
           />
         )
       }
@@ -90,7 +90,7 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
             <text
               class="month"
               x={bar.centre}
-              y={model.plot.bottom + 14}
+              y={model.plot.bottom + 16}
               text-anchor="middle"
             >
               {bar.label}
@@ -99,7 +99,7 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
               <text
                 class="year"
                 x={bar.centre}
-                y={model.plot.bottom + 27}
+                y={model.plot.bottom + 30}
                 text-anchor="middle"
               >
                 {bar.year}
@@ -123,9 +123,10 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
       }
     </svg>
   </div>
-  <p class="legend">
+  <p class="dlegend">
     {hasCompared && <span class="key compared">Comparison period</span>}
     <span class="key period">This period</span>
     {model.baseline && <span class="key baseline">{model.baseline.label}</span>}
   </p>
+  <p class="dcaption">{chart.caption}</p>
 </figure>

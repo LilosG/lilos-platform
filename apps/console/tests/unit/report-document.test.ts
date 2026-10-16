@@ -6,7 +6,9 @@ import { adaptReportDetail } from "../../src/adapters/reports";
 import { toneOf } from "../../src/lib/report-view";
 import {
   documentView,
+  mergePages,
   monthlyChart,
+  pageLabel,
   notIncluded,
   scorecard,
   searchView,
@@ -31,23 +33,22 @@ const strings = (value: unknown): string[] =>
             .flatMap(([, item]) => strings(item))
         : [];
 describe("the client document", () => {
-  it("opens with the client, the period, the comparison and where it covers", () => {
+  it("opens with a title, one line of context and who prepared it", () => {
     const { cover } = documentView(report());
     expect(cover).toMatchObject({
-      client: "Coco Maya",
-      title: "Performance report",
-      period: "May – September 2026",
-      compared: "Compared with: December 2025 – April 2026",
-      locations: ["Coco Maya Downtown", "Coco Maya Beach"],
+      title: "May – September 2026 performance report",
+      intro:
+        "How Coco Maya performed in May – September 2026, compared with the months before (December 2025 – April 2026).",
       preparedBy: "Lilos Growth",
+      kicker: "Lilos Growth · Coco Maya",
+      milestones: null,
     });
     expect(cover.preparedOn).toBe("October 1, 2026");
   });
   it("words the comparison by its basis", () => {
     expect(
-      documentView(report({}, { basis: "same_period_last_year" })).cover
-        .compared,
-    ).toBe("Compared with: the same period last year (May – September 2025)");
+      documentView(report({}, { basis: "same_period_last_year" })).cover.intro,
+    ).toContain("the same months last year (May – September 2025)");
     expect(
       documentView(
         report(
@@ -58,16 +59,41 @@ describe("the client document", () => {
             baseline_end: "2026-02-01",
           },
         ),
-      ).cover.compared,
-    ).toBe("Compared with: January – February 2026, as monthly averages");
+      ).cover.intro,
+    ).toContain("January – February 2026, as monthly averages");
   });
-  it("leads with four headline cards from the headlines the API chose", () => {
-    const view = documentView(report());
-    expect(view.headlines).toHaveLength(4);
-    expect(view.headlines[0]).toMatchObject({
-      label: "Profile views",
-      direction: "up",
+  it("shows the timeline only when the client has milestones, and the cover names more than one location by its profile", () => {
+    expect(documentView(report()).cover.milestones).toBeNull();
+    const view = documentView(
+      report({
+        names: ["Coco Maya by Miss B's", "Coco Maya Beach"],
+        milestones: [{ day: "2026-05-01", label: "We began." }],
+      }),
+    );
+    expect(view.cover.milestones).toEqual([
+      { date: "May 1, 2026", label: "We began." },
+      { date: "May – September 2026", label: "The period this report covers." },
+    ]);
+    expect(view.cover.kicker).toBe(
+      "Lilos Growth · Coco Maya · Coco Maya by Miss B's · Coco Maya Beach",
+    );
+    // The internal location names never reach the cover.
+    expect(strings(view.cover).join(" ")).not.toContain("Coco Maya Downtown");
+  });
+  it("shows result cards, never invented ones, and a draft is marked", () => {
+    expect(documentView(report()).glance).toBeNull();
+    const view = documentView(report({ cards: true, search: "results" }));
+    expect(view.draft).toBe(true);
+    const cards = view.glance!.cards;
+    expect(cards).toHaveLength(4);
+    expect(cards[0]).toMatchObject({
+      value: "+80%",
+      tone: "good",
+      headline: true,
+      title: "More first-page Google rankings",
     });
+    expect(cards[0].footer).toContain("Search Console");
+    expect(cards.filter((card) => card.headline)).toHaveLength(1);
   });
   it("never shows a missing figure as 0, NaN, a dash, an ISO date or an enum", () => {
     for (const options of [
@@ -88,10 +114,13 @@ describe("the scorecard", () => {
     const full = scorecard(report().snapshot);
     expect(full.groups.map((group) => group.title)).toEqual([
       "Google Business Profile",
-      "Website search",
-      "Website traffic",
+      "Website and Google search",
+      "Website visits",
       "Reviews",
     ]);
+    // Every row says where its figure comes from, and each group says what it is set against.
+    expect(full.groups[0].rows.every((row) => row.source !== "")).toBe(true);
+    expect(full.groups[0].kicker).toContain("vs. December 2025 – April 2026");
     expect(full.hasYear).toBe(true);
     const bare = scorecard(
       report({ gone: ["search_console", "analytics"] }).snapshot,
@@ -126,9 +155,10 @@ describe("the scorecard", () => {
       compared: "45",
       change: "Not comparable",
     });
-    expect(card.rowNotes).toEqual([
+    // The reason sits next to the figure, not in a footnote.
+    expect(bookings.note).toBe(
       "Google reported no bookings this period (45 in the comparison period). This can reflect a change in how Google reports it, not lower demand.",
-    ]);
+    );
   });
   it("compares counts as monthly averages when the baseline is another length", () => {
     const card = scorecard(
@@ -142,7 +172,7 @@ describe("the scorecard", () => {
       ).snapshot,
     );
     const views = card.groups[0].rows[0];
-    expect(views.current).toMatch(/\(\d[\d,]* a month\)$/);
+    expect(views.currentSub).toMatch(/^\d[\d,]* a month$/);
     expect(views.compared).toMatch(/ a month$/);
   });
 });
@@ -156,12 +186,81 @@ describe("sections", () => {
       terms.rows.find((row) => row.keyword === "private event venue")!.value,
     ).toBe("< 15");
   });
-  it("list the top non-branded searches and say how much brand there was", () => {
-    const search = searchView(snap, "Coco Maya")!;
-    expect(search.queries).toHaveLength(10);
-    expect(search.queries.map((row) => row.label)).not.toContain("coco maya");
-    expect(search.brandedNote).toContain("31%");
-    expect(search.topNote).toContain("not totals of every search");
+  it("group searches by topic and show what gained ground, or say nothing was compared", () => {
+    const withResults = report({ search: "results" });
+    const view = searchView(
+      withResults.snapshot,
+      withResults.search_results ?? null,
+      [],
+    )!;
+    expect(view.tiles.map((tile) => tile.value)).toEqual([
+      "171",
+      "64",
+      "542",
+      "37,290",
+    ]);
+    expect(view.tiles[0]).toMatchObject({ was: "was 95", tone: "good" });
+    expect(view.topics[0]).toMatchObject({
+      label: "Private events & groups",
+      top10: { before: "2", after: "32" },
+    });
+    const first = view.gains[0].rows[0];
+    expect(first.position).toEqual({ before: "#7.5", after: "#3.2" });
+    expect(
+      view.gains.flatMap((g) => g.rows.map((r) => r.position.before)),
+    ).toContain("New");
+    expect(view.topicNote).toContain("not totals of every search");
+    const alone = report({ search: "alone", searchAlone: true });
+    const bare = searchView(alone.snapshot, alone.search_results ?? null, [])!;
+    // No comparison months: only where the period stands, never a "before" of zero.
+    expect(bare.comparable).toBe(false);
+    expect(bare.gains).toEqual([]);
+    expect(bare.tiles[0].was).toBeNull();
+    expect(bare.topics.every((topic) => topic.top10.before === null)).toBe(
+      true,
+    );
+  });
+  it("adds up the addresses of one page", () => {
+    const merged = mergePages(
+      [
+        "https://a.example/",
+        "http://a.example/",
+        "https://www.a.example/",
+        "https://a.example/index.html",
+        "https://a.example/menu/",
+      ].map((page, index) => ({
+        page,
+        clicks: 10,
+        impressions: 100,
+        ctr: 10,
+        position: 2 + index,
+        compared_clicks: null,
+        clicks_change: null,
+      })),
+    );
+    expect(merged.map((row) => [row.page, row.clicks])).toEqual([
+      ["/", 40],
+      ["/menu", 10],
+    ]);
+    expect(merged[0].impressions).toBe(400);
+    expect(pageLabel("https://a.example/")).toBe("Home page");
+  });
+  it("names at most ten posts and counts the rest", () => {
+    const base = report().snapshot;
+    const crowded = {
+      ...base,
+      work: {
+        groups: [
+          {
+            kind: "gbp_post" as const,
+            count: 14,
+            titles: Array.from({ length: 10 }, (_, i) => `Post ${i + 1}.`),
+          },
+        ],
+      },
+    };
+    expect(workLines(crowded)[0]).toMatchObject({ count: "14", more: 4 });
+    expect(workLines(crowded)[0].titles).toHaveLength(10);
   });
   it("chart the comparison period beside the period, with its monthly average", () => {
     const chart = monthlyChart(

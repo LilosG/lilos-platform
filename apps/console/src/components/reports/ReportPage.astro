@@ -110,7 +110,8 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
         href={printHref}
         target="_blank"
         rel="noopener"
-        data-report-download>Download PDF</a
+        data-report-download
+        >{report.status === "draft" ? "Download draft PDF" : "Download PDF"}</a
       >
       {
         narrative.editable && (

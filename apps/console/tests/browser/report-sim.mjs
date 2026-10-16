@@ -32,6 +32,11 @@ const PREVIOUS = {
   baseline_start: null,
   baseline_end: null,
 };
+const BASELINE = {
+  basis: "custom_baseline",
+  baseline_start: "2025-12-01",
+  baseline_end: "2026-04-01",
+};
 const key = (period, spec) =>
   `${periodSlug(period.start_month, period.end_month)}/${comparisonSlug(spec)}`;
 const SEPTEMBER = { start_month: LAST_ENDED, end_month: LAST_ENDED };
@@ -68,6 +73,52 @@ export function reset(mode = "default") {
         [key(SEPTEMBER, PREVIOUS)]: report(SEPTEMBER, PREVIOUS, [
           revision(1, mode === "sent" ? "sent" : "draft", words),
         ]),
+      },
+    };
+  if (mode === "document")
+    // A full report: cards, topics, gains, milestones and two locations.
+    state.clients.a = {
+      reports: {
+        [key(SEPTEMBER, PREVIOUS)]: report(
+          SEPTEMBER,
+          PREVIOUS,
+          [revision(1, "ready", words)],
+          {
+            search: "results",
+            cards: true,
+            names: ["Synthetic Alpha Downtown", "Synthetic Alpha Beach"],
+            milestones: [
+              {
+                day: "2026-05-01",
+                label:
+                  "Lilos Growth begins Google Business Profile management.",
+              },
+              { day: "2026-07-17", label: "New website launches." },
+            ],
+          },
+        ),
+      },
+    };
+  if (mode === "sparse")
+    // Shaped like a client with thin data: a draft, no search before May, four addresses for
+    // the home page, a misspelled brand search, and Google no longer reporting bookings.
+    state.clients.b = {
+      reports: {
+        [key(MAY_SEPTEMBER, BASELINE)]: report(
+          MAY_SEPTEMBER,
+          BASELINE,
+          [revision(1, "draft", words)],
+          {
+            search: "alone",
+            searchAlone: true,
+            cards: true,
+            urlVariants: true,
+            bookings: true,
+            bookingsCompared: 28,
+            bookingsYear: 101,
+            internalNames: ["Main"],
+          },
+        ),
       },
     };
   if (mode === "range" || mode === "gaps")
@@ -241,7 +292,20 @@ export function reports(req, url, claims, ids, body) {
   if (!action) return json(200, view(ids, client, stored, row, p));
   if (action === "narrative") {
     if (row.status !== "draft") return fail(409, "REPORT_NOT_EDITABLE");
-    row.narrative = { ...body, origin: "manual" };
+    row.narrative = {
+      ...body,
+      origin: "manual",
+      // The figures of a card are looked up again by their keys; only the words change.
+      result_cards: body.result_cards
+        ? body.result_cards.map((card) => ({
+            ...card,
+            figures:
+              row.narrative.result_cards?.find(
+                (old) => old.figure_keys.join() === card.figure_keys.join(),
+              )?.figures ?? [],
+          }))
+        : (row.narrative.result_cards ?? undefined),
+    };
     return json(200, view(ids, client, stored, row, p));
   }
   if (action === "draft-narrative") {
@@ -250,6 +314,7 @@ export function reports(req, url, claims, ids, body) {
         "Your profile was viewed 1,800 times in September, up from 1,530 in August.",
       next_work: "We will keep publishing posts and replying to every review.",
       origin: "hermes",
+      result_cards: row.narrative.result_cards,
     };
     return json(200, {
       report: view(ids, client, stored, row, p),

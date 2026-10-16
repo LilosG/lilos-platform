@@ -680,6 +680,7 @@ const detailSchema = z
     topics: topics.nullable().optional(),
     search_results: searchResults.nullable().optional(),
     profile_names: z.array(z.string()),
+    milestones: z.array(z.object({ day, label: z.string() }).strict()),
     permissions,
   })
   .strict();

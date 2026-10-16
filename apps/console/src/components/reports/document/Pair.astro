@@ -1,0 +1,11 @@
+---
+import type { Pair } from "../../../lib/report-document";
+interface Props {
+  value: Pair;
+}
+const { value } = Astro.props;
+---
+
+{value.before !== null && <span class="dwas">{value.before} → </span>}<b
+  >{value.after}</b
+>

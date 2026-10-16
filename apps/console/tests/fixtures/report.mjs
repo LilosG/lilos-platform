@@ -283,7 +283,10 @@ export function snapshot(period, spec, options = {}) {
       year_ago: resolved.year_ago,
       compared_as: resolved.compared_as,
     },
-    location_names: ["Coco Maya Downtown", "Coco Maya Beach"],
+    location_names: options.internalNames ?? [
+      "Coco Maya Downtown",
+      "Coco Maya Beach",
+    ],
     sync: {
       gbp: "2026-10-12",
       search_console: "2026-10-12",
@@ -307,7 +310,7 @@ export function snapshot(period, spec, options = {}) {
             {
               code: "optional_figure_not_reported",
               section: "profile_actions",
-              count: 45,
+              count: options.bookingsCompared ?? 45,
               location_id: null,
               metric: "BUSINESS_BOOKINGS",
             },
@@ -434,10 +437,12 @@ export function snapshot(period, spec, options = {}) {
                 metric: "BUSINESS_BOOKINGS",
                 comparison: {
                   current: gone("not_reported"),
-                  compared: f(45),
+                  compared: f(options.bookingsCompared ?? 45),
                   compared_as: "total",
                   current_monthly_average: null,
-                  year_ago: null,
+                  year_ago: options.bookingsYear
+                    ? f(options.bookingsYear)
+                    : null,
                   change: null,
                   change_percent: null,
                   year_change: null,
@@ -546,11 +551,21 @@ export function snapshot(period, spec, options = {}) {
             compared_clicks: Math.round(base * 0.9 * resolved.span),
             clicks_change: Math.round(base * 0.1 * resolved.span),
           })),
-          top_pages: [
-            ["https://cocomaya.example/menu/", 420],
-            ["https://cocomaya.example/", 380],
-            ["https://cocomaya.example/private-events/", 160],
-          ].map(([page, base]) => ({
+          top_pages: (options.urlVariants
+            ? [
+                ["https://cocomaya.example/", 210],
+                ["http://cocomaya.example/", 90],
+                ["https://www.cocomaya.example/", 60],
+                ["https://cocomaya.example/index.html", 20],
+                ["https://cocomaya.example/menu/", 420],
+                ["https://cocomaya.example/private-events/", 160],
+              ]
+            : [
+                ["https://cocomaya.example/menu/", 420],
+                ["https://cocomaya.example/", 380],
+                ["https://cocomaya.example/private-events/", 160],
+              ]
+          ).map(([page, base]) => ({
             page,
             clicks: base * resolved.span,
             impressions: base * 14 * resolved.span,
@@ -666,15 +681,266 @@ export function snapshot(period, spec, options = {}) {
       (item) => item.key !== "website_search_clicks",
     );
   }
+  if (options.searchAlone) {
+    // No search data before the report period: nothing to set the period against.
+    const sc = snap.search_console;
+    for (const key of ["clicks", "impressions"]) {
+      sc[key].compared = gone("not_synced");
+      sc[key].change = null;
+      sc[key].change_percent = null;
+      sc[key].year_ago = null;
+      sc[key].year_change = null;
+      sc[key].year_change_percent = null;
+    }
+    sc.ctr_percent.compared = gone("not_synced");
+    sc.ctr_percent.change = null;
+    sc.average_position.compared = gone("not_synced");
+    sc.average_position.change = null;
+    snap.headlines = snap.headlines.filter(
+      (item) => item.key !== "website_search_clicks",
+    );
+    snap.notes.push({
+      code: "search_console_compared_period_unavailable",
+      section: "search_console",
+      count: null,
+      location_id: null,
+      metric: null,
+    });
+  }
+  if (options.search === "results")
+    snap.search_movement = movementOf(months.length, true);
+  if (options.search === "alone")
+    snap.search_movement = movementOf(months.length, false);
   return JSON.parse(
     JSON.stringify(snap, (key, value) => (value === undefined ? null : value)),
   );
+}
+/** The stored searches behind the topics and gains. Positions and counts are synthetic. */
+const MOVEMENT = [
+  ["san diego rooftop venues", [7.5, 13, 1], [3.2, 182, 1]],
+  ["rooftop party venues in san diego", [9, 10, 0], [4.4, 136, 0]],
+  ["rooftop event space san diego", [11.2, 13, 0], [6.4, 159, 0]],
+  ["rooftop venues san diego", [6.1, 38, 0], [5.1, 189, 4]],
+  ["rehearsal dinner san diego", [7.2, 10, 0], [6.5, 128, 3]],
+  ["san diego bachelorette party", [18.4, 49, 0], [15, 546, 2]],
+  ["happy hour little italy san diego", [10.7, 82, 3], [8.5, 392, 14]],
+  ["best happy hour little italy san diego", [15.3, 13, 1], [7.6, 101, 6]],
+  ["happy hour in little italy", [12, 7, 1], [5.9, 70, 4]],
+  ["little italy happy hour", [10.7, 75, 5], [8.9, 372, 10]],
+  ["best brunch spots near me", [26, 2, 0], [7.1, 177, 0]],
+  ["brunch in san diego with a view", [21.6, 9, 0], [9.3, 173, 0]],
+  ["rooftop brunch san diego", [6.1, 178, 5], [4.1, 240, 13]],
+  ["brunch san diego", [30.6, 565, 7], [22.9, 898, 5]],
+  ["little italy san diego", [9.3, 32, 1], [9.5, 525, 4]],
+  ["little italy bars", [10.1, 224, 0], [8.8, 429, 1]],
+  ["restaurants in little italy", [18, 266, 2], [16.7, 374, 8]],
+  ["little italy restaurants", [18.1, 1308, 11], [18.3, 1343, 21]],
+  ["best restaurants for date night", [null, null, null], [9.5, 129, 0]],
+  ["cocomaia san diego", [2.1, 300, 30], [1.9, 320, 41]],
+];
+function movementOf(span, comparable) {
+  return {
+    comparable,
+    months_covered: span,
+    months_expected: span,
+    compared_months_covered: comparable ? span : 0,
+    compared_months_expected: span,
+    queries: MOVEMENT.map(([query, before, after]) => ({
+      query,
+      before_position: comparable ? before[0] : null,
+      after_position: after[0],
+      before_impressions: comparable ? before[1] : null,
+      after_impressions: after[1],
+      before_clicks: comparable ? before[2] : null,
+      after_clicks: after[2],
+    })),
+  };
+}
+const TOPICS = {
+  topics: [
+    {
+      key: "private-events",
+      label: "Private events & groups",
+      queries: MOVEMENT.slice(0, 6).map((row) => row[0]),
+    },
+    {
+      key: "happy-hour",
+      label: "Happy hour",
+      queries: MOVEMENT.slice(6, 10).map((row) => row[0]),
+    },
+    {
+      key: "brunch",
+      label: "Brunch",
+      queries: MOVEMENT.slice(10, 14).map((row) => row[0]),
+    },
+    {
+      key: "little-italy",
+      label: "Little Italy & dining",
+      queries: MOVEMENT.slice(14, 19).map((row) => row[0]),
+    },
+  ],
+  brand_variants: ["cocomaia san diego"],
+};
+const GAIN_GROUPS = [
+  ["private-events", "Private events & groups", [0, 1, 2, 3, 4, 5]],
+  ["happy-hour", "Happy hour", [6, 7, 8, 9]],
+  ["brunch", "Brunch", [10, 11, 12, 13]],
+  ["little-italy", "Little Italy & dining", [14, 15, 16, 18]],
+];
+/** What the API works out from the movement and the topics, for one report. */
+function resultsOf(span, comparable) {
+  const line = (index) => {
+    const [query, before, after] = MOVEMENT[index];
+    return {
+      query,
+      position_before: comparable ? before[0] : null,
+      position_after: after[0],
+      impressions_before: comparable ? before[1] : null,
+      impressions_after: after[1],
+      clicks_before: comparable ? before[2] : null,
+      clicks_after: after[2],
+    };
+  };
+  const topic = (key, label, examples, top, position, clicks) => ({
+    key,
+    label,
+    examples,
+    top_ten_before: comparable ? top[0] : null,
+    top_ten_after: top[1],
+    position_before: comparable ? position[0] : null,
+    position_after: position[1],
+    clicks_before: comparable ? clicks[0] : null,
+    clicks_after: clicks[1],
+  });
+  return {
+    comparable,
+    months_covered: span,
+    months_expected: span,
+    top_ten_before: comparable ? 95 : null,
+    top_ten_after: 171,
+    new_to_page_one: comparable ? 64 : null,
+    clicks_before: comparable ? 412 : null,
+    clicks_after: 542,
+    impressions_before: comparable ? 29986 : null,
+    impressions_after: 37290,
+    position_before: comparable ? 15.8 : null,
+    position_after: 14.6,
+    topics: [
+      topic(
+        "private-events",
+        "Private events & groups",
+        ["rooftop venues", "bachelorette party", "rehearsal dinner"],
+        [2, 32],
+        [14.1, 11.4],
+        [6, 26],
+      ),
+      topic(
+        "happy-hour",
+        "Happy hour",
+        ["little italy happy hour"],
+        [2, 10],
+        [16.1, 10.9],
+        [32, 64],
+      ),
+      topic(
+        "brunch",
+        "Brunch",
+        ["brunch san diego", "rooftop brunch"],
+        [26, 33],
+        [14.3, 13.1],
+        [146, 173],
+      ),
+      topic(
+        "little-italy",
+        "Little Italy & dining",
+        ["little italy bars", "little italy restaurants"],
+        [51, 77],
+        [12.4, 11.4],
+        [191, 311],
+      ),
+    ],
+    gains: comparable
+      ? GAIN_GROUPS.map(([key, label, rows]) => ({
+          key,
+          label,
+          rows: rows.map(line),
+        }))
+      : [],
+  };
 }
 export const PREVIOUS = {
   basis: "previous_period",
   baseline_start: null,
   baseline_end: null,
 };
+const figure = (key, c) => ({
+  key,
+  unit: "count",
+  current:
+    c.compared_as === "monthly_average"
+      ? c.current_monthly_average
+      : c.current.value,
+  monthly_average: c.compared_as === "monthly_average",
+  compared: c.compared.value,
+  change: c.change,
+  change_percent: c.change_percent,
+});
+const words = (c) => `${Math.round(c.current.value).toLocaleString("en-US")}`;
+/** Result cards as Hermes would draft them for this report: figures from the snapshot. */
+function cardsOf(snap, options) {
+  const views = snap.gbp.profile_views.total;
+  const clicks = snap.search_console.clicks;
+  const reviewsNew = snap.reviews.new_reviews;
+  const cards = [];
+  if (options.search === "results")
+    cards.push({
+      figure_keys: ["searches_in_top_ten"],
+      figures: [
+        {
+          key: "searches_in_top_ten",
+          unit: "count",
+          current: 171,
+          monthly_average: false,
+          compared: 95,
+          change: 76,
+          change_percent: 80,
+        },
+      ],
+      tone: "good",
+      headline: true,
+      title: "More first-page Google rankings",
+      text: "The website now ranks in Google’s top 10 for 171 searches that don’t include the restaurant’s name, up from 95. The biggest gains are in event venue, happy hour and rooftop searches.",
+    });
+  cards.push({
+    figure_keys: ["profile_views"],
+    figures: [figure("profile_views", views)],
+    tone: "good",
+    headline: !options.search,
+    title: "More people found the profile",
+    text: `The Google profile was seen ${words(views)} times, up from ${views.compared.value.toLocaleString("en-US")}. More views mean more people deciding where to eat.`,
+  });
+  if (
+    snap.search_console.availability !== "unavailable" &&
+    snap.search_console.clicks.change !== null
+  )
+    cards.push({
+      figure_keys: ["search_clicks"],
+      figures: [figure("search_clicks", clicks)],
+      tone: options.partialSearch ? "neutral" : "good",
+      headline: false,
+      title: "More visits from Google Search",
+      text: `Google Search sent ${words(clicks)} clicks to the website, against ${clicks.compared.value.toLocaleString("en-US")} before.`,
+    });
+  cards.push({
+    figure_keys: ["new_reviews"],
+    figures: [figure("new_reviews", reviewsNew)],
+    tone: "good",
+    headline: false,
+    title: "More new reviews",
+    text: `${words(reviewsNew)} new reviews arrived, up from ${reviewsNew.compared.value.toLocaleString("en-US")}, and every one was answered.`,
+  });
+  return cards.slice(0, 4);
+}
 /** The report view the API answers for one stored revision. */
 export const detail = (overrides = {}) => {
   const period = overrides.period ?? {
@@ -682,6 +948,17 @@ export const detail = (overrides = {}) => {
     end_month: "2026-09-01",
   };
   const spec = overrides.comparison ?? PREVIOUS;
+  const options = overrides.options ?? {};
+  const snap = snapshot(period, spec, options);
+  const span = monthsOf(period.start_month, period.end_month).length;
+  const narrative = {
+    what_changed: "",
+    next_work: "",
+    origin: "none",
+    ...overrides.narrative,
+  };
+  if (!narrative.result_cards)
+    narrative.result_cards = options.cards ? cardsOf(snap, options) : [];
   return {
     organization_id: ORG,
     client_name: "Coco Maya",
@@ -696,11 +973,19 @@ export const detail = (overrides = {}) => {
     created_at: "2026-10-01T15:00:00Z",
     approved_at: null,
     delivery: null,
-    snapshot: snapshot(period, spec, overrides.options),
-    narrative: { what_changed: "", next_work: "", origin: "none" },
+    snapshot: snap,
+    narrative,
+    topics: options.search ? TOPICS : null,
+    search_results: options.search
+      ? resultsOf(span, options.search === "results")
+      : null,
+    profile_names: options.names ?? [],
+    milestones: options.milestones ?? [],
     permissions: { can_generate: true, can_publish: true },
     ...Object.fromEntries(
-      Object.entries(overrides).filter(([key]) => !["options"].includes(key)),
+      Object.entries(overrides).filter(
+        ([key]) => !["options", "narrative"].includes(key),
+      ),
     ),
   };
 };
