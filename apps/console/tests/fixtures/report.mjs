@@ -989,3 +989,52 @@ export const detail = (overrides = {}) => {
     ),
   };
 };
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+const monthName = (iso) => MONTH_NAMES[Number(iso.slice(5, 7)) - 1];
+const group = (start, end) =>
+  start === end
+    ? `in ${monthName(start)}`
+    : `from ${monthName(start)} to ${monthName(end)}`;
+const before = (start, end) =>
+  start === end
+    ? `in ${monthName(start)}`
+    : `over ${monthName(start)} to ${monthName(end)}`;
+const n = (value) => Math.round(value).toLocaleString("en-US");
+/**
+ * The "what changed" paragraph a drafted summary would hold for this report, built from the
+ * fixture's own figures and worded for its period, so it cannot drift from the numbers.
+ */
+export function narrativeFor(period, spec, options = {}) {
+  const snap = snapshot(period, spec, options);
+  const views = snap.gbp.profile_views.total;
+  const actions = snap.gbp.actions.total;
+  const averaged = views.compared_as === "monthly_average";
+  const compared = snap.comparison.compared;
+  const against = averaged
+    ? `a monthly average of ${n(views.compared.value)} ${before(compared.start_month, compared.end_month)}`
+    : `${n(views.compared.value)} ${before(compared.start_month, compared.end_month)}`;
+  const current = averaged
+    ? `${n(views.current_monthly_average)} times a month on average`
+    : `${n(views.current.value)} times`;
+  const percent = Math.abs(views.change_percent);
+  const direction = views.change >= 0 ? "up" : "down";
+  return {
+    what_changed: `Your profile was viewed ${current} ${group(period.start_month, period.end_month)}, ${direction} from ${against}, a ${direction === "up" ? "rise" : "fall"} of ${percent}%. Calls, website clicks and direction requests together came to ${n(actions.current.value)}.`,
+    next_work:
+      "We will keep publishing weekly posts, answer every review, and watch the private events search terms.",
+  };
+}

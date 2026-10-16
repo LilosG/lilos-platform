@@ -3,6 +3,7 @@ import {
   comparisonSlug,
   detail,
   monthsOf,
+  narrativeFor,
   periodSlug,
 } from "../fixtures/report.mjs";
 const json = (status, body) => ({ status, body });
@@ -13,13 +14,8 @@ const names = {
 };
 const LAST_ENDED = "2026-09-01";
 export const state = { clients: {}, mode: "default" };
-const words = {
-  what_changed:
-    "Your profile was viewed 1,800 times in September, up from 1,530 in August, a rise of 18%. Calls, website clicks and direction requests together came to 515.",
-  next_work:
-    "We will keep publishing weekly posts, answer every review, and watch the private events search terms.",
-  origin: "hermes",
-};
+// A drafted narrative whose numbers are worked out from the fixture's own report when it is stored.
+const words = { auto: true, origin: "hermes" };
 const rangeWords = {
   what_changed:
     "Across May to September, more people found Coco Maya on Google than in the five months before.\n\nSearch clicks and website visits from search both grew, and every new review was answered.",
@@ -45,7 +41,14 @@ const MAY_SEPTEMBER = { start_month: "2026-05-01", end_month: LAST_ENDED };
 const report = (period, comparison, revisions, options = {}) => ({
   period,
   comparison,
-  revisions,
+  revisions: revisions.map((row) => {
+    if (!row.narrative.auto) return row;
+    const { auto: _auto, ...rest } = row.narrative;
+    return {
+      ...row,
+      narrative: { ...rest, ...narrativeFor(period, comparison, options) },
+    };
+  }),
   options,
 });
 const revision = (number, status, narrative, extra = {}) => ({
@@ -310,9 +313,7 @@ export function reports(req, url, claims, ids, body) {
   }
   if (action === "draft-narrative") {
     row.narrative = {
-      what_changed:
-        "Your profile was viewed 1,800 times in September, up from 1,530 in August.",
-      next_work: "We will keep publishing posts and replying to every review.",
+      ...narrativeFor(stored.period, stored.comparison, stored.options),
       origin: "hermes",
       result_cards: row.narrative.result_cards,
     };
