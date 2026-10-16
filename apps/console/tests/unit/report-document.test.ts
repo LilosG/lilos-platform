@@ -222,10 +222,10 @@ describe("sections", () => {
       "37,290",
     ]);
     expect(view.tiles[0]).toMatchObject({
-      line: "+76 searches (+80%) from 95",
+      line: "+76 searches (+80%) from\u00a095",
       tone: "good",
     });
-    expect(view.tiles[3].line).toBe("+7,304 (+24%) from 29,986");
+    expect(view.tiles[3].line).toBe("+7,304 (+24%) from\u00a029,986");
     expect(view.topics[0]).toMatchObject({
       label: "Private events & groups",
       top10: { before: "2", after: "32" },

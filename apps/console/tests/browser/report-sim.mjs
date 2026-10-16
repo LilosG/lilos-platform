@@ -43,7 +43,8 @@ const report = (period, comparison, revisions, options = {}) => ({
   comparison,
   revisions: revisions.map((row) => {
     if (!row.narrative.auto) return row;
-    const { auto: _auto, ...rest } = row.narrative;
+    const rest = { ...row.narrative };
+    delete rest.auto;
     return {
       ...row,
       narrative: { ...rest, ...narrativeFor(period, comparison, options) },

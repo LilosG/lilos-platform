@@ -866,7 +866,9 @@ export function searchView(
   const tiles: Tile[] = [];
   if (results) {
     const from = (line: string | null, before: number | null) =>
-      line === null || before === null ? null : `${line} from ${fmt(before)}`;
+      line === null || before === null
+        ? null
+        : `${line} from\u00a0${fmt(before)}`;
     tiles.push({
       label: "Searches in Google’s top 10",
       value: fmt(results.top_ten_after),

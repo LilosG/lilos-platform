@@ -341,6 +341,13 @@
 .tileline {
   font-weight: 500;
 }
+/* The four search tiles keep their figures on one line: labels and delta lines reserve two lines. */
+[data-search-tiles] .tilelabel {
+  min-height: 2.7em;
+}
+[data-search-tiles] .tileline {
+  min-height: 2.8em;
+}
 /* Tables */
 .doc table {
   width: 100%;
