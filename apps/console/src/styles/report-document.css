@@ -1,6 +1,7 @@
 /* The client report document: a Letter page to print or save as a PDF. Warm paper, white cards,
    mono small-caps labels, one accent for kickers; green and red only for good and bad.
-   Colors and type are sampled from the hand-written reference report. */
+   Hues are sampled from the hand-written reference report; text colors are darkened a step so
+   every label passes WCAG AA contrast on the paper. Chart fills keep the sampled hues. */
 @page {
   size: Letter;
   margin: 0.5in 0.6in;
@@ -10,12 +11,12 @@
   --card: #fff;
   --ink: #171a20;
   --body: #4a505c;
-  --faint: #7a7f8a;
+  --faint: #646a76;
   --rule: #dedcd5;
   --hair: #ebe9e3;
   --chip: #efeee9;
-  --accent: #c9553a;
-  --good: #1f8a4c;
+  --accent: #b4452b;
+  --good: #1a7a43;
   --bad: #b3342b;
   --hilite: #f8f4eb;
   --hilite-line: #d9c9a3;
@@ -148,7 +149,7 @@
 }
 .timeline .when {
   color: var(--accent);
-  font-size: 8.5pt;
+  font-size: 9pt;
 }
 /* Sections */
 .doc section {
@@ -503,7 +504,7 @@
   stroke: var(--faint);
   stroke-dasharray: 2 3;
 }
-.docchart .baseline {
+.docchart line.baseline {
   stroke: var(--ink);
   stroke-width: 1.2;
   stroke-dasharray: 5 4;

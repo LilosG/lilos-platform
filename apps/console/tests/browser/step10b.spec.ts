@@ -287,33 +287,36 @@ test.describe("the client document", () => {
     ).toHaveCount(0);
     await expect(page.getByRole("button")).toHaveCount(0);
     await expect(page.locator("h1")).toHaveText(
-      "Coco Maya".replace("Coco Maya", "Synthetic Alpha"),
+      "May – September 2026 performance report",
     );
-    await expect(page.locator(".cover")).toContainText("May – September 2026");
     await expect(page.locator(".cover")).toContainText(
-      "Compared with: December 2025 – April 2026",
+      "December 2025 – April 2026",
     );
     await expect(page.locator(".cover")).toContainText("Lilos Growth");
     const headings = await page.locator("h2").allInnerTexts();
-    expect(headings.map((text) => text.replace(/^\d+\s*/, "").trim())).toEqual([
-      "This period at a glance",
-      "Scorecard",
-      "Google Business Profile",
-      "Website search",
-      "Reviews",
-      "Work completed",
-      "Looking ahead",
+    expect(headings.map((text) => text.trim())).toEqual([
+      "May – September 2026 at a glance",
+      "How the numbers moved",
+      "How people found and used the Google profile",
+      "Getting found by people who aren’t searching for Synthetic Alpha",
+      "Visits that began with a Google search",
+      "What customers are saying",
+      "What we did this period",
+      "What we’re building next",
       "Notes and definitions",
     ]);
-    await expect(page.locator("[data-headline]")).toHaveCount(4);
+    // No result cards were drafted, so none are shown; the summary prose still is.
+    await expect(page.locator("[data-result]")).toHaveCount(0);
     await expect(page.locator(".prose").first()).toContainText(
       "Across May to September",
     );
     await expect(
-      page.getByRole("columnheader", { name: "Same period last year" }),
+      page.getByRole("columnheader", { name: "Same months last year" }),
     ).toBeVisible();
     await expect(page.getByText("and 87 more")).toBeVisible();
-    await expect(page.getByText("Not included in this report")).toBeVisible();
+    await expect(
+      page.getByText("Not included in this report.").first(),
+    ).toBeVisible();
     await expect(
       page.getByText("Local search ranking: not tracked yet"),
     ).toBeVisible();

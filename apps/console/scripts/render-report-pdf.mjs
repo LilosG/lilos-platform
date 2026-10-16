@@ -7,7 +7,10 @@
 // console and the simulator must already be running (see playwright.config.ts for their env).
 import { chromium } from "@playwright/test";
 const [scenario, client, period, out, comparison] = process.argv.slice(2);
-if (!out) throw new Error("usage: render-report-pdf.mjs scenario client period out.pdf");
+if (!out)
+  throw new Error(
+    "usage: render-report-pdf.mjs scenario client period out.pdf",
+  );
 const consoleUrl = process.env.CONSOLE ?? "http://127.0.0.1:4346";
 const sim = consoleUrl.replace("4346", "4455");
 await fetch(`${sim}/test/reports-scenario`, {

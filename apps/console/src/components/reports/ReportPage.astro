@@ -218,7 +218,10 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
               </tr>
               {group.rows.map((row) => (
                 <tr>
-                  <th scope="row">{row.label}</th>
+                  <th scope="row">
+                    {row.label}
+                    {row.note && <small class="muted">{row.note}</small>}
+                  </th>
                   <td>{row.current}</td>
                   <td>{row.compared}</td>
                   <td>{row.change}</td>
@@ -229,9 +232,6 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
           ))}
         </DataTable>
         {card.footnotes.map((text) => (
-          <p class="muted tablenote">{text}</p>
-        ))}
-        {card.rowNotes.map((text) => (
           <p class="muted tablenote">{text}</p>
         ))}
       </section>
