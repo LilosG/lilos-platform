@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
@@ -37,6 +37,7 @@ from apps.api.app.reporting_periods import (
 )
 from apps.api.app.reports.contracts import (
     Availability,
+    ComparedAs,
     NoteCode,
     ReportAnalyticsSection,
     ReportComparison,
@@ -162,12 +163,36 @@ async def _observations(
     return list(rows)
 
 
+NO_DATA_STATUS = "zero"
+
+
+async def _first_data_month(session: AsyncSession, property_id: UUID) -> date | None:
+    """The first stored month in which Google reported any impressions, over the whole history."""
+    first = await session.scalar(
+        select(func.min(SEOSearchObservation.date_start)).where(
+            SEOSearchObservation.search_property_id == property_id,
+            SEOSearchObservation.dimensions["observation_type"].astext == MONTH_SITE_SUMMARY,
+            SEOSearchObservation.quality_status.in_(("valid", "zero")),
+            SEOSearchObservation.impressions > 0,
+        )
+    )
+    return first.date() if first else None
+
+
 @dataclass(slots=True)
 class SearchMonths:
-    """The stored site summaries of some months, summed the way the report needs them."""
+    """The stored site summaries of some months, summed the way the report needs them.
+
+    ``no_data`` are months stored as zero before the property's first month with impressions:
+    Google had no data yet, which is not a measured zero. They are in neither ``rows`` nor any
+    sum, average or plotted point. ``gaps_ok`` lets a side whose only gaps are those months be
+    set against another as a monthly average over the months that have data.
+    """
 
     expected: list[date]
     rows: dict[date, SEOSearchObservation]
+    no_data: list[date] = field(default_factory=list)
+    gaps_ok: bool = False
 
     @property
     def present(self) -> list[date]:
@@ -179,6 +204,20 @@ class SearchMonths:
             row.partial for row in self.rows.values()
         )
 
+    @property
+    def gapped(self) -> bool:
+        """Every month is settled data or no data yet, with at least one month of data."""
+        return (
+            bool(self.rows)
+            and bool(self.no_data)
+            and len(self.rows) + len(self.no_data) == len(self.expected)
+            and not any(row.partial for row in self.rows.values())
+        )
+
+    @property
+    def settled(self) -> bool:
+        return self.complete or (self.gaps_ok and self.gapped)
+
     def values(self, attribute: str) -> list[MonthValue]:
         return [
             MonthValue(
@@ -189,11 +228,27 @@ class SearchMonths:
             for month in self.present
         ]
 
+    def _figure(self, attribute: str) -> ReportCountFigure:
+        values = self.values(attribute)
+        if not values:
+            return unavailable_count(
+                UnavailableReason.NO_SEARCH_DATA_YET
+                if self.no_data
+                else UnavailableReason.NOT_SYNCED
+            )
+        figure = months_figure(self.expected, values)
+        if self.gapped:
+            # Months with no data yet make the total a monthly average over the rest, or nothing.
+            if not self.gaps_ok:
+                return unavailable_count(UnavailableReason.NO_SEARCH_DATA_YET)
+            return figure.model_copy(update={"availability": Availability.AVAILABLE})
+        return figure
+
     def clicks(self) -> ReportCountFigure:
-        return months_figure(self.expected, self.values("clicks"))
+        return self._figure("clicks")
 
     def impressions(self) -> ReportCountFigure:
-        return months_figure(self.expected, self.values("impressions"))
+        return self._figure("impressions")
 
     def ctr(self) -> ReportRateFigure:
         """Clicks over impressions of the summed months: derived, never averaged."""
@@ -201,7 +256,7 @@ class SearchMonths:
         if clicks.value is None or not impressions.value:
             return unavailable_rate(UnavailableReason.NO_DATA)
         return ReportRateFigure(
-            availability=Availability.AVAILABLE if self.complete else Availability.PARTIAL,
+            availability=Availability.AVAILABLE if self.settled else Availability.PARTIAL,
             value=round(clicks.value / impressions.value * 100, 2),
         )
 
@@ -217,16 +272,29 @@ class SearchMonths:
         if not impressions:
             return unavailable_rate(UnavailableReason.NO_DATA)
         return ReportRateFigure(
-            availability=Availability.AVAILABLE if self.complete else Availability.PARTIAL,
+            availability=Availability.AVAILABLE if self.settled else Availability.PARTIAL,
             value=round(weighted / impressions, 1),
         )
 
 
 async def _search_months(
-    session: AsyncSession, property_id: UUID, months: Sequence[date]
+    session: AsyncSession,
+    property_id: UUID,
+    months: Sequence[date],
+    first_data: date | None,
+    *,
+    gaps_ok: bool = False,
 ) -> SearchMonths:
     found = await _observations(session, property_id, months, MONTH_SITE_SUMMARY)
-    return SearchMonths(list(months), {row.date_start.date(): row for row in found})
+    rows: dict[date, SEOSearchObservation] = {}
+    no_data: list[date] = []
+    for row in found:
+        month = row.date_start.date()
+        if row.quality_status == NO_DATA_STATUS and (first_data is None or month < first_data):
+            no_data.append(month)
+        else:
+            rows[month] = row
+    return SearchMonths(list(months), rows, sorted(no_data), gaps_ok)
 
 
 @dataclass(slots=True)
@@ -347,20 +415,36 @@ async def build_search_console(
             _empty_series(keys, period, comparison),
             None,
         )
-    current = await _search_months(session, prop.id, period.months)
+    first_data = await _first_data_month(session, prop.id)
+    current = await _search_months(session, prop.id, period.months, first_data, gaps_ok=True)
     if not current.present:
+        if current.no_data:
+            return SearchResult(
+                _search_unavailable(UnavailableReason.NO_SEARCH_DATA_YET),
+                [note(NoteCode.SEARCH_CONSOLE_NO_DATA_YET)],
+                _empty_series(keys, period, comparison),
+                prop.last_synced_at.date() if prop.last_synced_at else None,
+            )
         return SearchResult(
             _search_unavailable(UnavailableReason.NOT_SYNCED),
             [note(NoteCode.SEARCH_CONSOLE_NOT_SYNCED)],
             _empty_series(keys, period, comparison),
             None,
         )
-    compared = await _search_months(session, prop.id, comparison.compared.months)
+    compared = await _search_months(
+        session, prop.id, comparison.compared.months, first_data, gaps_ok=True
+    )
     year = (
-        await _search_months(session, prop.id, comparison.year_ago.months)
+        await _search_months(session, prop.id, comparison.year_ago.months, first_data)
         if comparison.year_ago
         else None
     )
+    if current.gapped or compared.gapped:
+        # Months before Google's first data are left out of both sides, so the sides are compared
+        # as monthly averages over the months that have data.
+        basis = Basis(
+            ComparedAs.MONTHLY_AVERAGE, len(current.present), max(1, len(compared.present))
+        )
     notes: list[ReportDataNote] = []
     lag_days: int | None = None
     last = current.rows.get(period.end_month)
@@ -370,10 +454,18 @@ async def build_search_console(
         settled_through = last.updated_at.date() - timedelta(days=GSC_SYNC_TAIL_EXCLUSION_DAYS)
         lag_days = max(1, (following.date() - timedelta(days=1) - settled_through).days)
         notes.append(note(NoteCode.SEARCH_CONSOLE_LAG_DAYS, count=lag_days))
-    missing = len(current.expected) - len(current.rows)
+    missing = len(current.expected) - len(current.rows) - len(current.no_data)
     if missing:
         notes.append(note(NoteCode.SEARCH_CONSOLE_MONTHS_MISSING, count=missing))
-    if not compared.complete:
+    if compared.gapped:
+        notes.append(
+            note(
+                NoteCode.SEARCH_CONSOLE_COMPARED_AS_AVERAGE,
+                covered_months=compared.present,
+                missing_months=compared.no_data,
+            )
+        )
+    elif not compared.complete:
         notes.append(note(NoteCode.SEARCH_CONSOLE_COMPARED_PERIOD_UNAVAILABLE))
 
     def counts(read: str) -> ReportCountComparison:
@@ -403,7 +495,7 @@ async def build_search_console(
         await _observations(session, prop.id, comparison.compared.months, MONTH_TOP_PAGE), "page"
     )
     # A change is only stated between two settled periods.
-    settled = current.complete and compared.complete
+    settled = current.settled and compared.settled
 
     def change(clicks: int, before: int | None) -> int | None:
         if not settled or before is None:
@@ -454,7 +546,7 @@ async def build_search_console(
     ]
     return SearchResult(
         ReportSearchConsoleSection(
-            availability=Availability.AVAILABLE if current.complete else Availability.PARTIAL,
+            availability=Availability.AVAILABLE if current.settled else Availability.PARTIAL,
             clicks=counts("clicks"),
             impressions=counts("impressions"),
             ctr_percent=rates("ctr"),

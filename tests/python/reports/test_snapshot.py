@@ -129,7 +129,8 @@ async def test_the_action_rate_is_null_when_there_are_no_views(factory: Factory)
         factory, org, gbp, SEPTEMBER, lambda m, d: 0 if "IMPRESSIONS" in m.value else 3
     )
 
-    result = await snapshot(factory, org)
+    # Read once the last days of September are past Google's lag, so the zeros are settled.
+    result = await snapshot(factory, org, now=OCTOBER_FIRST + timedelta(days=10))
 
     assert result.gbp.profile_views.total.current.value == 0  # a real, stored zero
     assert result.gbp.actions.action_rate.current.value is None
@@ -714,3 +715,19 @@ async def test_the_same_stored_data_always_gives_the_same_snapshot_and_hash(
 
     assert first == second and data_hash(first) == data_hash(second)
     assert days_of(SEPTEMBER)[0] == date(2026, 9, 1)
+
+
+@pytest.mark.anyio
+async def test_days_google_has_not_reported_yet_make_a_figure_partial_never_zero(
+    factory: Factory,
+) -> None:
+    org, gbp, _ = await seed_org(factory)
+    # The daily table as the report job found it on 2026-10-01: real values to the 27th, then
+    # three days of zeros that Google had not counted yet.
+    await store_metrics(factory, org, gbp, SEPTEMBER, lambda metric, day: 0 if day.day >= 28 else 5)
+
+    views = (await snapshot(factory, org)).gbp.profile_views.total.current
+
+    assert views.availability is Availability.PARTIAL
+    assert (views.days_covered, views.days_expected) == (27, 30)
+    assert views.value == 27 * 4 * 5

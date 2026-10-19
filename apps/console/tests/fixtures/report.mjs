@@ -740,19 +740,19 @@ export function snapshot(period, spec, options = {}) {
     );
   }
   if (options.searchAlone) {
-    // No search data before the report period: nothing to set the period against.
+    // Search Console had no data before the report period: nothing to set the period against.
     const sc = snap.search_console;
     for (const key of ["clicks", "impressions"]) {
-      sc[key].compared = gone("not_synced");
+      sc[key].compared = gone("no_search_data_yet");
       sc[key].change = null;
       sc[key].change_percent = null;
-      sc[key].year_ago = null;
+      sc[key].year_ago = gone("no_search_data_yet");
       sc[key].year_change = null;
       sc[key].year_change_percent = null;
     }
-    sc.ctr_percent.compared = gone("not_synced");
+    sc.ctr_percent.compared = gone("no_search_data_yet");
     sc.ctr_percent.change = null;
-    sc.average_position.compared = gone("not_synced");
+    sc.average_position.compared = gone("no_search_data_yet");
     sc.average_position.change = null;
     snap.headlines = snap.headlines.filter(
       (item) => item.key !== "website_search_clicks",
@@ -763,6 +763,31 @@ export function snapshot(period, spec, options = {}) {
       count: null,
       location_id: null,
       metric: null,
+    });
+  }
+  if (options.searchAveraged) {
+    // The comparison starts before Search Console's first data: monthly averages over the rest.
+    const sc = snap.search_console;
+    for (const key of ["clicks", "impressions"]) {
+      const item = sc[key];
+      const span = months.length;
+      item.compared_as = "monthly_average";
+      item.current_monthly_average = Math.round(item.current.value / span);
+      item.compared = f(Math.round(item.compared.value / 2));
+      item.change = item.current_monthly_average - item.compared.value;
+      item.change_percent = pct(item.change, item.compared.value);
+      item.year_ago = gone("no_search_data_yet");
+      item.year_change = null;
+      item.year_change_percent = null;
+    }
+    snap.notes.push({
+      code: "search_console_compared_as_average",
+      section: "search_console",
+      count: null,
+      location_id: null,
+      metric: null,
+      covered_months: ["2026-05-01", "2026-06-01"],
+      missing_months: ["2026-04-01"],
     });
   }
   if (options.search === "results")

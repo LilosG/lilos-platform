@@ -80,6 +80,9 @@ test.describe("the client document reads like a report", () => {
       "Google Search Console, non-branded searches only",
     );
     await expect(page.locator("[data-section=scorecard]")).toContainText(
+      "No search data yet",
+    );
+    await expect(page.locator("[data-section=scorecard]")).not.toContainText(
       "Not synced yet",
     );
     // Four addresses of the home page are one row.

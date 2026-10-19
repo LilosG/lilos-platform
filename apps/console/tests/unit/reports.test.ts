@@ -250,6 +250,47 @@ describe("data notes", () => {
     );
   });
 });
+describe("search months with no data yet", () => {
+  const ranged_ = adaptReportDetail(
+    ranged(fixture.PREVIOUS, { searchAveraged: true }),
+    { organization: ORG },
+  );
+  it("word the comparison as monthly averages over the months that have data", () => {
+    const note = ranged_.snapshot.notes.find(
+      (item) => item.code === "search_console_compared_as_average",
+    )!;
+    expect(noteText(note)).toBe(
+      "Search Console has no data before May 2026, so this compares monthly averages over May to June.",
+    );
+    expect(noteText({ ...note, covered_months: ["2026-05-01"] })).toBe(
+      "Search Console has no data before May 2026, so this compares monthly averages over May.",
+    );
+    expect(
+      noteText({ ...note, covered_months: ["2025-12-01", "2026-02-01"] }),
+    ).toContain("over December 2025 to February 2026");
+  });
+  it("say no search data yet, not not synced, when Google had no data", () => {
+    const figure = {
+      availability: "unavailable",
+      reason: "no_search_data_yet",
+    } as const;
+    expect(gapText(figure)).toBe("No search data yet");
+    expect(gapText({ availability: "unavailable", reason: "not_synced" })).toBe(
+      "Not synced yet",
+    );
+    const clicks = ranged_.snapshot.search_console.clicks;
+    expect(gapText(clicks.year_ago)).toBe("No search data yet");
+    expect(clicks.compared_as).toBe("monthly_average");
+  });
+  it("word a period wholly before the first data", () => {
+    expect(
+      noteText({
+        code: "search_console_no_data_yet",
+        section: "search_console",
+      } as never),
+    ).toBe("Search Console has no data for this period yet.");
+  });
+});
 describe("actions", () => {
   it("decides what a person may do", () => {
     const draft = adaptReportDetail(detail(), want);

@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import ColumnElement, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.products.gbp.performance_enums import (
@@ -31,6 +31,7 @@ from apps.api.app.products.gbp.performance_service import (
     first_of_month,
     mapped_gbp_location_counts,
     months_before,
+    settled_through,
 )
 
 TOP_SEARCH_TERMS = 25
@@ -243,11 +244,19 @@ def compare(current: Total, previous: Total) -> MetricComparison:
     return MetricComparison(current, previous, change, percent)
 
 
+def _reported(through: date) -> ColumnElement[bool]:
+    """Not a 0 inside the provider lag window: Google has not counted that day yet."""
+    return or_(
+        GBPPerformanceDailyMetric.value != 0, GBPPerformanceDailyMetric.metric_date <= through
+    )
+
+
 async def _sums(
     session: AsyncSession,
     organization_id: UUID,
     gbp_location_ids: Sequence[UUID],
     window: DateRange,
+    through: date,
 ) -> dict[GBPPerformanceMetric, tuple[int, int]]:
     """Per metric: (sum of values, number of stored location-days) inside the window."""
     rows = await session.execute(
@@ -261,6 +270,7 @@ async def _sums(
             GBPPerformanceDailyMetric.gbp_location_id.in_(gbp_location_ids),
             GBPPerformanceDailyMetric.metric_date >= window.start,
             GBPPerformanceDailyMetric.metric_date <= window.end,
+            _reported(through),
         )
         .group_by(GBPPerformanceDailyMetric.metric)
     )
@@ -306,6 +316,7 @@ async def _series(
     organization_id: UUID,
     gbp_location_ids: Sequence[UUID],
     window: DateRange,
+    through: date,
 ) -> list[DailyPoint]:
     """Per-day totals across the locations, oldest first, for the days that have rows."""
     rows = await session.execute(
@@ -319,6 +330,7 @@ async def _series(
             GBPPerformanceDailyMetric.gbp_location_id.in_(gbp_location_ids),
             GBPPerformanceDailyMetric.metric_date >= window.start,
             GBPPerformanceDailyMetric.metric_date <= window.end,
+            _reported(through),
         )
         .group_by(GBPPerformanceDailyMetric.metric_date, GBPPerformanceDailyMetric.metric)
     )
@@ -341,6 +353,7 @@ async def _monthly(
     organization_id: UUID,
     gbp_location_ids: Sequence[UUID],
     window: DateRange,
+    through: date,
 ) -> MonthlySums:
     """Per calendar month and metric: (sum of values, number of stored location-days)."""
     month = func.date_trunc("month", GBPPerformanceDailyMetric.metric_date)
@@ -356,6 +369,7 @@ async def _monthly(
             GBPPerformanceDailyMetric.gbp_location_id.in_(gbp_location_ids),
             GBPPerformanceDailyMetric.metric_date >= window.start,
             GBPPerformanceDailyMetric.metric_date <= window.end,
+            _reported(through),
         )
         .group_by(month, GBPPerformanceDailyMetric.metric)
     )
@@ -539,18 +553,19 @@ async def read_performance(
 ) -> PerformanceRead:
     today = (now or datetime.now(UTC)).astimezone(UTC).date()
     windows = period_windows(period, today=today, month=month, range_windows=range_windows)
+    through = settled_through(today)
     if not gbp_location_ids:
         return not_connected(windows)
     source, ever_synced = await _source(session, organization_id, gbp_location_ids)
     locations = len(gbp_location_ids)
     current_views, current = _totals(
-        await _sums(session, organization_id, gbp_location_ids, windows.current),
+        await _sums(session, organization_id, gbp_location_ids, windows.current, through),
         windows.current,
         locations,
         ever_synced=ever_synced,
     )
     previous_views, previous = _totals(
-        await _sums(session, organization_id, gbp_location_ids, windows.previous),
+        await _sums(session, organization_id, gbp_location_ids, windows.previous, through),
         windows.previous,
         locations,
         ever_synced=ever_synced,
@@ -570,15 +585,17 @@ async def read_performance(
     if period is PerformancePeriod.RANGE:
         if windows.year_ago is not None:
             year_views, year_metrics = _totals(
-                await _sums(session, organization_id, gbp_location_ids, windows.year_ago),
+                await _sums(session, organization_id, gbp_location_ids, windows.year_ago, through),
                 windows.year_ago,
                 locations,
                 ever_synced=ever_synced,
             )
             year_ago = YearAgoTotals(year_views, year_metrics)
-        monthly = await _monthly(session, organization_id, gbp_location_ids, windows.current)
+        monthly = await _monthly(
+            session, organization_id, gbp_location_ids, windows.current, through
+        )
         compared_monthly = await _monthly(
-            session, organization_id, gbp_location_ids, windows.previous
+            session, organization_id, gbp_location_ids, windows.previous, through
         )
     return PerformanceRead(
         windows=windows,
@@ -587,7 +604,7 @@ async def read_performance(
         metrics={metric: compare(current[metric], previous[metric]) for metric in current},
         search_terms=terms,
         source=source,
-        series=await _series(session, organization_id, gbp_location_ids, windows.current),
+        series=await _series(session, organization_id, gbp_location_ids, windows.current, through),
         year_ago=year_ago,
         monthly=monthly,
         compared_monthly=compared_monthly,
@@ -629,6 +646,7 @@ async def read_actions_by_organization(
     }
     if not connected:
         return result
+    through = settled_through(today)
     in_current = GBPPerformanceDailyMetric.metric_date.between(
         windows.current.start, windows.current.end
     )
@@ -648,6 +666,7 @@ async def read_actions_by_organization(
             GBPPerformanceDailyMetric.metric.in_([metric.value for metric in ACTION_METRICS]),
             GBPPerformanceDailyMetric.metric_date >= windows.previous.start,
             GBPPerformanceDailyMetric.metric_date <= windows.current.end,
+            _reported(through),
         )
         .group_by(GBPPerformanceDailyMetric.organization_id)
     )
