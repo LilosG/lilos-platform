@@ -60,6 +60,9 @@ BACKFILL_MONTHS = 18
 RESYNC_DAYS = 10
 # Google serves daily metrics some days late and revises them; a run asks up to yesterday.
 LAST_DAY_OFFSET = 1
+# Google reports the newest days as 0 before it has counted them: a 0 this recent is "not reported
+# yet", so it is neither stored nor read as a value.
+PROVIDER_LAG_DAYS = 3
 UPSERT_BATCH = 1_000
 
 
@@ -105,6 +108,11 @@ def months_before(day: date, months: int) -> date:
 
 def first_of_month(day: date) -> date:
     return day.replace(day=1)
+
+
+def settled_through(today: date) -> date:
+    """The newest day a 0 can be trusted: after it, Google may not have counted the day yet."""
+    return today - timedelta(days=LAST_DAY_OFFSET + PROVIDER_LAG_DAYS)
 
 
 def plan_window(today: date, *, backfilled: bool) -> SyncWindow:
@@ -380,9 +388,13 @@ class GBPPerformanceService:
         fetched = _Fetched()
         # Daily metrics are required: any failure fails the run before anything is written.
         for start, end in day_chunks(window.start, window.end):
-            fetched.metrics += await self.adapter.fetch_daily_metrics(
-                token, external_location_id, start, end
-            )
+            fetched.metrics += [
+                point
+                for point in await self.adapter.fetch_daily_metrics(
+                    token, external_location_id, start, end
+                )
+                if point.value or point.day <= settled_through(today)
+            ]
         # Search terms are best-effort per month: what was read is kept, the failure is recorded.
         for month in keyword_months(window, today):
             try:
