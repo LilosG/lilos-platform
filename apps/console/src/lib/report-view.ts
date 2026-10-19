@@ -441,6 +441,10 @@ const NOTE_TEXT: Record<NoteCode, (note: ReportNote) => string> = {
           : `${monthLabel(first)} to ${monthLabel(last)}`;
     return `Search Console has ${before}, so this compares monthly averages over ${range}.`;
   },
+  search_console_first_month_partial: (note) =>
+    note.month
+      ? `Google's first month of Search Console data (${monthLabel(note.month)}) can be a partial month, so it is not used as a comparison.`
+      : "Google's first month of Search Console data can be a partial month, so it is not used as a comparison.",
   analytics_not_connected: () =>
     "Google Analytics is not connected, so website visits are not shown.",
   analytics_not_synced: () =>

@@ -284,13 +284,19 @@ async def _search_months(
     first_data: date | None,
     *,
     gaps_ok: bool = False,
+    baseline: bool = False,
 ) -> SearchMonths:
+    """``baseline`` sides are compared against: the first data month is often a partial month,
+    so it is no data there, exactly like the months before it. It stays in the current period."""
     found = await _observations(session, property_id, months, MONTH_SITE_SUMMARY)
     rows: dict[date, SEOSearchObservation] = {}
     no_data: list[date] = []
     for row in found:
         month = row.date_start.date()
-        if row.quality_status == NO_DATA_STATUS and (first_data is None or month < first_data):
+        before_first = row.quality_status == NO_DATA_STATUS and (
+            first_data is None or month < first_data
+        )
+        if before_first or (baseline and first_data is not None and month == first_data):
             no_data.append(month)
         else:
             rows[month] = row
@@ -432,10 +438,12 @@ async def build_search_console(
             None,
         )
     compared = await _search_months(
-        session, prop.id, comparison.compared.months, first_data, gaps_ok=True
+        session, prop.id, comparison.compared.months, first_data, gaps_ok=True, baseline=True
     )
     year = (
-        await _search_months(session, prop.id, comparison.year_ago.months, first_data)
+        await _search_months(
+            session, prop.id, comparison.year_ago.months, first_data, baseline=True
+        )
         if comparison.year_ago
         else None
     )
@@ -454,6 +462,12 @@ async def build_search_console(
         settled_through = last.updated_at.date() - timedelta(days=GSC_SYNC_TAIL_EXCLUSION_DAYS)
         lag_days = max(1, (following.date() - timedelta(days=1) - settled_through).days)
         notes.append(note(NoteCode.SEARCH_CONSOLE_LAG_DAYS, count=lag_days))
+    if first_data is not None and first_data in {
+        *period.months,
+        *comparison.compared.months,
+        *(comparison.year_ago.months if comparison.year_ago else ()),
+    }:
+        notes.append(note(NoteCode.SEARCH_CONSOLE_FIRST_MONTH_PARTIAL, month=first_data))
     missing = len(current.expected) - len(current.rows) - len(current.no_data)
     if missing:
         notes.append(note(NoteCode.SEARCH_CONSOLE_MONTHS_MISSING, count=missing))
@@ -476,24 +490,25 @@ async def build_search_console(
         now_value, before = getattr(current, pick)(), getattr(compared, pick)()
         return rate_comparison(now_value, before, getattr(year, pick)() if year else None)
 
+    async def baseline_rows(kind: str) -> list[SEOSearchObservation]:
+        found = await _observations(session, prop.id, comparison.compared.months, kind)
+        return [row for row in found if row.date_start.date() != first_data]
+
+    compared_query_rows = await baseline_rows(MONTH_TOP_QUERY)
     queries = _aggregate(
         await _observations(session, prop.id, period.months, MONTH_TOP_QUERY), "query"
     )
-    before_queries = _aggregate(
-        await _observations(session, prop.id, comparison.compared.months, MONTH_TOP_QUERY), "query"
-    )
+    before_queries = _aggregate(compared_query_rows, "query")
     movement = build_movement(
         await _observations(session, prop.id, period.months, MONTH_TOP_QUERY),
-        await _observations(session, prop.id, comparison.compared.months, MONTH_TOP_QUERY),
+        compared_query_rows,
         current,
         compared,
         brand_terms,
         period.span == comparison.compared.span,
     )
     pages = _aggregate(await _observations(session, prop.id, period.months, MONTH_TOP_PAGE), "page")
-    before_pages = _aggregate(
-        await _observations(session, prop.id, comparison.compared.months, MONTH_TOP_PAGE), "page"
-    )
+    before_pages = _aggregate(await baseline_rows(MONTH_TOP_PAGE), "page")
     # A change is only stated between two settled periods.
     settled = current.settled and compared.settled
 
@@ -533,6 +548,10 @@ async def build_search_console(
         )
         for name, item in _ranked(pages)[:TOP_ROWS]
     ]
+    # The first data month is no baseline, but it is real data and stays on the chart.
+    plotted = await _search_months(
+        session, prop.id, comparison.compared.months, first_data, gaps_ok=True
+    )
     series = [
         ReportMonthlySeries(
             key=key,
@@ -540,8 +559,8 @@ async def build_search_console(
             compared=month_points(comparison.compared.months, other.values(attribute)),
         )
         for key, attribute, source, other in (
-            (SeriesKey.SEARCH_CLICKS, "clicks", current, compared),
-            (SeriesKey.SEARCH_IMPRESSIONS, "impressions", current, compared),
+            (SeriesKey.SEARCH_CLICKS, "clicks", current, plotted),
+            (SeriesKey.SEARCH_IMPRESSIONS, "impressions", current, plotted),
         )
     ]
     return SearchResult(

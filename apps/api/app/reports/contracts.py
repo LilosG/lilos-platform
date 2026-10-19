@@ -149,6 +149,8 @@ class NoteCode(StrEnum):
     SEARCH_CONSOLE_NO_DATA_YET = "search_console_no_data_yet"
     # The comparison has months before the first data: compared as monthly averages over the rest.
     SEARCH_CONSOLE_COMPARED_AS_AVERAGE = "search_console_compared_as_average"
+    # Google's first month of data can be partial: it is never a comparison baseline.
+    SEARCH_CONSOLE_FIRST_MONTH_PARTIAL = "search_console_first_month_partial"
     ANALYTICS_NOT_CONNECTED = "analytics_not_connected"
     ANALYTICS_NOT_SYNCED = "analytics_not_synced"
     ANALYTICS_ORGANIC_UNAVAILABLE = "analytics_organic_unavailable"
@@ -185,6 +187,7 @@ NOTE_EFFECT: dict[NoteCode, NoteEffect] = {
     NoteCode.SEARCH_CONSOLE_COMPARED_PERIOD_UNAVAILABLE: NoteEffect.INFORMATIONAL,
     NoteCode.SEARCH_CONSOLE_NO_DATA_YET: NoteEffect.INFORMATIONAL,
     NoteCode.SEARCH_CONSOLE_COMPARED_AS_AVERAGE: NoteEffect.INFORMATIONAL,
+    NoteCode.SEARCH_CONSOLE_FIRST_MONTH_PARTIAL: NoteEffect.INFORMATIONAL,
     NoteCode.ANALYTICS_NOT_CONNECTED: NoteEffect.DEGRADING,
     NoteCode.ANALYTICS_NOT_SYNCED: NoteEffect.DEGRADING,
     NoteCode.ANALYTICS_ORGANIC_UNAVAILABLE: NoteEffect.DEGRADING,
@@ -212,6 +215,7 @@ NOTE_SECTION: dict[NoteCode, SectionKey] = {
     NoteCode.SEARCH_CONSOLE_COMPARED_PERIOD_UNAVAILABLE: SectionKey.SEARCH_CONSOLE,
     NoteCode.SEARCH_CONSOLE_NO_DATA_YET: SectionKey.SEARCH_CONSOLE,
     NoteCode.SEARCH_CONSOLE_COMPARED_AS_AVERAGE: SectionKey.SEARCH_CONSOLE,
+    NoteCode.SEARCH_CONSOLE_FIRST_MONTH_PARTIAL: SectionKey.SEARCH_CONSOLE,
     NoteCode.ANALYTICS_NOT_CONNECTED: SectionKey.ANALYTICS,
     NoteCode.ANALYTICS_NOT_SYNCED: SectionKey.ANALYTICS,
     NoteCode.ANALYTICS_ORGANIC_UNAVAILABLE: SectionKey.ANALYTICS,

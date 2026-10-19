@@ -269,6 +269,17 @@ describe("search months with no data yet", () => {
       noteText({ ...note, covered_months: ["2025-12-01", "2026-02-01"] }),
     ).toContain("over December 2025 to February 2026");
   });
+  it("say the first month of Search Console data is not used as a comparison", () => {
+    expect(
+      noteText({
+        code: "search_console_first_month_partial",
+        section: "search_console",
+        month: "2026-06-01",
+      } as never),
+    ).toBe(
+      "Google's first month of Search Console data (June 2026) can be a partial month, so it is not used as a comparison.",
+    );
+  });
   it("say no search data yet, not not synced, when Google had no data", () => {
     const figure = {
       availability: "unavailable",

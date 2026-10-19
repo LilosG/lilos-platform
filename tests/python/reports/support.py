@@ -516,6 +516,17 @@ async def seed_complete_month(
         queries={"pizza": (50, 900)},
         pages={"https://example.com/": (60, 1400)},
     )
+    # Google's first data month is never a baseline, so the predecessor needs one before it.
+    await store_search_month(
+        factory,
+        organization_id,
+        prop,
+        website,
+        date(previous.year - (previous.month == 1), (previous.month - 2) % 12 + 1, 1),
+        clicks=40,
+        impressions=900,
+        position=10.0,
+    )
     await connect_analytics(factory, organization_id, website)
     await store_organic_month(factory, organization_id, website, month, 900)
     await store_organic_month(factory, organization_id, website, previous, 800)
