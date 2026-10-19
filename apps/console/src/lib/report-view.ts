@@ -137,6 +137,7 @@ export const reasonText: Record<UnavailableReason, string> = {
   not_tracked: "Not tracked yet",
   not_compared: "No comparison",
   source_unavailable: "Unavailable",
+  no_search_data_yet: "No search data yet",
 };
 /** A figure that can be stated: available or partial, with a value. */
 export const present = (figure: CountFigure | RateFigure | null | undefined) =>
@@ -421,6 +422,25 @@ const NOTE_TEXT: Record<NoteCode, (note: ReportNote) => string> = {
       : "Some months of search data have not synced yet and are left out of the totals.",
   search_console_compared_period_unavailable: () =>
     "Search Console data for the comparison period is not complete, so changes are not shown.",
+  search_console_no_data_yet: () =>
+    "Search Console has no data for this period yet.",
+  search_console_compared_as_average: (note) => {
+    const covered = note.covered_months ?? [];
+    const first = covered[0];
+    const last = covered[covered.length - 1];
+    const before = first
+      ? `no data before ${monthLabel(first)}`
+      : "no data yet";
+    const range =
+      !first || !last || first === last
+        ? first
+          ? monthName(first)
+          : "the months with data"
+        : parts(first).year === parts(last).year
+          ? `${monthName(first)} to ${monthName(last)}`
+          : `${monthLabel(first)} to ${monthLabel(last)}`;
+    return `Search Console has ${before}, so this compares monthly averages over ${range}.`;
+  },
   analytics_not_connected: () =>
     "Google Analytics is not connected, so website visits are not shown.",
   analytics_not_synced: () =>

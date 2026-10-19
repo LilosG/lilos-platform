@@ -50,6 +50,8 @@ export const NOTE_CODES = [
   "search_console_lag_days",
   "search_console_months_missing",
   "search_console_compared_period_unavailable",
+  "search_console_no_data_yet",
+  "search_console_compared_as_average",
   "analytics_not_connected",
   "analytics_not_synced",
   "analytics_organic_unavailable",
@@ -83,6 +85,7 @@ export const REASONS = [
   "not_tracked",
   "not_compared",
   "source_unavailable",
+  "no_search_data_yet",
 ] as const;
 const reason = codes<UnavailableReason>()(REASONS);
 export const HEADLINE_KEYS = [
@@ -416,6 +419,8 @@ const note = z
     location_id: uuid.nullable().optional(),
     metric: metric.nullable().optional(),
     month: day.nullable().optional(),
+    covered_months: z.array(day).nullable().optional(),
+    missing_months: z.array(day).nullable().optional(),
   })
   .strict();
 const month = z.string().regex(/^\d{4}-\d{2}-01$/);

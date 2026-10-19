@@ -9756,6 +9756,8 @@
           "search_console_lag_days",
           "search_console_months_missing",
           "search_console_compared_period_unavailable",
+          "search_console_no_data_yet",
+          "search_console_compared_as_average",
           "analytics_not_connected",
           "analytics_not_synced",
           "analytics_organic_unavailable",
@@ -15260,6 +15262,21 @@
             ],
             "title": "Count"
           },
+          "covered_months": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Covered Months"
+          },
           "location_id": {
             "anyOf": [
               {
@@ -15281,6 +15298,21 @@
                 "type": "null"
               }
             ]
+          },
+          "missing_months": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Months"
           },
           "month": {
             "anyOf": [
@@ -20323,7 +20355,8 @@
           "no_views",
           "not_tracked",
           "not_compared",
-          "source_unavailable"
+          "source_unavailable",
+          "no_search_data_yet"
         ],
         "title": "UnavailableReason",
         "type": "string"

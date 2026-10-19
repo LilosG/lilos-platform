@@ -8,6 +8,7 @@ and is never part of them.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal
@@ -123,6 +124,8 @@ class UnavailableReason(StrEnum):
     NOT_TRACKED = "not_tracked"
     NOT_COMPARED = "not_compared"
     SOURCE_UNAVAILABLE = "source_unavailable"
+    # Search Console is connected and synced but Google had no data yet for these months.
+    NO_SEARCH_DATA_YET = "no_search_data_yet"
 
 
 class NoteCode(StrEnum):
@@ -142,6 +145,10 @@ class NoteCode(StrEnum):
     SEARCH_CONSOLE_LAG_DAYS = "search_console_lag_days"
     SEARCH_CONSOLE_MONTHS_MISSING = "search_console_months_missing"
     SEARCH_CONSOLE_COMPARED_PERIOD_UNAVAILABLE = "search_console_compared_period_unavailable"
+    # Every month of the period is before Google's first Search Console data for the property.
+    SEARCH_CONSOLE_NO_DATA_YET = "search_console_no_data_yet"
+    # The comparison has months before the first data: compared as monthly averages over the rest.
+    SEARCH_CONSOLE_COMPARED_AS_AVERAGE = "search_console_compared_as_average"
     ANALYTICS_NOT_CONNECTED = "analytics_not_connected"
     ANALYTICS_NOT_SYNCED = "analytics_not_synced"
     ANALYTICS_ORGANIC_UNAVAILABLE = "analytics_organic_unavailable"
@@ -176,6 +183,8 @@ NOTE_EFFECT: dict[NoteCode, NoteEffect] = {
     NoteCode.SEARCH_CONSOLE_LAG_DAYS: NoteEffect.DEGRADING,
     NoteCode.SEARCH_CONSOLE_MONTHS_MISSING: NoteEffect.DEGRADING,
     NoteCode.SEARCH_CONSOLE_COMPARED_PERIOD_UNAVAILABLE: NoteEffect.INFORMATIONAL,
+    NoteCode.SEARCH_CONSOLE_NO_DATA_YET: NoteEffect.INFORMATIONAL,
+    NoteCode.SEARCH_CONSOLE_COMPARED_AS_AVERAGE: NoteEffect.INFORMATIONAL,
     NoteCode.ANALYTICS_NOT_CONNECTED: NoteEffect.DEGRADING,
     NoteCode.ANALYTICS_NOT_SYNCED: NoteEffect.DEGRADING,
     NoteCode.ANALYTICS_ORGANIC_UNAVAILABLE: NoteEffect.DEGRADING,
@@ -201,6 +210,8 @@ NOTE_SECTION: dict[NoteCode, SectionKey] = {
     NoteCode.SEARCH_CONSOLE_LAG_DAYS: SectionKey.SEARCH_CONSOLE,
     NoteCode.SEARCH_CONSOLE_MONTHS_MISSING: SectionKey.SEARCH_CONSOLE,
     NoteCode.SEARCH_CONSOLE_COMPARED_PERIOD_UNAVAILABLE: SectionKey.SEARCH_CONSOLE,
+    NoteCode.SEARCH_CONSOLE_NO_DATA_YET: SectionKey.SEARCH_CONSOLE,
+    NoteCode.SEARCH_CONSOLE_COMPARED_AS_AVERAGE: SectionKey.SEARCH_CONSOLE,
     NoteCode.ANALYTICS_NOT_CONNECTED: SectionKey.ANALYTICS,
     NoteCode.ANALYTICS_NOT_SYNCED: SectionKey.ANALYTICS,
     NoteCode.ANALYTICS_ORGANIC_UNAVAILABLE: SectionKey.ANALYTICS,
@@ -765,6 +776,8 @@ def note(
     location_id: UUID | None = None,
     metric: GBPPerformanceMetric | None = None,
     month: date | None = None,
+    covered_months: Sequence[date] | None = None,
+    missing_months: Sequence[date] | None = None,
 ) -> ReportDataNote:
     """A data note for ``code``, placed in the section the code belongs to."""
     return ReportDataNote(
@@ -774,6 +787,8 @@ def note(
         location_id=location_id,
         metric=metric,
         month=month,
+        covered_months=list(covered_months) if covered_months else None,
+        missing_months=list(missing_months) if missing_months else None,
     )
 
 
@@ -791,6 +806,10 @@ class ReportDataNote(Model):
     metric: GBPPerformanceMetric | None = None
     # The last month that had values, for a figure that stopped mid-period.
     month: date | None = None
+    # For a monthly-average comparison: the months the average covers, and the months left out
+    # because Search Console had no data for them yet.
+    covered_months: list[date] | None = None
+    missing_months: list[date] | None = None
 
     @model_validator(mode="before")
     @classmethod

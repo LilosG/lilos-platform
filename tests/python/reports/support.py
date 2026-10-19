@@ -315,10 +315,11 @@ async def store_search_month(
     *,
     clicks: int,
     impressions: int,
-    position: float,
+    position: float | None,
     queries: dict[str, tuple[int, int]] | None = None,
     pages: dict[str, tuple[int, int]] | None = None,
     partial: bool = False,
+    quality: str = "valid",
 ) -> None:
     from apps.api.app.products.seo.month_observations import (
         MONTH_SITE_SUMMARY,
@@ -345,8 +346,8 @@ async def store_search_month(
             clicks=c,
             impressions=i,
             ctr=Decimal(c) / Decimal(i) if i else None,
-            position=Decimal(str(position)),
-            quality_status="valid",
+            position=Decimal(str(position)) if position is not None else None,
+            quality_status=quality,
             partial=partial,
         )
 
