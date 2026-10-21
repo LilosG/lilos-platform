@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
@@ -11,6 +12,7 @@ import pytest
 from sqlalchemy import select
 from starlette.testclient import TestClient
 
+from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.reports.narrative import (
@@ -241,6 +243,34 @@ def test_a_failed_provider_leaves_the_report_usable_and_the_narrative_untouched(
         {"what_changed": "Written by hand.", "next_work": "Next steps."},
     )
     assert call(client, "post", url(org, f"/{SEPT}/1/approve"), "owner").status_code == 200
+
+
+def test_a_provider_error_records_its_category_and_logs_the_event(
+    reports_app: tuple[TestClient, dict[str, UUID], Factory],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client, ids, factory = reports_app
+    org = ids["org"]
+    generate(client, org)
+    use(client, AIProviderError("timeout", "The AI provider did not answer in time."))
+
+    with caplog.at_level(logging.WARNING, logger="lilos.api.reports"):
+        result = draft(client, org).json()
+
+    assert result["failure"] == "draft_failed"
+    (record,) = executions(factory)
+    assert record.status == "provider_failed" and record.safe_error_code == "DRAFT_FAILED"
+    assert record.output_document == {
+        "error": {"category": "timeout", "message": "The AI provider did not answer in time."}
+    }
+    events = [
+        item
+        for item in caplog.records
+        if getattr(item, "event_name", "") == "reports.draft.provider_failed"
+    ]
+    # Topic grouping runs first and fails the same way, so both tasks log the event.
+    assert {cast(Any, item).task_key for item in events} == {AI_TASK_KEY, TOPICS_TASK_KEY}
+    assert {cast(Any, item).error_category for item in events} == {"timeout"}
 
 
 def test_malformed_and_empty_drafts_are_rejected_with_their_own_codes(

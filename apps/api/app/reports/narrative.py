@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,6 +22,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
@@ -63,8 +65,10 @@ AI_TASK_KEY = "reports.narrative_draft"
 TOPICS_TASK_KEY = "reports.topic_grouping"
 RETENTION_POLICY_KEY = "reports.ai_draft.default"
 TOPIC_QUERIES = 150
-MAXIMUM_LATENCY_MS = 60_000
+MAXIMUM_LATENCY_MS = 90_000
 SECTION_LIMIT = 4_000
+
+logger = logging.getLogger("lilos.api.reports")
 
 
 def allowed_numbers(snapshot: ReportSnapshot) -> set[Decimal]:
@@ -321,8 +325,25 @@ class NarrativeDrafter:
         key = hashlib.sha256(f"{task.key}:{revision_id}:{attempt + 1}".encode()).hexdigest()
         try:
             return await self.gateway.execute(request), False, key
+        except AIProviderError as error:
+            # Category and safe message carry no prompt or secret; they say why it failed.
+            logger.warning(
+                "Report draft provider call failed",
+                extra={
+                    "event_name": "reports.draft.provider_failed",
+                    "task_key": task.key,
+                    "error_category": error.category,
+                    "error_message": error.safe_message,
+                },
+            )
+            output = {"error": {"category": error.category, "message": error.safe_message}}
+            return output, True, key
         except Exception:
             # Whatever the provider did, the report is unaffected and a person can write it.
+            logger.exception(
+                "Report draft failed unexpectedly",
+                extra={"event_name": "reports.draft.failed", "task_key": task.key},
+            )
             return {}, True, key
 
     @staticmethod

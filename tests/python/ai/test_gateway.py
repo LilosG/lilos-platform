@@ -315,6 +315,8 @@ async def test_content_tasks_get_headroom_for_reasoning_models(
     for task_key, expected in (
         ("content.compose_plan", 8_000),
         ("content.draft_revision", 16_000),
+        ("reports.narrative_draft", 8_000),
+        ("reports.topic_grouping", 8_000),
         ("reviews.response_draft", 2_000),
     ):
         provider.calls.clear()
