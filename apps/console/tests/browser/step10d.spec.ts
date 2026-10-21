@@ -51,7 +51,7 @@ test("on the default view New post leads straight to the dialog", async ({
   await expect(page.getByRole("dialog")).toContainText("Write a Google post");
   await expect(page).not.toHaveURL(/compose=/);
 });
-test("a profile with writes off shows a disabled button, the reason and the next step", async ({
+test("a profile with writes off keeps New post enabled and says only publishing is off", async ({
   page,
 }) => {
   await login(page, gbp);
@@ -59,11 +59,14 @@ test("a profile with writes off shows a disabled button, the reason and the next
     .getByLabel("Business Profile location")
     .selectOption({ label: "Cococabana Kitchen" });
   await expect(page).toHaveURL(/location=/);
+  await page.getByRole("link", { name: "Posts", exact: true }).click();
+  await expect(page.locator("main")).toContainText(
+    "Publishing is turned off for this profile",
+  );
   const button = header(page).getByRole("button", { name: "New post" });
-  await expect(button).toBeDisabled();
-  await expect(header(page)).toContainText("Posting is turned off");
-  await expect(
-    header(page).getByRole("link", { name: /Integrations/ }),
-  ).toBeVisible();
+  await expect(button).toBeEnabled();
+  await button.click();
+  await expect(page.getByRole("dialog")).toContainText("Write a Google post");
+  await page.keyboard.press("Escape");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

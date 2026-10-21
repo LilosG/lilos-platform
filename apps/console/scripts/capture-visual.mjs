@@ -988,7 +988,7 @@ const side = async (browser, size, left, right) => {
   return image;
 };
 // Step 10d: the New post button in the Local Search header, on the default view and the
-// Business Profile view, and its disabled state when the selected profile has writes off.
+// Business Profile view, and the profile with writes off, where it stays enabled beside the publishing banner.
 const writesOffLocation = async (page) => {
   await page
     .getByLabel("Business Profile location")

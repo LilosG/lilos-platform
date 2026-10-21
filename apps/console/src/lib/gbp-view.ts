@@ -646,14 +646,15 @@ export interface GbpTabData {
 
 /** What the "New post" button in the Local Search header does for the selected location. */
 export interface NewPostAction {
-  state: "ready" | "no_profile" | "writes_disabled" | "no_permission";
+  state: "ready" | "no_profile" | "no_permission";
   /** Why the button is disabled; null when it is ready. */
   reason: string | null;
   /** The next step the person can take; null when it is ready. */
   next: { label: string; href: string } | null;
 }
+/** Drafts for approval work with writes off; only publishing is gated, so writes never disable it. */
 export function newPostAction(
-  selected: Pick<GbpLocationOption, "writeEnabled"> | null,
+  selected: object | null,
   canPropose: boolean | null,
   integrationsHref: string,
 ): NewPostAction {
@@ -662,12 +663,6 @@ export function newPostAction(
       state: "no_profile",
       reason: "No Business Profile is connected yet.",
       next: { label: "Open Integrations", href: integrationsHref },
-    };
-  if (!selected.writeEnabled)
-    return {
-      state: "writes_disabled",
-      reason: "Posting is turned off for this profile.",
-      next: { label: "Turn it on in Integrations", href: integrationsHref },
     };
   if (canPropose === false)
     return {

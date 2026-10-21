@@ -254,11 +254,10 @@ describe("New post button state", () => {
     expect(action.state).toBe("no_profile");
     expect(action.next?.href).toBe(href);
   });
-  it("explains disabled writes with the next action", () => {
+  it("stays ready when writes are off, because only publishing is gated", () => {
     const action = newPostAction({ writeEnabled: false }, true, href);
-    expect(action.state).toBe("writes_disabled");
-    expect(action.reason).toMatch(/turned off/);
-    expect(action.next?.label).toMatch(/Integrations/);
+    expect(action.state).toBe("ready");
+    expect(action.reason).toBeNull();
   });
   it("explains a role that cannot propose", () => {
     expect(newPostAction({ writeEnabled: true }, false, href).state).toBe(
