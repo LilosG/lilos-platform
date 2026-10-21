@@ -25,6 +25,8 @@ import {
   changeText,
   comparedLabel,
   comparedPhrase,
+  coveredRange,
+  searchCoveredMonths,
   comparisonText,
   countText,
   directionOf,
@@ -449,6 +451,7 @@ export function chartCaption(
   comparison: CountComparison | null,
   snapshot: ReportSnapshot,
   missing: number,
+  covered: readonly string[] | null = null,
 ): string {
   const gap =
     missing > 0
@@ -459,10 +462,13 @@ export function chartCaption(
   const total = countText(comparison.current);
   const averaged = comparison.compared_as === "monthly_average";
   const change = changeText(comparison);
-  const against = comparedPhrase({
-    compared_as: comparison.compared_as,
-    compared: periodOf(snapshot.comparison.compared),
-  });
+  const against =
+    averaged && covered?.length
+      ? `the monthly average of ${coveredRange(covered)}`
+      : comparedPhrase({
+          compared_as: comparison.compared_as,
+          compared: periodOf(snapshot.comparison.compared),
+        });
   return `${noun} totalled ${total} in ${periodLabel(periodOf(snapshot.period))}${
     change && !isPartial(comparison.current)
       ? `, ${change} against ${against}${averaged ? " (monthly averages)" : ""}`
@@ -491,6 +497,11 @@ export function monthlyChart(
       ? [point.value]
       : [],
   );
+  // Search Console may cover only some of the compared months: name those, not the whole period.
+  const covered =
+    key === "search_clicks" || key === "search_impressions"
+      ? searchCoveredMonths(snapshot)
+      : null;
   const comparable =
     !!comparison &&
     present(comparison.compared) &&
@@ -513,6 +524,7 @@ export function monthlyChart(
       comparison,
       snapshot,
       missing,
+      covered,
     ),
     model: barChart({
       title,
@@ -521,7 +533,7 @@ export function monthlyChart(
       baselineText:
         average === null
           ? ""
-          : `Comparison average: ${fmt(average)} a month (${comparedLabel(snapshot)})`,
+          : `Comparison average: ${fmt(average)} a month (${covered?.length ? coveredRange(covered) : comparedLabel(snapshot)})`,
       format: fmt,
       ...(compact ? { width: 320, height: 210 } : {}),
     }),

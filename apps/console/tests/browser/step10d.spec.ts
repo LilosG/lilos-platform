@@ -59,8 +59,11 @@ test("the client document: charts leave out the first data month", async ({
     "Not used as a comparison",
   );
   await expect(chart.locator("rect.bar.excluded")).toHaveCount(1);
-  await expect(chart.locator(".key.baseline")).toContainText(
-    "Comparison average:",
+  await expect(chart.locator(".key.baseline")).toHaveText(
+    /Comparison average: [\d,]+ a month \(June 2026\)$/,
+  );
+  await expect(chart.locator(".dcaption")).toContainText(
+    "against the monthly average of June 2026",
   );
   await chart.scrollIntoViewIfNeeded();
   await shot(page, "document-search-chart");

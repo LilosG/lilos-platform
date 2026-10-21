@@ -114,6 +114,11 @@ export function coveredRange(covered: readonly string[]): string {
     ? `${monthName(first)} to ${monthLabel(last)}`
     : `${monthLabel(first)} to ${monthLabel(last)}`;
 }
+/** The months Search Console's comparison covers, when it covers fewer than the compared period. */
+export const searchCoveredMonths = (snapshot: ReportSnapshot) =>
+  snapshot.notes.find(
+    (item) => item.code === "search_console_compared_as_average",
+  )?.covered_months ?? null;
 /** What each "Compare with" choice means, shown under the choice. */
 export const compareHelp = {
   previous: "The same number of months immediately before the report.",
@@ -338,9 +343,7 @@ export function headlineCards(snapshot: ReportSnapshot): HeadlineCard[] {
       compared: periodOf(snapshot.comparison.compared),
     });
   // Search Console may cover only some of the compared months: the tile names those months.
-  const covered = snapshot.notes.find(
-    (item) => item.code === "search_console_compared_as_average",
-  )?.covered_months;
+  const covered = searchCoveredMonths(snapshot);
   return snapshot.headlines.flatMap((item): HeadlineCard[] => {
     const copy = HEADLINE[item.key];
     if (item.count) {

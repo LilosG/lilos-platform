@@ -3,7 +3,7 @@ import * as fixture from "../fixtures/report.mjs";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const detail = fixture.detail as (overrides?: object) => any;
 import { adaptReportDetail } from "../../src/adapters/reports";
-import { toneOf } from "../../src/lib/report-view";
+import { comparedLabel, toneOf } from "../../src/lib/report-view";
 import {
   documentView,
   mergePages,
@@ -319,12 +319,22 @@ describe("sections", () => {
       const comparison = {
         ...base.search_console.clicks,
         compared: { availability: "available", value: 1783 },
+        compared_as: "monthly_average",
         change,
         change_percent: change === null ? null : 3,
       };
       return {
         snapshot: {
           ...base,
+          notes: [
+            ...base.notes,
+            {
+              code: "search_console_compared_as_average",
+              section: "search_console",
+              covered_months: ["2026-06-01"],
+              missing_months: ["2026-04-01", "2026-05-01"],
+            },
+          ],
           monthly: base.monthly.map((item) =>
             item.key === "search_clicks" ? { ...item, compared } : item,
           ),
@@ -343,6 +353,32 @@ describe("sections", () => {
       expect(chart.model.baseline!.label).toContain("1,783 a month");
       expect(chart.excludedNote).toBe(true);
       expect(chart.model.bars.filter((bar) => bar.excluded)).toHaveLength(1);
+    });
+    it("names only the covered months in the line label and the caption", () => {
+      const { snapshot, comparison } = missBs();
+      const chart = monthlyChart(
+        snapshot,
+        "search_clicks",
+        "Search clicks by month",
+        comparison,
+      )!;
+      expect(chart.model.baseline!.label).toBe(
+        "Comparison average: 1,783 a month (June 2026)",
+      );
+      expect(chart.caption).toContain(
+        "against the monthly average of June 2026",
+      );
+      expect(chart.caption).not.toContain("April");
+    });
+    it("leaves charts without that note as they are", () => {
+      const { snapshot } = missBs();
+      const chart = monthlyChart(
+        snapshot,
+        "profile_views",
+        "Profile views by month",
+        snapshot.gbp.profile_views.total,
+      )!;
+      expect(chart.model.baseline!.label).toContain(comparedLabel(snapshot));
     });
     it("draws no line when the compared figure is not comparable", () => {
       const { snapshot, comparison } = missBs(null);
