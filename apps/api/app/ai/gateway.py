@@ -173,7 +173,14 @@ class AIGateway:
                 maximum_tokens=maximum_tokens,
                 maximum_latency_ms=request.maximum_latency_ms,
             )
-        except AIProviderError:
+        except AIProviderError as error:
+            logger.warning(
+                "AI provider call failed",
+                extra={
+                    "event_name": "ai.gateway.provider_failed",
+                    **error.log_fields(request.task_key),
+                },
+            )
             raise
         except Exception as exc:
             logger.exception("Unexpected AI provider failure")

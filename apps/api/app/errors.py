@@ -210,7 +210,7 @@ async def ai_provider_exception_handler(request: Request, exc: Exception) -> JSO
     else:
         assert isinstance(exc, AIProviderError)
         status_code = HTTPStatus.BAD_GATEWAY
-        retryable = exc.category in {"provider", "retryable"}
+        retryable = exc.retryable if exc.code else exc.category in {"provider", "retryable"}
         code = "AI_PROVIDER_UNAVAILABLE"
     return error_response(
         request,

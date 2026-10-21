@@ -14,6 +14,7 @@ from apps.api.app.administration.knowledge_service import BusinessKnowledgeServi
 from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.factory import build_ai_gateway
+from apps.api.app.ai.failed_execution import record_failed_execution
 from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.ai.providers import article_quality_summary
@@ -1488,6 +1489,20 @@ class ContentService:
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=CONTENT_AI_LATENCY_MS,
         )
+
+        async def record_failure(error: AIProviderError) -> None:
+            await record_failed_execution(
+                session,
+                error=error,
+                organization_id=organization_id,
+                location_id=item.location_id,
+                task_definition_id=task.id,
+                workflow_run_id=workflow_run_id,
+                idempotency_key=idempotency_key,
+                input_references=request.input_references,
+                approved_fact_revision_ids=request.approved_fact_revision_ids,
+            )
+
         try:
             output = await self.ai_gateway.execute(request)
         except AIProviderError as exc:
@@ -1524,8 +1539,13 @@ class ContentService:
                     maximum_cost_microunits=request.maximum_cost_microunits,
                     maximum_latency_ms=request.maximum_latency_ms,
                 )
-                output = await self.ai_gateway.execute(repair_request)
+                try:
+                    output = await self.ai_gateway.execute(repair_request)
+                except AIProviderError as repair_exc:
+                    await record_failure(repair_exc)
+                    raise
             else:
+                await record_failure(exc)
                 raise
 
         # --- persist AI execution ---

@@ -112,12 +112,41 @@ describe("why a piece could not be written", () => {
       "CONTENT_BELOW_QUALITY_FLOOR",
       "CONTENT_PLAN_INVALID",
       "AI_PROVIDER_CONFIGURATION_ERROR",
+      "AI_PROVIDER_TIMEOUT",
+      "AI_PROVIDER_CONNECTION",
+      "AI_PROVIDER_HTTP_RATE_LIMITED",
+      "AI_PROVIDER_HTTP_SERVER",
+      "AI_PROVIDER_HTTP_OTHER",
+      "AI_PROVIDER_UNPARSEABLE_RESPONSE",
+      "AI_PROVIDER_NO_CHOICES",
+      "AI_PROVIDER_OUTPUT_TRUNCATED",
+      "AI_PROVIDER_MALFORMED_OUTPUT",
+      "AI_PROVIDER_EMPTY_DRAFT",
       "AI_PROVIDER_TEMPORARY_FAILURE",
     ]) {
       const failure = failureFor(code);
       expect(failure.title).not.toBe(failureFor("OTHER").title);
       expect(`${failure.title} ${failure.detail}`).not.toMatch(RAW);
     }
+    const titles = new Set(
+      [
+        "TIMEOUT",
+        "CONNECTION",
+        "HTTP_RATE_LIMITED",
+        "HTTP_SERVER",
+        "OUTPUT_TRUNCATED",
+      ].map((code) => failureFor(`AI_PROVIDER_${code}`).title),
+    );
+    expect(titles.size).toBe(5);
+    expect(failureFor("AI_PROVIDER_TIMEOUT").title).toBe(
+      "The writer took too long",
+    );
+    expect(failureFor("AI_PROVIDER_OUTPUT_TRUNCATED").title).toBe(
+      "The draft came back cut off",
+    );
+    expect(failureFor("AI_PROVIDER_TEMPORARY_FAILURE").title).not.toMatch(
+      /busy/,
+    );
     expect(failureFor(null).title).toBe("The draft could not be written");
     expect(failureFor("SOMETHING_NEW").detail).not.toMatch(/SOMETHING_NEW/);
   });

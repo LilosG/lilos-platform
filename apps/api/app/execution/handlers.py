@@ -643,7 +643,6 @@ async def _handle_content_draft_revision(
             safe_error="AI_PROVIDER_CONFIGURATION_ERROR",
         )
     except AIProviderError as exc:
-        retryable = exc.category == "provider"
         logger.warning(
             "Content AI draft generation failed",
             extra={
@@ -652,18 +651,12 @@ async def _handle_content_draft_revision(
                 "item_id": str(item_id),
                 "brief_id": str(brief_id),
                 "error_type": type(exc).__name__,
-                "provider_error_category": exc.category,
-                "safe_error": exc.safe_message[:200],
+                **exc.log_fields("content.draft_revision"),
             },
         )
-        return JobOutcome(
-            result="retryable_failure" if retryable else "permanent_failure",
-            safe_error=(
-                "AI_PROVIDER_TEMPORARY_FAILURE"
-                if retryable
-                else _content_rejection_code(exc.safe_message)
-            ),
-        )
+        # Keep the failed ai_executions row the service just added.
+        await session.commit()
+        return _provider_failure_outcome(exc)
     except ApiError as exc:
         # A domain refusal carries its own typed code; recording it as a generic
         # exception hid why the draft was refused.
@@ -705,6 +698,21 @@ async def _handle_content_draft_revision(
     return JobOutcome(
         result="succeeded",
         result_reference=f"revision:{revision.id}",
+    )
+
+
+def _provider_failure_outcome(exc: Any) -> JobOutcome:
+    """The job outcome for a failed provider call: retry only what a repeat can fix."""
+    from apps.api.app.products.content.enums import ComposeFailureCode
+
+    if exc.retryable:
+        return JobOutcome(result="retryable_failure", safe_error=f"AI_PROVIDER_{exc.code.value}")
+    rejection = _content_rejection_code(exc.safe_message)
+    if rejection == ComposeFailureCode.BELOW_QUALITY_FLOOR.value:
+        return JobOutcome(result="permanent_failure", safe_error=rejection)
+    return JobOutcome(
+        result="permanent_failure",
+        safe_error=f"AI_PROVIDER_{exc.code.value if exc.code else 'UNKNOWN'}",
     )
 
 
@@ -859,13 +867,21 @@ async def _handle_content_compose(
         await mark_failed("AI_PROVIDER_CONFIGURATION_ERROR")
         return JobOutcome(result="permanent_failure", safe_error="AI_PROVIDER_CONFIGURATION_ERROR")
     except AIProviderError as exc:
-        if exc.category == "provider":
-            return JobOutcome(
-                result="retryable_failure", safe_error="AI_PROVIDER_TEMPORARY_FAILURE"
-            )
-        code = _content_rejection_code(exc.safe_message)
-        await mark_failed(code)
-        return JobOutcome(result="permanent_failure", safe_error=code)
+        logger.warning(
+            "Content compose provider call failed",
+            extra={
+                "event_name": "content.compose.provider_failed",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+                **exc.log_fields("content.compose"),
+            },
+        )
+        outcome = _provider_failure_outcome(exc)
+        if outcome.result == "permanent_failure":
+            await mark_failed(str(outcome.safe_error))
+        # Keep the failed ai_executions row the service just added.
+        await session.commit()
+        return outcome
     except ApiError as exc:
         await mark_failed(exc.code)
         return JobOutcome(result="permanent_failure", safe_error=exc.code)
