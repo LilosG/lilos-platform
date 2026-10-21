@@ -1,72 +1,73 @@
+import { mkdir } from "node:fs/promises";
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+const sim = "http://127.0.0.1:4455/test";
+const visual = new URL("../../visual/step-10d-report-fixes/", import.meta.url);
+const reportUrl = "/clients/synthetic-alpha/reports/2026-07_2026-09/";
 async function login(page: Page, target: string) {
+  const shell = !target.includes("/document/");
   await page.goto(`/login/?return=${encodeURIComponent(target)}`);
-  await page.getByLabel("Email", { exact: true }).fill("b@example.test");
+  await page.getByLabel("Email", { exact: true }).fill("admin@example.test");
   await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"));
-  await page.locator('body[data-app-ready="true"]').waitFor();
-  if (target.includes("google-business-profile"))
-    await page.locator("[data-gbp][data-ready]").waitFor();
+  if (shell) await page.locator('body[data-app-ready="true"]').waitFor();
 }
-const search = "/clients/synthetic-beta/local-search/";
-const gbp = `${search}google-business-profile/`;
-const header = (page: Page) => page.locator(".pagehead").first();
-test.beforeEach(async ({ request }) => {
-  await request.post("http://127.0.0.1:4455/test/gbp-reset", { data: {} });
-});
-test("Google Business Profile is a labelled tab with its own sections", async ({
-  page,
-}) => {
-  await login(page, search);
-  const tabs = page.getByRole("navigation", { name: "Local Search sections" });
-  await expect(
-    tabs.getByRole("link", { name: "Google Business Profile" }),
-  ).toBeVisible();
-  await login(page, gbp);
-  const sections = page.getByRole("navigation", {
-    name: "Business Profile sections",
+test.beforeEach(async () => {
+  const response = await fetch(`${sim}/reports-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode: "averaged" }),
   });
-  for (const name of ["Posts", "Photos", "Special hours", "Profile"])
-    await expect(sections.getByRole("link", { name })).toBeVisible();
+  expect(response.ok).toBe(true);
+  await mkdir(visual, { recursive: true });
 });
-test("the header's New post opens the post dialog from the Business Profile view", async ({
+const shot = (page: Page, name: string) =>
+  page.screenshot({
+    path: new URL(`${name}-${test.info().project.name}.png`, visual).pathname,
+  });
+test("the report page: row note under the label, search tile names June", async ({
   page,
 }) => {
-  await login(page, gbp);
-  await header(page).getByRole("button", { name: "New post" }).click();
-  await expect(page.getByRole("dialog")).toContainText("Write a Google post");
-  await page.getByLabel("Post copy").fill("Patio open late tonight");
-  const saved = page.waitForRequest((r) => r.url().endsWith("/posts/"));
-  await page.getByRole("button", { name: "Save for approval" }).click();
-  expect((await saved).postDataJSON().content).toBe("Patio open late tonight");
-});
-test("on the default view New post leads straight to the dialog", async ({
-  page,
-}) => {
-  await login(page, search);
-  await header(page).getByRole("link", { name: "New post" }).click();
-  await expect(page).toHaveURL(/view=posts/);
-  await expect(page.getByRole("dialog")).toContainText("Write a Google post");
-  await expect(page).not.toHaveURL(/compose=/);
-});
-test("a profile with writes off keeps New post enabled and says only publishing is off", async ({
-  page,
-}) => {
-  await login(page, gbp);
-  await page
-    .getByLabel("Business Profile location")
-    .selectOption({ label: "Cococabana Kitchen" });
-  await expect(page).toHaveURL(/location=/);
-  await page.getByRole("link", { name: "Posts", exact: true }).click();
-  await expect(page.locator("main")).toContainText(
-    "Publishing is turned off for this profile",
+  await login(page, reportUrl);
+  const row = page.locator("tbody th[scope=row]", { hasText: "Bookings" });
+  const note = row.locator(".sub");
+  await expect(note).toContainText("so this period's total is incomplete");
+  expect(await note.evaluate((el) => getComputedStyle(el).display)).toBe(
+    "block",
   );
-  const button = header(page).getByRole("button", { name: "New post" });
-  await expect(button).toBeEnabled();
-  await button.click();
-  await expect(page.getByRole("dialog")).toContainText("Write a Google post");
-  await page.keyboard.press("Escape");
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await expect(page.locator("main")).toContainText(
+    "vs the monthly average of June 2026",
+  );
+  await row.scrollIntoViewIfNeeded();
+  await shot(page, "report-page-scorecard");
+});
+test("the client document: charts leave out the first data month", async ({
+  page,
+}) => {
+  await login(page, `${reportUrl}document/`);
+  const score = page.locator('[data-section="scorecard"]');
+  const bookings = score.locator("th[scope=row]", { hasText: "Bookings" });
+  expect(
+    await bookings
+      .locator(".dsub.note")
+      .evaluate((el) => getComputedStyle(el).display),
+  ).toBe("block");
+  await score.scrollIntoViewIfNeeded();
+  await shot(page, "document-scorecard");
+  const search = page.locator('[data-section="search"]');
+  const chart = search.locator("figure.docchart").first();
+  await expect(chart.locator(".key.excluded")).toHaveText(
+    "Not used as a comparison",
+  );
+  await expect(chart.locator("rect.bar.excluded")).toHaveCount(1);
+  await expect(chart.locator(".key.baseline")).toHaveText(
+    /Comparison average: [\d,]+ a month \(June 2026\)$/,
+  );
+  await expect(chart.locator(".dcaption")).toContainText(
+    "against the monthly average of June 2026",
+  );
+  await chart.scrollIntoViewIfNeeded();
+  await shot(page, "document-search-chart");
+  await expect(page.locator("ul.notelist, .notelist")).toContainText(
+    "Search Console's comparison covers June 2026 only, so this compares monthly averages.",
+  );
 });

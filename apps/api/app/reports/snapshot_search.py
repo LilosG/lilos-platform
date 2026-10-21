@@ -556,7 +556,12 @@ async def build_search_console(
         ReportMonthlySeries(
             key=key,
             period=month_points(period.months, source.values(attribute)),
-            compared=month_points(comparison.compared.months, other.values(attribute)),
+            compared=[
+                point.model_copy(update={"excluded_from_baseline": True})
+                if point.month == first_data
+                else point
+                for point in month_points(comparison.compared.months, other.values(attribute))
+            ],
         )
         for key, attribute, source, other in (
             (SeriesKey.SEARCH_CLICKS, "clicks", current, plotted),

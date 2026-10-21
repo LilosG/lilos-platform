@@ -330,6 +330,18 @@ const reports10b = [
     referenceOpenReport,
   ],
 ];
+// Step 10d: the report page with Miss B's shape (first data month not compared, bookings note).
+const reports10d = [
+  [
+    "reports-report-page",
+    "admin",
+    `${alphaReports}2026-07_2026-09/`,
+    referenceReports,
+    undefined,
+    reportsScenario("averaged"),
+    referenceOpenReport,
+  ],
+];
 const reportScreens = [
   [
     "reports-portfolio",
@@ -987,7 +999,7 @@ const side = async (browser, size, left, right) => {
   await page.close();
   return image;
 };
-// Step 10d: the New post button in the Local Search header, on the default view and the
+// Step 10e: the New post button in the Local Search header, on the default view and the
 // Business Profile view, and the profile with writes off, where it stays enabled beside the publishing banner.
 const writesOffLocation = async (page) => {
   await page
@@ -1012,39 +1024,41 @@ const localSearchScreens = [
   ],
 ];
 const activeScreens =
-  stepName === "step-10d-local-search"
+  stepName === "step-10e-local-search"
     ? localSearchScreens
     : stepName === "dashboard-gbp-actions"
       ? dashboardScreens
-      : stepName === "step-10b-report-redesign"
-        ? reports10b
-        : stepName === "step-10-reports"
-          ? reportScreens
-          : stepName === "step-9d-reconciliation"
-            ? reconciliationScreens
-            : stepName === "step-5b-followup"
-              ? contentScreens.filter(([name]) =>
-                  ["content-composer", "content-draft-review"].includes(name),
-                )
-              : stepName === "step-5b"
-                ? contentScreens
-                : stepName === "step-5a"
-                  ? websiteScreens
-                  : stepName === "step-9c-administration-tabs"
-                    ? adminTabScreens
-                    : stepName === "step-9b-administration"
-                      ? adminScreens
-                      : stepName === "step-9-publishing"
-                        ? publishingScreens
-                        : stepName === "step-8-automations"
-                          ? automationScreens
-                          : stepName === "step-6"
-                            ? reviewScreens
-                            : stepName === "special-hours-publish"
-                              ? screens.filter(
-                                  ([name]) => name === "special-hours-list",
-                                )
-                              : screens;
+      : stepName === "step-10d-report-fixes"
+        ? reports10d
+        : stepName === "step-10b-report-redesign"
+          ? reports10b
+          : stepName === "step-10-reports"
+            ? reportScreens
+            : stepName === "step-9d-reconciliation"
+              ? reconciliationScreens
+              : stepName === "step-5b-followup"
+                ? contentScreens.filter(([name]) =>
+                    ["content-composer", "content-draft-review"].includes(name),
+                  )
+                : stepName === "step-5b"
+                  ? contentScreens
+                  : stepName === "step-5a"
+                    ? websiteScreens
+                    : stepName === "step-9c-administration-tabs"
+                      ? adminTabScreens
+                      : stepName === "step-9b-administration"
+                        ? adminScreens
+                        : stepName === "step-9-publishing"
+                          ? publishingScreens
+                          : stepName === "step-8-automations"
+                            ? automationScreens
+                            : stepName === "step-6"
+                              ? reviewScreens
+                              : stepName === "special-hours-publish"
+                                ? screens.filter(
+                                    ([name]) => name === "special-hours-list",
+                                  )
+                                : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

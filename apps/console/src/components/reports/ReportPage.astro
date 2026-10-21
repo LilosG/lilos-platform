@@ -220,7 +220,7 @@ const printHref = `${documentHref}${documentHref.includes("?") ? "&" : "?"}print
                 <tr>
                   <th scope="row">
                     {row.label}
-                    {row.note && <small class="muted">{row.note}</small>}
+                    {row.note && <span class="sub">{row.note}</span>}
                   </th>
                   <td>{row.current}</td>
                   <td>{row.compared}</td>
