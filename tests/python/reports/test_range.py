@@ -33,7 +33,7 @@ from reports.support import (
 )
 
 pytestmark = pytest.mark.integration
-JUN, JUL, AUG, SEP = (date(2026, m, 1) for m in (6, 7, 8, 9))
+MAY, JUN, JUL, AUG, SEP = (date(2026, m, 1) for m in (5, 6, 7, 8, 9))
 JAN, FEB, MAR = (date(2026, m, 1) for m in (1, 2, 3))
 AUG_25, SEP_25 = date(2025, 8, 1), date(2025, 9, 1)
 AUG_SEP = ReportPeriod(start_month=AUG, end_month=SEP)
@@ -147,6 +147,12 @@ async def test_search_console_months_are_summed_and_one_unsynced_month_is_partia
     await seed_views(factory, org, gbp, {AUG: 5, SEP: 5})
     prop, site = await connect_search_console(factory, org)
     for month, clicks, impressions, position in (
+        (
+            MAY,
+            10,
+            300,
+            12.0,
+        ),  # first data month: no baseline
         (JUN, 40, 1000, 10.0),
         (JUL, 60, 1000, 10.0),
         (AUG, 100, 2000, 6.0),
@@ -226,6 +232,7 @@ async def test_top_searches_are_aggregated_and_split_into_branded_and_not(
         (SEP, {"Coco Maya's menu": (30, 300), "best tacos": (30, 1000)}),
         (JUL, {"best tacos": (25, 800)}),
         (JUN, {"best tacos": (15, 800)}),
+        (MAY, {"best tacos": (5, 800)}),  # the first data month, never a baseline
     ):
         await store_search_month(
             factory,

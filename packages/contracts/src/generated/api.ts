@@ -8899,7 +8899,7 @@ export interface components {
          * @description Why part of a report is missing or approximate. The console turns each into a sentence.
          * @enum {string}
          */
-        NoteCode: "gbp_not_connected" | "gbp_period_not_synced" | "gbp_period_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_compared_period_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_months_missing" | "search_console_compared_period_unavailable" | "search_console_no_data_yet" | "search_console_compared_as_average" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_months_missing" | "analytics_compared_period_unavailable" | "optional_figure_not_reported" | "optional_figure_stopped";
+        NoteCode: "gbp_not_connected" | "gbp_period_not_synced" | "gbp_period_partial" | "gbp_sync_failed" | "gbp_location_not_mapped" | "gbp_search_terms_unavailable" | "gbp_compared_period_incomplete" | "gbp_year_ago_unavailable" | "reviews_not_synced" | "search_console_not_connected" | "search_console_not_synced" | "search_console_lag_days" | "search_console_months_missing" | "search_console_compared_period_unavailable" | "search_console_no_data_yet" | "search_console_compared_as_average" | "search_console_first_month_partial" | "analytics_not_connected" | "analytics_not_synced" | "analytics_organic_unavailable" | "analytics_months_missing" | "analytics_compared_period_unavailable" | "optional_figure_not_reported" | "optional_figure_stopped";
         /** OffboardingCreate */
         OffboardingCreate: {
             /** Reason */

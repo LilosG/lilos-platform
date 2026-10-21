@@ -578,6 +578,10 @@ async def test_search_console_months_report_exact_months_with_month_over_month_c
         queries={"pizza": (50, 900)},
         pages={"https://x.test/": (60, 800)},
     )
+    # July is Google's first data month, so August is a real baseline.
+    await store_search_month(
+        factory, org, prop, website, date(2026, 7, 1), clicks=10, impressions=500, position=11.0
+    )
 
     search = (await snapshot(factory, org)).search_console
 

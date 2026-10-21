@@ -52,6 +52,7 @@ export const NOTE_CODES = [
   "search_console_compared_period_unavailable",
   "search_console_no_data_yet",
   "search_console_compared_as_average",
+  "search_console_first_month_partial",
   "analytics_not_connected",
   "analytics_not_synced",
   "analytics_organic_unavailable",
