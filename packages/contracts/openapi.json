@@ -15338,6 +15338,15 @@
         "title": "ReportDataNote",
         "type": "object"
       },
+      "ReportDays": {
+        "enum": [
+          7,
+          28,
+          90
+        ],
+        "title": "ReportDays",
+        "type": "integer"
+      },
       "ReportDeliveryView": {
         "additionalProperties": false,
         "properties": {
@@ -24106,14 +24115,8 @@
             "name": "days",
             "required": false,
             "schema": {
-              "default": 28,
-              "enum": [
-                7,
-                28,
-                90
-              ],
-              "title": "Days",
-              "type": "integer"
+              "$ref": "#/components/schemas/ReportDays",
+              "default": 28
             }
           },
           {

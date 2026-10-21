@@ -10665,6 +10665,11 @@ export interface components {
             month?: string | null;
             section: components["schemas"]["SectionKey"];
         };
+        /**
+         * ReportDays
+         * @enum {integer}
+         */
+        ReportDays: 7 | 28 | 90;
         /** ReportDeliveryView */
         ReportDeliveryView: {
             /**
@@ -14356,7 +14361,7 @@ export interface operations {
         parameters: {
             query?: {
                 website_id?: string | null;
-                days?: 7 | 28 | 90;
+                days?: components["schemas"]["ReportDays"];
                 offset?: number;
             };
             header?: never;

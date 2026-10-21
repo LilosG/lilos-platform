@@ -165,7 +165,10 @@ test("Local Search tabs, source details, page intelligence and scoped GBP posts"
   await expect(
     page.getByRole("link", { name: "Verify to approve" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "New post", exact: true }).click();
+  await page
+    .locator("main section")
+    .getByRole("button", { name: "New post", exact: true })
+    .click();
   await page
     .getByLabel("Post copy", { exact: true })
     .fill("Exact synthetic draft");

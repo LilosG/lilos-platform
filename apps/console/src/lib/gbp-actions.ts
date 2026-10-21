@@ -120,18 +120,30 @@ const updateCount = () => {
   if (count && content) count.textContent = String(content.value.length);
 };
 content?.addEventListener("input", updateCount);
-root?.querySelectorAll<HTMLElement>("[data-post-open]").forEach((button) =>
-  button.addEventListener("click", () => {
-    const edit = button.dataset.postOpen === "edit";
-    postKey = edit ? (button.dataset.postKey ?? "") : "";
-    if (content) content.value = edit ? (button.dataset.postContent ?? "") : "";
-    const eyebrow = postDialog?.querySelector("[data-post-eyebrow]");
-    if (eyebrow) eyebrow.textContent = edit ? "Edit post" : "New post";
-    updateCount();
-    postDialog?.showModal();
-    content?.focus();
-  }),
-);
+const openPost = (button: HTMLElement) => {
+  const edit = button.dataset.postOpen === "edit";
+  postKey = edit ? (button.dataset.postKey ?? "") : "";
+  if (content) content.value = edit ? (button.dataset.postContent ?? "") : "";
+  const eyebrow = postDialog?.querySelector("[data-post-eyebrow]");
+  if (eyebrow) eyebrow.textContent = edit ? "Edit post" : "New post";
+  updateCount();
+  postDialog?.showModal();
+  content?.focus();
+};
+// The header's New post button sits outside the Business Profile root.
+document
+  .querySelectorAll<HTMLElement>("[data-post-open]")
+  .forEach((button) =>
+    button.addEventListener("click", () => openPost(button)),
+  );
+// Arriving from another tab's New post link opens the dialog straight away.
+const compose = new URLSearchParams(window.location.search).get("compose");
+if (compose === "post" && postDialog) {
+  openPost(document.createElement("button"));
+  const url = new URL(window.location.href);
+  url.searchParams.delete("compose");
+  window.history.replaceState(null, "", url);
+}
 form("post", (data) => {
   const text = String(data.get("content") ?? "").trim();
   if (!text) return "Write the post before saving it.";

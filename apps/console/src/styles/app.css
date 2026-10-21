@@ -2751,3 +2751,12 @@ tr.retired b {
 .listrow .tagrow {
   align-items: center;
 }
+/* A control that cannot be used right now reads as unavailable, not as a live action. */
+.control:disabled:not([data-review-ingest]):not(.danger) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.controls .hint[id="new-post-reason"] {
+  max-width: 34ch;
+  line-height: 1.3;
+}

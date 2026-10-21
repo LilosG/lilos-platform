@@ -643,3 +643,37 @@ export interface GbpTabData {
   /** Where to verify an authenticator, then return to this screen. */
   verifyHref: string;
 }
+
+/** What the "New post" button in the Local Search header does for the selected location. */
+export interface NewPostAction {
+  state: "ready" | "no_profile" | "writes_disabled" | "no_permission";
+  /** Why the button is disabled; null when it is ready. */
+  reason: string | null;
+  /** The next step the person can take; null when it is ready. */
+  next: { label: string; href: string } | null;
+}
+export function newPostAction(
+  selected: Pick<GbpLocationOption, "writeEnabled"> | null,
+  canPropose: boolean | null,
+  integrationsHref: string,
+): NewPostAction {
+  if (!selected)
+    return {
+      state: "no_profile",
+      reason: "No Business Profile is connected yet.",
+      next: { label: "Open Integrations", href: integrationsHref },
+    };
+  if (!selected.writeEnabled)
+    return {
+      state: "writes_disabled",
+      reason: "Posting is turned off for this profile.",
+      next: { label: "Turn it on in Integrations", href: integrationsHref },
+    };
+  if (canPropose === false)
+    return {
+      state: "no_permission",
+      reason: "Your role cannot write posts for this client.",
+      next: null,
+    };
+  return { state: "ready", reason: null, next: null };
+}
