@@ -125,6 +125,25 @@ async def test_months_with_no_data_are_not_plotted_and_the_headline_uses_the_ave
 
 
 @pytest.mark.anyio
+async def test_only_the_first_data_month_is_flagged_as_not_a_comparison(factory: Factory) -> None:
+    org = await seed_miss_bs(factory)
+
+    async with factory() as session:
+        result = await build_snapshot(session, org, JULY_SEPTEMBER, spec(), now=OCTOBER_FIRST)
+
+    for key in (SeriesKey.SEARCH_CLICKS, SeriesKey.SEARCH_IMPRESSIONS):
+        series = next(s for s in result.monthly if s.key is key)
+        assert [(p.month, p.excluded_from_baseline) for p in series.compared] == [
+            (APRIL, False),
+            (MAY, True),
+            (JUNE, False),
+        ]
+        # The flagged month is still real data on the chart.
+        assert series.compared[1].value is not None
+        assert not any(p.excluded_from_baseline for p in series.period)
+
+
+@pytest.mark.anyio
 async def test_a_zero_after_data_started_is_a_real_zero(factory: Factory) -> None:
     org = await seed_miss_bs(factory, august_clicks=0)
     august = ReportPeriod(start_month=date(2026, 8, 1), end_month=date(2026, 8, 1))

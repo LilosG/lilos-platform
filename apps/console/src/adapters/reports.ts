@@ -446,6 +446,7 @@ const monthPoint = z
     month,
     availability,
     value: nullableInt.optional(),
+    excluded_from_baseline: z.boolean().default(false),
   })
   .strict()
   .refine(

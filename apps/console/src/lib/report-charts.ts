@@ -13,6 +13,8 @@ export interface BarInput {
   /** Stored before the source settled it: drawn lighter, with an asterisk. */
   partial: boolean;
   group: "compared" | "period";
+  /** Real data that is not used as a comparison: drawn muted and named in the legend. */
+  excluded?: boolean;
 }
 export interface Bar {
   x: number;
@@ -21,6 +23,7 @@ export interface Bar {
   height: number;
   group: "compared" | "period";
   partial: boolean;
+  excluded: boolean;
   label: string;
   year: string | null;
   /** The value above the bar, when there is room for it. */
@@ -100,6 +103,7 @@ export function barChart(options: BarChartOptions): BarChartModel {
       height: value === null ? 0 : Math.max(1, plot.bottom - y),
       group: input.group,
       partial: input.partial,
+      excluded: input.excluded ?? false,
       label: input.label,
       year: input.year,
       valueLabel:

@@ -25,6 +25,8 @@ import {
   changeText,
   comparedLabel,
   comparedPhrase,
+  coveredRange,
+  searchCoveredMonths,
   comparisonText,
   countText,
   directionOf,
@@ -413,6 +415,8 @@ export interface MonthlyChart {
   compact: boolean;
   /** One line on what to take from the chart. */
   caption: string;
+  /** Whether a bar is drawn muted because it is not used as a comparison. */
+  excludedNote: boolean;
   model: BarChartModel;
 }
 function barsOf(snapshot: ReportSnapshot, key: SeriesKey): BarInput[] | null {
@@ -434,6 +438,7 @@ function barsOf(snapshot: ReportSnapshot, key: SeriesKey): BarInput[] | null {
         point.availability === "unavailable" ? null : (point.value ?? null),
       partial: point.availability === "partial",
       group,
+      excluded: point.excluded_from_baseline === true,
     };
   });
 }
@@ -446,6 +451,7 @@ export function chartCaption(
   comparison: CountComparison | null,
   snapshot: ReportSnapshot,
   missing: number,
+  covered: readonly string[] | null = null,
 ): string {
   const gap =
     missing > 0
@@ -456,10 +462,13 @@ export function chartCaption(
   const total = countText(comparison.current);
   const averaged = comparison.compared_as === "monthly_average";
   const change = changeText(comparison);
-  const against = comparedPhrase({
-    compared_as: comparison.compared_as,
-    compared: periodOf(snapshot.comparison.compared),
-  });
+  const against =
+    averaged && covered?.length
+      ? `the monthly average of ${coveredRange(covered)}`
+      : comparedPhrase({
+          compared_as: comparison.compared_as,
+          compared: periodOf(snapshot.comparison.compared),
+        });
   return `${noun} totalled ${total} in ${periodLabel(periodOf(snapshot.period))}${
     change && !isPartial(comparison.current)
       ? `, ${change} against ${against}${averaged ? " (monthly averages)" : ""}`
@@ -478,17 +487,30 @@ export function monthlyChart(
   if (!bars || !series) return null;
   if (!series.period.some((point) => point.availability !== "unavailable"))
     return null;
-  // Only settled months count towards the average a person compares against.
+  // Only settled months that are used as a comparison count towards the average, so the line
+  // equals the scorecard's compared figure. With no comparable figure there is no line.
   const settled = series.compared.flatMap((point) =>
     point.availability === "available" &&
+    !point.excluded_from_baseline &&
     point.value !== null &&
     point.value !== undefined
       ? [point.value]
       : [],
   );
-  const average = settled.length
-    ? settled.reduce((total, value) => total + value, 0) / settled.length
-    : null;
+  // Search Console may cover only some of the compared months: name those, not the whole period.
+  const covered =
+    key === "search_clicks" || key === "search_impressions"
+      ? searchCoveredMonths(snapshot)
+      : null;
+  const comparable =
+    !!comparison &&
+    present(comparison.compared) &&
+    comparison.change !== null &&
+    comparison.change !== undefined;
+  const average =
+    comparable && settled.length
+      ? settled.reduce((total, value) => total + value, 0) / settled.length
+      : null;
   const missing = [...series.period, ...series.compared].filter(
     (point) => point.availability === "unavailable",
   ).length;
@@ -496,11 +518,13 @@ export function monthlyChart(
   return {
     title,
     compact,
+    excludedNote: bars.some((bar) => bar.excluded),
     caption: chartCaption(
       title.replace(/ by month$/, ""),
       comparison,
       snapshot,
       missing,
+      covered,
     ),
     model: barChart({
       title,
@@ -509,7 +533,7 @@ export function monthlyChart(
       baselineText:
         average === null
           ? ""
-          : `Comparison average: ${fmt(average)} a month (${comparedLabel(snapshot)})`,
+          : `Comparison average: ${fmt(average)} a month (${covered?.length ? coveredRange(covered) : comparedLabel(snapshot)})`,
       format: fmt,
       ...(compact ? { width: 320, height: 210 } : {}),
     }),

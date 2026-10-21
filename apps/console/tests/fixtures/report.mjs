@@ -159,6 +159,7 @@ const points = (key, months, options = {}) =>
       ? { month, availability: "unavailable", value: null }
       : {
           month,
+          excluded_from_baseline: options.excluded?.includes(month) ?? false,
           availability: options.partial?.includes(month)
             ? "partial"
             : "available",
@@ -171,6 +172,7 @@ const series = (key, period, resolved, options = {}) => ({
   compared: points(
     key,
     monthsOf(resolved.compared.start_month, resolved.compared.end_month),
+    { missing: options.comparedMissing, excluded: options.comparedExcluded },
   ),
 });
 const metrics = [
@@ -284,6 +286,16 @@ export function snapshot(period, spec, options = {}) {
   const searchSeriesOptions = {
     missing: options.missing,
     partial: options.partial,
+    // Search Console's first data month: real data on the chart, not used as a comparison.
+    comparedMissing: options.searchFirstMonth
+      ? monthsOf(resolved.compared.start_month, options.searchFirstMonth).slice(
+          0,
+          -1,
+        )
+      : undefined,
+    comparedExcluded: options.searchFirstMonth
+      ? [options.searchFirstMonth]
+      : undefined,
   };
   const total = views.current.value;
   const actionRateNow = Math.round((actions.current.value / total) * 1000) / 10;
@@ -773,7 +785,9 @@ export function snapshot(period, spec, options = {}) {
       const span = months.length;
       item.compared_as = "monthly_average";
       item.current_monthly_average = Math.round(item.current.value / span);
-      item.compared = f(Math.round(item.compared.value / 2));
+      item.compared = options.searchFirstMonth
+        ? f(valueOf(`search_${key}`, add(options.searchFirstMonth, 1)))
+        : f(Math.round(item.compared.value / 2));
       item.change = item.current_monthly_average - item.compared.value;
       item.change_percent = pct(item.change, item.compared.value);
       item.year_ago = gone("no_search_data_yet");
@@ -786,8 +800,12 @@ export function snapshot(period, spec, options = {}) {
       count: null,
       location_id: null,
       metric: null,
-      covered_months: ["2026-05-01", "2026-06-01"],
-      missing_months: ["2026-04-01"],
+      covered_months: options.searchFirstMonth
+        ? [add(options.searchFirstMonth, 1)]
+        : ["2026-05-01", "2026-06-01"],
+      missing_months: options.searchFirstMonth
+        ? [add(options.searchFirstMonth, -1), options.searchFirstMonth]
+        : ["2026-04-01"],
     });
   }
   if (options.search === "results")

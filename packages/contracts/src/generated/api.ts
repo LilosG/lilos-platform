@@ -10879,6 +10879,11 @@ export interface components {
         ReportMonthPoint: {
             availability: components["schemas"]["Availability"];
             /**
+             * Excluded From Baseline
+             * @default false
+             */
+            excluded_from_baseline: boolean;
+            /**
              * Month
              * Format: date
              */

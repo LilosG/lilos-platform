@@ -15942,6 +15942,11 @@
           "availability": {
             "$ref": "#/components/schemas/Availability"
           },
+          "excluded_from_baseline": {
+            "default": false,
+            "title": "Excluded From Baseline",
+            "type": "boolean"
+          },
           "month": {
             "format": "date",
             "title": "Month",

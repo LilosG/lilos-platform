@@ -104,6 +104,21 @@ export function comparedPhrase(comparison: {
     ? `the monthly average of ${label}`
     : label;
 }
+/** "June 2026", "June to August 2026" or "May 2026 to February 2027": months, as a range. */
+export function coveredRange(covered: readonly string[]): string {
+  const first = covered[0];
+  const last = covered[covered.length - 1];
+  if (!first || !last) return "the months with data";
+  if (first === last) return monthLabel(first);
+  return parts(first).year === parts(last).year
+    ? `${monthName(first)} to ${monthLabel(last)}`
+    : `${monthLabel(first)} to ${monthLabel(last)}`;
+}
+/** The months Search Console's comparison covers, when it covers fewer than the compared period. */
+export const searchCoveredMonths = (snapshot: ReportSnapshot) =>
+  snapshot.notes.find(
+    (item) => item.code === "search_console_compared_as_average",
+  )?.covered_months ?? null;
 /** What each "Compare with" choice means, shown under the choice. */
 export const compareHelp = {
   previous: "The same number of months immediately before the report.",
@@ -327,17 +342,25 @@ export function headlineCards(snapshot: ReportSnapshot): HeadlineCard[] {
       compared_as: as,
       compared: periodOf(snapshot.comparison.compared),
     });
+  // Search Console may cover only some of the compared months: the tile names those months.
+  const covered = searchCoveredMonths(snapshot);
   return snapshot.headlines.flatMap((item): HeadlineCard[] => {
     const copy = HEADLINE[item.key];
     if (item.count) {
       const { count } = item;
+      const comparedTo =
+        item.key === "website_search_clicks" &&
+        count.compared_as === "monthly_average" &&
+        covered?.length
+          ? `the monthly average of ${coveredRange(covered)}`
+          : against(count.compared_as);
       if (!present(count.current) || count.change === null) return [];
       return [
         {
           key: item.key,
           label: copy.label,
           value: fmt(count.current.value as number),
-          change: `${signed(count.change_percent ?? null, 1) ?? absoluteChange(count.change as number)} vs ${against(count.compared_as)}`,
+          change: `${signed(count.change_percent ?? null, 1) ?? absoluteChange(count.change as number)} vs ${comparedTo}`,
           direction: directionOf(count.change) as "up" | "down" | "flat",
           tone: toneOf(directionOf(count.change)),
           line: copy.line,
@@ -424,23 +447,8 @@ const NOTE_TEXT: Record<NoteCode, (note: ReportNote) => string> = {
     "Search Console data for the comparison period is not complete, so changes are not shown.",
   search_console_no_data_yet: () =>
     "Search Console has no data for this period yet.",
-  search_console_compared_as_average: (note) => {
-    const covered = note.covered_months ?? [];
-    const first = covered[0];
-    const last = covered[covered.length - 1];
-    const before = first
-      ? `no data before ${monthLabel(first)}`
-      : "no data yet";
-    const range =
-      !first || !last || first === last
-        ? first
-          ? monthName(first)
-          : "the months with data"
-        : parts(first).year === parts(last).year
-          ? `${monthName(first)} to ${monthName(last)}`
-          : `${monthLabel(first)} to ${monthLabel(last)}`;
-    return `Search Console has ${before}, so this compares monthly averages over ${range}.`;
-  },
+  search_console_compared_as_average: (note) =>
+    `Search Console's comparison covers ${coveredRange(note.covered_months ?? [])} only, so this compares monthly averages.`,
   search_console_first_month_partial: (note) =>
     note.month
       ? `Google's first month of Search Console data (${monthLabel(note.month)}) can be a partial month, so it is not used as a comparison.`
