@@ -188,6 +188,8 @@ def build_ai_gateway(settings: Settings | None = None) -> AIGateway:
         task_max_output_tokens={
             "content.draft_revision": settings.ai_content_max_output_tokens,
             "content.compose_plan": settings.ai_plan_max_output_tokens,
+            "reports.narrative_draft": settings.ai_plan_max_output_tokens,
+            "reports.topic_grouping": settings.ai_plan_max_output_tokens,
         },
         default_model=settings.ai_default_model,
         global_max_output_tokens=settings.ai_max_output_tokens,

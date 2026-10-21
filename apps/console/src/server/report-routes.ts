@@ -7,6 +7,7 @@ const month = "\\d{4}-(?:0[1-9]|1[0-2])";
 const period = `(${month}(?:_${month})?)`;
 const comparison = `(previous|year-ago|vs-${month}(?:_${month})?)`;
 const one = `${base}/${period}/${comparison}/(\\d{1,4})`;
+export const DRAFT_NARRATIVE_TIMEOUT_MS = 200_000;
 const empty = z.object({}).strict();
 export const narrativeBody = z
   .object({
@@ -83,6 +84,8 @@ export const reportRoutes = [
     upstream: "",
     query: [],
     body: empty,
+    // Two sequential AI calls (topic grouping, then the narrative) run inside this request.
+    timeoutMs: DRAFT_NARRATIVE_TIMEOUT_MS,
   },
   {
     pattern: new RegExp(`^${one}/approve/$`),

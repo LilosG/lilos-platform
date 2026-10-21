@@ -292,7 +292,13 @@ export async function forward(
         method: request.method,
         body,
         redirect: "manual",
-        signal: AbortSignal.timeout(request.method === "GET" ? 10000 : 30000),
+        signal: AbortSignal.timeout(
+          "timeoutMs" in route && route.timeoutMs
+            ? route.timeoutMs
+            : request.method === "GET"
+              ? 10000
+              : 30000,
+        ),
         headers: {
           Authorization: `Bearer ${locals.token}`,
           "Content-Type": contentType,
