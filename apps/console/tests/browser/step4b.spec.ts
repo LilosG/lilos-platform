@@ -72,7 +72,10 @@ test("Business Profile performance shows limits as '< 15' and switches location"
 });
 test("Posts: create, approve and publish through the BFF", async ({ page }) => {
   await login(page, `${gbp}?view=posts`);
-  await page.getByRole("button", { name: "New post", exact: true }).click();
+  await page
+    .locator("main section")
+    .getByRole("button", { name: "New post", exact: true })
+    .click();
   await page.getByLabel("Post copy").fill("Fresh oysters tonight");
   await page.getByRole("button", { name: "Save for approval" }).click();
   await expect(page.locator("[data-post-row]").first()).toContainText(

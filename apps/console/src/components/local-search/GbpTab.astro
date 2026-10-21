@@ -75,6 +75,7 @@ const can = {
         )}
       </div>
       <p class="formstatus" role="status" aria-live="polite" data-gbp-status />
+      {(can.canWrite || can.canPropose) && <PostDialog />}
       {data.view === "performance" ? (
         data.performance ? (
           <GbpPerformance
@@ -100,7 +101,6 @@ const can = {
               verifyHref={data.verifyHref}
               writeEnabled={can.canWrite}
             />
-            {can.canPropose && <PostDialog />}
           </Fragment>
         ) : (
           <ErrorState title="Posts could not be loaded">

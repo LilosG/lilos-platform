@@ -18,6 +18,7 @@ import {
 } from "../../src/lib/gbp-view";
 import { postState, postChips, postStateNote } from "../../src/lib/status";
 import { clockText } from "../../src/lib/present";
+import { newPostAction } from "../../src/lib/gbp-view";
 const org = fixtures.search.organization_id;
 const raw =
   /\d{4}-\d{2}-\d{2}T|[0-9a-f]{8}-[0-9a-f]{4}-|[a-z]+_[a-z_]+|^[A-Z]+(_[A-Z]+)+$/;
@@ -235,5 +236,32 @@ describe("Business Profile presenters", () => {
       text: "9:00 AM – 5:00 PM",
     });
     expect(summary.hours[1].text).toBe("Closed");
+  });
+});
+
+describe("New post button state", () => {
+  const href = "/clients/x/integrations/";
+  it("is ready when the profile can be written to", () => {
+    expect(newPostAction({ writeEnabled: true }, true, href).state).toBe(
+      "ready",
+    );
+    expect(newPostAction({ writeEnabled: true }, null, href).state).toBe(
+      "ready",
+    );
+  });
+  it("explains a missing profile with the next action", () => {
+    const action = newPostAction(null, null, href);
+    expect(action.state).toBe("no_profile");
+    expect(action.next?.href).toBe(href);
+  });
+  it("stays ready when writes are off, because only publishing is gated", () => {
+    const action = newPostAction({ writeEnabled: false }, true, href);
+    expect(action.state).toBe("ready");
+    expect(action.reason).toBeNull();
+  });
+  it("explains a role that cannot propose", () => {
+    expect(newPostAction({ writeEnabled: true }, false, href).state).toBe(
+      "no_permission",
+    );
   });
 });

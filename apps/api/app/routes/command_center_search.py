@@ -5,7 +5,7 @@ No provider I/O on reads, no new write lifecycle, and independently authorized s
 
 from dataclasses import asdict
 from datetime import datetime
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -380,10 +380,17 @@ async def allowed(
     return decision.allowed
 
 
+class ReportDays(IntEnum):
+    # An IntEnum (not Literal[7, 28, 90]) so the query string "28" is coerced to an int member.
+    WEEK = 7
+    MONTH = 28
+    QUARTER = 90
+
+
 PERIOD_OF_DAYS = {
-    7: PerformancePeriod.LAST_7_DAYS,
-    28: PerformancePeriod.LAST_28_DAYS,
-    90: PerformancePeriod.LAST_90_DAYS,
+    ReportDays.WEEK: PerformancePeriod.LAST_7_DAYS,
+    ReportDays.MONTH: PerformancePeriod.LAST_28_DAYS,
+    ReportDays.QUARTER: PerformancePeriod.LAST_90_DAYS,
 }
 
 
@@ -608,7 +615,7 @@ async def local_search_view(
     principal: Authenticated,
     _: Annotated[object, policy("seo.read")],
     website_id: UUID | None = None,
-    days: Literal[7, 28, 90] = 28,
+    days: ReportDays = ReportDays.MONTH,
     offset: int = Query(0, ge=0, le=100000),
 ) -> SearchView:
     websites = await service.list_websites(session, organization_id)
@@ -662,7 +669,7 @@ async def local_search_view(
             profiles.append(ProfileSummary.model_validate(row, from_attributes=True))
     report = (
         await SearchConsoleService().performance_report(
-            session, organization_id, website.id, days=days
+            session, organization_id, website.id, days=int(days)
         )
         if website
         else None
@@ -699,7 +706,7 @@ async def local_search_view(
         if website
         else None,
         analytics=SearchPerformance.model_validate(
-            await AnalyticsService().performance_report(session, organization_id, days=days)
+            await AnalyticsService().performance_report(session, organization_id, days=int(days))
         )
         if can_analytics
         else None,

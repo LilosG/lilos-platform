@@ -643,3 +643,32 @@ export interface GbpTabData {
   /** Where to verify an authenticator, then return to this screen. */
   verifyHref: string;
 }
+
+/** What the "New post" button in the Local Search header does for the selected location. */
+export interface NewPostAction {
+  state: "ready" | "no_profile" | "no_permission";
+  /** Why the button is disabled; null when it is ready. */
+  reason: string | null;
+  /** The next step the person can take; null when it is ready. */
+  next: { label: string; href: string } | null;
+}
+/** Drafts for approval work with writes off; only publishing is gated, so writes never disable it. */
+export function newPostAction(
+  selected: object | null,
+  canPropose: boolean | null,
+  integrationsHref: string,
+): NewPostAction {
+  if (!selected)
+    return {
+      state: "no_profile",
+      reason: "No Business Profile is connected yet.",
+      next: { label: "Open Integrations", href: integrationsHref },
+    };
+  if (canPropose === false)
+    return {
+      state: "no_permission",
+      reason: "Your role cannot write posts for this client.",
+      next: null,
+    };
+  return { state: "ready", reason: null, next: null };
+}

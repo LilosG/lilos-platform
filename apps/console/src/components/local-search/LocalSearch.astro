@@ -2,7 +2,7 @@
 import type { LocalSearchView } from "../../adapters/local-search";
 import type { GbpPerformanceView } from "../../adapters/gbp";
 import type { GbpTabData, GbpViewKey } from "../../lib/gbp-view";
-import { dailyCharts } from "../../lib/gbp-view";
+import { dailyCharts, newPostAction } from "../../lib/gbp-view";
 import {
   TABS,
   momentum,
@@ -76,6 +76,18 @@ const gbpHref = (view: GbpViewKey, location?: string) => {
     ...(place ? { location: place } : {}),
   })}`;
 };
+const place =
+  gbpTab?.selected ??
+  v.profiles
+    .map((p) => ({ locationId: p.location_id, writeEnabled: p.write_enabled }))
+    .at(0) ??
+  null;
+const newPost = newPostAction(
+  place,
+  gbpTab ? (gbpTab.detail ? gbpTab.detail.can_propose : null) : null,
+  integrationsHref,
+);
+const onGbp = tab === "google-business-profile";
 const overview = tab === "" ? overviewTiles(v, gbp, days) : [];
 const gbpActions = gbp ? dailyCharts(gbp).actions : null;
 ---
@@ -91,6 +103,44 @@ const gbpActions = gbp ? dailyCharts(gbp).actions : null;
             </option>
           ))}
         </select>
+      )
+    }
+    {
+      newPost.state === "ready" ? (
+        onGbp ? (
+          <button type="button" class="control primary" data-post-open="new">
+            New post
+          </button>
+        ) : (
+          <a
+            class="control primary"
+            href={`${gbpHref("posts", place?.locationId)}&compose=post`}
+          >
+            New post
+          </a>
+        )
+      ) : (
+        <Fragment>
+          <button
+            type="button"
+            class="control primary"
+            disabled
+            aria-describedby="new-post-reason"
+          >
+            New post
+          </button>
+          <span class="hint" id="new-post-reason">
+            {newPost.reason}
+            {newPost.next && (
+              <Fragment>
+                {" "}
+                <a class="link" href={newPost.next.href}>
+                  {newPost.next.label}
+                </a>
+              </Fragment>
+            )}
+          </span>
+        </Fragment>
       )
     }
     <button

@@ -200,3 +200,15 @@ def test_integration_projection_and_stale_gsc_comparison(
         f"/api/v1/organizations/{ids['other_organization']}/command-center/integrations",
         headers=HEADERS,
     ).status_code in {403, 404}
+
+
+def test_local_search_days_query_string_is_coerced(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = seo_client
+    url = f"/api/v1/organizations/{ids['organization']}/command-center/local-search"
+    for query in ("?days=7", "?days=28", "?days=90", "?days=28&offset=0"):
+        response = client.get(url + query, headers=HEADERS)
+        assert response.status_code == 200, (query, response.text)
+    for query in ("?days=30", "?days=abc", "?days=0"):
+        assert client.get(url + query, headers=HEADERS).status_code == 422, query
