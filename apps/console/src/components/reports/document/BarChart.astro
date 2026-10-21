@@ -69,7 +69,11 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
               </text>
             ) : (
               <rect
-                class:list={["bar", bar.group, { partial: bar.partial }]}
+                class:list={[
+                  "bar",
+                  bar.group,
+                  { partial: bar.partial, excluded: bar.excluded },
+                ]}
                 x={bar.x}
                 y={bar.y}
                 width={bar.width}
@@ -125,6 +129,11 @@ const hasCompared = model.bars.some((bar) => bar.group === "compared");
   </div>
   <p class="dlegend">
     {hasCompared && <span class="key compared">Comparison period</span>}
+    {
+      chart.excludedNote && (
+        <span class="key excluded">Not used as a comparison</span>
+      )
+    }
     <span class="key period">This period</span>
     {model.baseline && <span class="key baseline">{model.baseline.label}</span>}
   </p>

@@ -36,6 +36,7 @@ const BASELINE = {
 const key = (period, spec) =>
   `${periodSlug(period.start_month, period.end_month)}/${comparisonSlug(spec)}`;
 const SEPTEMBER = { start_month: LAST_ENDED, end_month: LAST_ENDED };
+const JULY_SEPTEMBER = { start_month: "2026-07-01", end_month: LAST_ENDED };
 const MAY_SEPTEMBER = { start_month: "2026-05-01", end_month: LAST_ENDED };
 /** A stored report: one period, one comparison, its revisions and how its figures look. */
 const report = (period, comparison, revisions, options = {}) => ({
@@ -124,6 +125,22 @@ export function reset(mode = "default") {
               compared: 318,
             },
             internalNames: ["Main"],
+          },
+        ),
+      },
+    };
+  if (mode === "averaged")
+    // Miss B's shape: Search Console's first data month (May) is no comparison, June alone is.
+    state.clients.a = {
+      reports: {
+        [key(JULY_SEPTEMBER, PREVIOUS)]: report(
+          JULY_SEPTEMBER,
+          PREVIOUS,
+          [revision(1, "ready", rangeWords)],
+          {
+            searchAveraged: true,
+            searchFirstMonth: "2026-05-01",
+            bookingsStopped: { after: "2026-08-01", total: 129, compared: 318 },
           },
         ),
       },

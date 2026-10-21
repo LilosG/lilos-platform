@@ -413,6 +413,8 @@ export interface MonthlyChart {
   compact: boolean;
   /** One line on what to take from the chart. */
   caption: string;
+  /** Whether a bar is drawn muted because it is not used as a comparison. */
+  excludedNote: boolean;
   model: BarChartModel;
 }
 function barsOf(snapshot: ReportSnapshot, key: SeriesKey): BarInput[] | null {
@@ -434,6 +436,7 @@ function barsOf(snapshot: ReportSnapshot, key: SeriesKey): BarInput[] | null {
         point.availability === "unavailable" ? null : (point.value ?? null),
       partial: point.availability === "partial",
       group,
+      excluded: point.excluded_from_baseline === true,
     };
   });
 }
@@ -478,17 +481,25 @@ export function monthlyChart(
   if (!bars || !series) return null;
   if (!series.period.some((point) => point.availability !== "unavailable"))
     return null;
-  // Only settled months count towards the average a person compares against.
+  // Only settled months that are used as a comparison count towards the average, so the line
+  // equals the scorecard's compared figure. With no comparable figure there is no line.
   const settled = series.compared.flatMap((point) =>
     point.availability === "available" &&
+    !point.excluded_from_baseline &&
     point.value !== null &&
     point.value !== undefined
       ? [point.value]
       : [],
   );
-  const average = settled.length
-    ? settled.reduce((total, value) => total + value, 0) / settled.length
-    : null;
+  const comparable =
+    !!comparison &&
+    present(comparison.compared) &&
+    comparison.change !== null &&
+    comparison.change !== undefined;
+  const average =
+    comparable && settled.length
+      ? settled.reduce((total, value) => total + value, 0) / settled.length
+      : null;
   const missing = [...series.period, ...series.compared].filter(
     (point) => point.availability === "unavailable",
   ).length;
@@ -496,6 +507,7 @@ export function monthlyChart(
   return {
     title,
     compact,
+    excludedNote: bars.some((bar) => bar.excluded),
     caption: chartCaption(
       title.replace(/ by month$/, ""),
       comparison,

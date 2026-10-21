@@ -515,6 +515,9 @@
 .docchart .bar.partial {
   fill-opacity: 0.55;
 }
+.docchart .bar.excluded {
+  fill-opacity: 0.35;
+}
 .docchart .track {
   fill: var(--hair);
 }
@@ -552,6 +555,10 @@
 }
 .dlegend .key.compared::before {
   background: var(--before);
+}
+.dlegend .key.excluded::before {
+  background: var(--before);
+  opacity: 0.35;
 }
 .dlegend .key.baseline::before {
   height: 0;

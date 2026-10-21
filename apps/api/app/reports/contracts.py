@@ -746,6 +746,8 @@ class ReportMonthPoint(Model):
     month: date
     availability: Availability
     value: int | None = None
+    # Real data that is not used as a comparison, such as a provider's partial first month.
+    excluded_from_baseline: bool = False
 
     @model_validator(mode="after")
     def _missing_is_never_a_number(self) -> ReportMonthPoint:

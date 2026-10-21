@@ -260,14 +260,29 @@ describe("search months with no data yet", () => {
       (item) => item.code === "search_console_compared_as_average",
     )!;
     expect(noteText(note)).toBe(
-      "Search Console has no data before May 2026, so this compares monthly averages over May to June.",
+      "Search Console's comparison covers May to June 2026 only, so this compares monthly averages.",
     );
-    expect(noteText({ ...note, covered_months: ["2026-05-01"] })).toBe(
-      "Search Console has no data before May 2026, so this compares monthly averages over May.",
+    expect(noteText({ ...note, covered_months: ["2026-06-01"] })).toBe(
+      "Search Console's comparison covers June 2026 only, so this compares monthly averages.",
     );
     expect(
       noteText({ ...note, covered_months: ["2025-12-01", "2026-02-01"] }),
-    ).toContain("over December 2025 to February 2026");
+    ).toContain("covers December 2025 to February 2026 only");
+  });
+  it("name only the covered months on the search headline tile", () => {
+    const snap = ranged_.snapshot;
+    const only = {
+      ...snap,
+      notes: snap.notes.map((item) =>
+        item.code === "search_console_compared_as_average"
+          ? { ...item, covered_months: ["2026-06-01"] }
+          : item,
+      ),
+    };
+    const card = headlineCards(only).find(
+      (item) => item.key === "website_search_clicks",
+    )!;
+    expect(card.change).toMatch(/ vs the monthly average of June 2026$/);
   });
   it("say the first month of Search Console data is not used as a comparison", () => {
     expect(
