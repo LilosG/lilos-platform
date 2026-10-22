@@ -125,9 +125,56 @@ const failures: Record<string, Failure> = {
     title: "Writing is not set up",
     detail: "The writing service is not configured. Contact support.",
   },
+  AI_PROVIDER_TIMEOUT: {
+    title: "The writer took too long",
+    detail:
+      "Nothing was saved. Try again; long articles can take a few minutes.",
+  },
+  AI_PROVIDER_CONNECTION: {
+    title: "The writer could not be reached",
+    detail:
+      "The connection to the writing service dropped. Nothing was saved. Try again.",
+  },
+  AI_PROVIDER_HTTP_RATE_LIMITED: {
+    title: "The writing service is at its limit",
+    detail:
+      "Too many drafts are being written right now. Wait a minute, then try again.",
+  },
+  AI_PROVIDER_HTTP_SERVER: {
+    title: "The writing service had an error",
+    detail: "It failed on its side, not yours. Nothing was saved. Try again.",
+  },
+  AI_PROVIDER_HTTP_OTHER: {
+    title: "The writing service refused the request",
+    detail:
+      "Trying again may not help. If it keeps happening, contact support.",
+  },
+  AI_PROVIDER_UNPARSEABLE_RESPONSE: {
+    title: "The writer sent back something unreadable",
+    detail: "Nothing was saved. Try again.",
+  },
+  AI_PROVIDER_NO_CHOICES: {
+    title: "The writer sent back nothing",
+    detail: "The writing service answered without a draft. Try again.",
+  },
+  AI_PROVIDER_OUTPUT_TRUNCATED: {
+    title: "The draft came back cut off",
+    detail:
+      "The writer ran out of room before it finished, so nothing was saved. Try again, or ask for a shorter piece.",
+  },
+  AI_PROVIDER_MALFORMED_OUTPUT: {
+    title: "The draft came back in the wrong shape",
+    detail:
+      "The writer's answer could not be read as a draft. Nothing was saved. Try again.",
+  },
+  AI_PROVIDER_EMPTY_DRAFT: {
+    title: "The draft came back empty",
+    detail: "The writer finished without writing anything. Try again.",
+  },
+  // Runs that failed before failures were typed carry this code.
   AI_PROVIDER_TEMPORARY_FAILURE: {
-    title: "The writing service is busy",
-    detail: "Nothing was lost. Try again in a moment.",
+    title: "The writer did not finish",
+    detail: "Nothing was saved. Try again.",
   },
 };
 const fallbackFailure: Failure = {

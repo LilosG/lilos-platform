@@ -451,3 +451,65 @@ async def test_the_recorded_provider_is_the_one_that_actually_ran() -> None:
 def test_a_gateway_with_no_provider_at_all_is_rejected() -> None:
     with pytest.raises(ValueError, match="provider"):
         AIGateway()
+
+
+@pytest.mark.anyio
+async def test_the_gateway_logs_every_provider_failure_with_its_measurements(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from apps.api.app.ai.errors import AIProviderError, AIProviderFailureCode
+
+    class Failing:
+        async def generate(self, **kwargs: Any) -> dict[str, Any]:
+            raise AIProviderError(
+                "permanent",
+                "stopped early",
+                code=AIProviderFailureCode.OUTPUT_TRUNCATED,
+                http_status=200,
+                elapsed_ms=41_000,
+                finish_reason="length",
+                output_tokens=16_000,
+            )
+
+    gateway = AIGateway(Failing())
+    request = AIGatewayRequest(
+        organization_id=uuid4(),
+        location_id=None,
+        task_key="content.draft_revision",
+        input_document={"prompt": "do not log me"},
+        input_references=(),
+        approved_fact_revision_ids=(uuid4(),),
+        maximum_cost_microunits=1,
+        maximum_latency_ms=1_000,
+    )
+    with (
+        caplog.at_level(logging.WARNING, logger="apps.api.app.ai.gateway"),
+        pytest.raises(AIProviderError),
+    ):
+        await gateway.execute(request)
+
+    (record,) = [
+        r for r in caplog.records if getattr(r, "event_name", "") == "ai.gateway.provider_failed"
+    ]
+    fields = {
+        k: getattr(record, k)
+        for k in (
+            "task_key",
+            "failure_code",
+            "http_status",
+            "elapsed_ms",
+            "finish_reason",
+            "output_tokens",
+        )
+    }
+    assert fields == {
+        "task_key": "content.draft_revision",
+        "failure_code": "OUTPUT_TRUNCATED",
+        "http_status": 200,
+        "elapsed_ms": 41_000,
+        "finish_reason": "length",
+        "output_tokens": 16_000,
+    }
+    assert "do not log me" not in caplog.text

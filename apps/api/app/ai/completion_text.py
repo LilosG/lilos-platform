@@ -19,13 +19,18 @@ and its fragments are not a draft. That case still fails loudly.
 
 import json
 
+from apps.api.app.ai.errors import AIProviderFailureCode
+
 
 class DraftExtractionError(Exception):
     """Raised with a safe, specific reason when no draft can be read."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(
+        self, reason: str, code: AIProviderFailureCode = AIProviderFailureCode.MALFORMED_OUTPUT
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.code = code
 
 
 def strip_code_fence(text: str) -> str:
@@ -45,7 +50,9 @@ def extract_draft(content_text: str, *, subject: str) -> str:
     """
     text = strip_code_fence(content_text)
     if not text:
-        raise DraftExtractionError(f"{subject} returned empty content")
+        raise DraftExtractionError(
+            f"{subject} returned empty content", AIProviderFailureCode.EMPTY_DRAFT
+        )
 
     try:
         parsed: object = json.loads(text)
@@ -62,14 +69,18 @@ def extract_draft(content_text: str, *, subject: str) -> str:
     if isinstance(parsed, dict):
         draft = str(parsed.get("draft", "")).strip()
         if not draft:
-            raise DraftExtractionError(f"{subject} returned no draft field")
+            raise DraftExtractionError(
+                f"{subject} returned no draft field", AIProviderFailureCode.EMPTY_DRAFT
+            )
         return draft
 
     if isinstance(parsed, str):
         # A bare JSON string is still an answer.
         draft = parsed.strip()
         if not draft:
-            raise DraftExtractionError(f"{subject} returned empty content")
+            raise DraftExtractionError(
+                f"{subject} returned empty content", AIProviderFailureCode.EMPTY_DRAFT
+            )
         return draft
 
     raise DraftExtractionError(f"{subject} returned content that is not a JSON object")

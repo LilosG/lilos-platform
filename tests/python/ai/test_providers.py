@@ -7,7 +7,11 @@ from typing import Any
 
 import pytest
 
-from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+from apps.api.app.ai.errors import (
+    AIProviderConfigurationError,
+    AIProviderError,
+    AIProviderFailureCode,
+)
 from apps.api.app.ai.providers import OpenRouterProvider
 
 
@@ -193,6 +197,7 @@ async def test_openrouter_provider_malformed_response(
             task_key="content.draft_revision", input_document={}, maximum_tokens=100
         )
     assert exc.value.category == "provider"
+    assert exc.value.code == AIProviderFailureCode.NO_CHOICES
 
 
 @pytest.mark.anyio
@@ -241,7 +246,8 @@ async def test_openrouter_provider_truncated_json_still_fails_closed(
         await _provider().generate(
             task_key="content.draft_revision", input_document={}, maximum_tokens=100
         )
-    assert exc.value.category == "provider"
+    assert exc.value.category == "permanent"
+    assert exc.value.code == AIProviderFailureCode.MALFORMED_OUTPUT
 
 
 @pytest.mark.anyio
@@ -262,7 +268,8 @@ async def test_openrouter_provider_empty_draft(
         await _provider().generate(
             task_key="content.draft_revision", input_document={}, maximum_tokens=100
         )
-    assert exc.value.category == "provider"
+    assert exc.value.category == "permanent"
+    assert exc.value.code == AIProviderFailureCode.EMPTY_DRAFT
 
 
 @pytest.mark.anyio
@@ -280,6 +287,7 @@ async def test_openrouter_provider_timeout_is_provider_error(
             task_key="content.draft_revision", input_document={}, maximum_tokens=100
         )
     assert exc.value.category == "provider"
+    assert exc.value.code == AIProviderFailureCode.TIMEOUT
 
 
 @pytest.mark.anyio
@@ -297,6 +305,7 @@ async def test_openrouter_provider_connect_error_is_provider_error(
             task_key="content.draft_revision", input_document={}, maximum_tokens=100
         )
     assert exc.value.category == "provider"
+    assert exc.value.code == AIProviderFailureCode.CONNECTION
 
 
 @pytest.mark.anyio
@@ -430,3 +439,73 @@ async def test_openrouter_provider_ceiling_is_configurable(
 ) -> None:
     provider = _provider(timeout_seconds=60.0, max_timeout_seconds=90.0)
     assert await _captured_timeout(monkeypatch, provider, 120_000) == 90.0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "code", "retryable"),
+    [
+        (429, AIProviderFailureCode.HTTP_RATE_LIMITED, True),
+        (502, AIProviderFailureCode.HTTP_SERVER, True),
+        (503, AIProviderFailureCode.HTTP_SERVER, True),
+        (500, AIProviderFailureCode.HTTP_SERVER, True),
+        (400, AIProviderFailureCode.HTTP_OTHER, False),
+        (401, AIProviderFailureCode.HTTP_OTHER, False),
+    ],
+)
+async def test_http_statuses_map_to_typed_codes_with_the_status_recorded(
+    monkeypatch: pytest.MonkeyPatch, status: int, code: AIProviderFailureCode, retryable: bool
+) -> None:
+    _fake_http(monkeypatch, FakeResponse(status, {}))
+    with pytest.raises(AIProviderError) as exc:
+        await _provider().generate(
+            task_key="content.draft_revision", input_document={}, maximum_tokens=100
+        )
+    assert exc.value.code == code
+    assert exc.value.http_status == status
+    assert exc.value.elapsed_ms is not None
+    assert exc.value.retryable is retryable
+
+
+@pytest.mark.anyio
+async def test_an_unparseable_body_has_its_own_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_http(monkeypatch, FakeResponse(200, None, text="<html>"))
+    with pytest.raises(AIProviderError) as exc:
+        await _provider().generate(
+            task_key="content.draft_revision", input_document={}, maximum_tokens=100
+        )
+    assert exc.value.code == AIProviderFailureCode.UNPARSEABLE_RESPONSE
+    assert exc.value.retryable is False
+
+
+@pytest.mark.anyio
+async def test_finish_reason_length_is_truncation_even_when_the_json_happens_to_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = {
+        "choices": [{"finish_reason": "length", "message": {"content": '{"draft": "Short."}'}}],
+        "usage": {"completion_tokens": 16_000},
+    }
+    _fake_http(monkeypatch, FakeResponse(200, body))
+    with pytest.raises(AIProviderError) as exc:
+        await _provider().generate(
+            task_key="content.draft_revision", input_document={}, maximum_tokens=100
+        )
+    assert exc.value.code == AIProviderFailureCode.OUTPUT_TRUNCATED
+    assert exc.value.finish_reason == "length"
+    assert exc.value.output_tokens == 16_000
+    assert exc.value.retryable is False
+
+
+@pytest.mark.anyio
+async def test_a_null_completion_is_an_empty_draft_not_the_text_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reasoning model that never answered returns content null; str(None) was a "draft"."""
+    body = {"choices": [{"finish_reason": "stop", "message": {"content": None}}], "usage": {}}
+    _fake_http(monkeypatch, FakeResponse(200, body))
+    with pytest.raises(AIProviderError) as exc:
+        await _provider().generate(
+            task_key="reviews.response_draft", input_document={}, maximum_tokens=100
+        )
+    assert exc.value.code == AIProviderFailureCode.EMPTY_DRAFT

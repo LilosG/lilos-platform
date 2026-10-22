@@ -16,7 +16,11 @@ from apps.api.app.ai.completion_text import (
     extract_draft,
     strip_code_fence,
 )
-from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+from apps.api.app.ai.errors import (
+    AIProviderConfigurationError,
+    AIProviderError,
+    AIProviderFailureCode,
+)
 from apps.api.app.ai.report_prompt import (
     build_report_narrative_prompt,
     build_report_topics_prompt,
@@ -113,15 +117,52 @@ _TOPIC_STOPWORDS = frozenset(
 )
 
 
-def _classify_http_error(status_code: int) -> tuple[str, str]:
-    """Return (category, safe_message) for an HTTP status code."""
+def _classify_http_error(status_code: int) -> tuple[str, str, AIProviderFailureCode]:
+    """Return (category, safe_message, failure code) for an HTTP status code."""
     if status_code in _HTTP_ERROR_CATEGORIES:
-        return _HTTP_ERROR_CATEGORIES[status_code]
+        category, message = _HTTP_ERROR_CATEGORIES[status_code]
+        if status_code == 429:
+            return category, message, AIProviderFailureCode.HTTP_RATE_LIMITED
+        if status_code in (401, 403):
+            return category, message, AIProviderFailureCode.HTTP_OTHER
+        return category, message, AIProviderFailureCode.HTTP_SERVER
     if 400 <= status_code < 500:
-        return ("permanent", f"AI provider rejected the request (HTTP {status_code})")
+        return (
+            "permanent",
+            f"AI provider rejected the request (HTTP {status_code})",
+            AIProviderFailureCode.HTTP_OTHER,
+        )
     if 500 <= status_code < 600:
-        return ("provider", f"AI provider encountered an error (HTTP {status_code})")
-    return ("provider", f"AI provider returned unexpected status {status_code}")
+        return (
+            "provider",
+            f"AI provider encountered an error (HTTP {status_code})",
+            AIProviderFailureCode.HTTP_SERVER,
+        )
+    return (
+        "provider",
+        f"AI provider returned unexpected status {status_code}",
+        AIProviderFailureCode.HTTP_OTHER,
+    )
+
+
+def http_failure(status_code: int, *, elapsed_ms: int) -> AIProviderError:
+    """The typed error for a non-200 provider response."""
+    category, message, code = _classify_http_error(status_code)
+    return AIProviderError(
+        category, message, code=code, http_status=status_code, elapsed_ms=elapsed_ms
+    )
+
+
+def completion_finish_reason(choice: object) -> str | None:
+    """The provider's stated reason the completion stopped, if it gave one."""
+    reason = choice.get("finish_reason") if isinstance(choice, dict) else None
+    return reason if isinstance(reason, str) and reason else None
+
+
+def completion_content(message: object) -> str:
+    """The completion text. A null content (a reasoning model that never answered) is empty."""
+    content = message.get("content") if isinstance(message, dict) else None
+    return content if isinstance(content, str) else ""
 
 
 def _is_article_content_type(content_type: object) -> bool:
@@ -229,7 +270,9 @@ def _extract_content_payload(content_text: str) -> dict[str, Any]:
     """Parse the full structured Content response instead of discarding SEO fields."""
     text = strip_code_fence(content_text)
     if not text:
-        raise DraftExtractionError("AI provider returned empty content")
+        raise DraftExtractionError(
+            "AI provider returned empty content", AIProviderFailureCode.EMPTY_DRAFT
+        )
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -240,7 +283,9 @@ def _extract_content_payload(content_text: str) -> dict[str, Any]:
         raise DraftExtractionError("AI provider returned Content output that is not a JSON object")
     draft = str(parsed.get("draft") or "").strip()
     if not draft:
-        raise DraftExtractionError("AI provider returned no draft field")
+        raise DraftExtractionError(
+            "AI provider returned no draft field", AIProviderFailureCode.EMPTY_DRAFT
+        )
     parsed["draft"] = draft
     return parsed
 
@@ -338,7 +383,9 @@ def article_quality_summary(
 def _extract_json_object(content_text: str) -> dict[str, Any]:
     text = strip_code_fence(content_text)
     if not text:
-        raise DraftExtractionError("AI provider returned empty content")
+        raise DraftExtractionError(
+            "AI provider returned empty content", AIProviderFailureCode.EMPTY_DRAFT
+        )
     try:
         parsed = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -525,44 +572,70 @@ class OpenRouterProvider:
                 )
         except httpx.TimeoutException:
             raise AIProviderError(
-                "provider", "AI provider request timed out — the service may be overloaded"
+                "provider",
+                "AI provider request timed out — the service may be overloaded",
+                code=AIProviderFailureCode.TIMEOUT,
+                elapsed_ms=int((monotonic() - started) * 1000),
             ) from None
         except httpx.ConnectError:
             raise AIProviderError(
-                "provider", "Could not connect to the AI provider — check network configuration"
+                "provider",
+                "Could not connect to the AI provider — check network configuration",
+                code=AIProviderFailureCode.CONNECTION,
+                elapsed_ms=int((monotonic() - started) * 1000),
             ) from None
         except httpx.RequestError as exc:
             raise AIProviderError(
-                "provider", "AI provider request failed — the service may be unavailable"
+                "provider",
+                "AI provider request failed — the service may be unavailable",
+                code=AIProviderFailureCode.CONNECTION,
+                elapsed_ms=int((monotonic() - started) * 1000),
             ) from exc
 
         latency_ms = int((monotonic() - started) * 1000)
 
         if response.status_code != 200:
-            category, safe_message = _classify_http_error(response.status_code)
-            logger.warning(
-                "AI provider returned non-200",
-                extra={
-                    "event_name": "ai.provider.http_error",
-                    "provider": "openrouter",
-                    "status_code": response.status_code,
-                    "task_key": task_key,
-                },
-            )
-            raise AIProviderError(category, safe_message)
+            raise http_failure(response.status_code, elapsed_ms=latency_ms)
 
         try:
             body = response.json()
         except (json.JSONDecodeError, ValueError):
             raise AIProviderError(
-                "provider", "AI provider returned an unparseable response"
+                "provider",
+                "AI provider returned an unparseable response",
+                code=AIProviderFailureCode.UNPARSEABLE_RESPONSE,
+                http_status=response.status_code,
+                elapsed_ms=latency_ms,
             ) from None
 
-        choices = body.get("choices", [])
-        if not choices:
-            raise AIProviderError("provider", "AI provider returned no completion choices")
-        message = choices[0].get("message", {})
-        content_text = str(message.get("content", ""))
+        choices = body.get("choices", []) if isinstance(body, dict) else []
+        if not choices or not isinstance(choices[0], dict):
+            raise AIProviderError(
+                "provider",
+                "AI provider returned no completion choices",
+                code=AIProviderFailureCode.NO_CHOICES,
+                http_status=response.status_code,
+                elapsed_ms=latency_ms,
+            )
+        finish_reason = completion_finish_reason(choices[0])
+        completion_usage = body.get("usage") or {}
+        reported_tokens = completion_usage.get("completion_tokens")
+        measured: dict[str, Any] = {
+            "http_status": response.status_code,
+            "elapsed_ms": latency_ms,
+            "finish_reason": finish_reason,
+            "output_tokens": reported_tokens if isinstance(reported_tokens, int) else None,
+        }
+        if finish_reason == "length":
+            # The model hit max_tokens (reasoning counts toward it), so the JSON is cut
+            # off. Repeating the identical request would be cut off at the same place.
+            raise AIProviderError(
+                "permanent",
+                "AI provider stopped before finishing the draft (output token limit reached)",
+                code=AIProviderFailureCode.OUTPUT_TRUNCATED,
+                **measured,
+            )
+        content_text = completion_content(choices[0].get("message"))
 
         content_fields: dict[str, Any] = {}
         try:
@@ -575,6 +648,8 @@ class OpenRouterProvider:
                         "permanent",
                         "AI provider returned Content output below the publishing quality floor: "
                         + ", ".join(quality_errors),
+                        code=AIProviderFailureCode.MALFORMED_OUTPUT,
+                        **measured,
                     )
                 for key in (
                     "meta_description",
@@ -603,13 +678,16 @@ class OpenRouterProvider:
             else:
                 draft = extract_draft(content_text, subject="AI provider")
         except DraftExtractionError as error:
-            raise AIProviderError("provider", error.reason) from None
+            raise AIProviderError("permanent", error.reason, code=error.code, **measured) from None
 
         if task_key == "gbp.generate_post" and _looks_like_review_response(draft):
             fallback = " ".join(str(input_document.get("manual_fallback") or "").split())
             if not fallback:
                 raise AIProviderError(
-                    "provider", "AI provider returned review-response copy for a GBP Local Post"
+                    "permanent",
+                    "AI provider returned review-response copy for a GBP Local Post",
+                    code=AIProviderFailureCode.MALFORMED_OUTPUT,
+                    **measured,
                 )
             logger.warning(
                 "Rejected review-response voice from GBP Local Post generation",

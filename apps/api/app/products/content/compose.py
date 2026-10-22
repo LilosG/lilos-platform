@@ -25,6 +25,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
+from apps.api.app.ai.errors import AIProviderError
+from apps.api.app.ai.failed_execution import record_failed_execution
 from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest
 from apps.api.app.ai.models import AITaskDefinition
 from apps.api.app.execution.models import WorkflowRun
@@ -374,6 +376,7 @@ class ContentComposeService:
                 idempotency_key=idempotency_key,
                 user_id=user_id,
                 correlation_id=correlation_id,
+                workflow_run_id=workflow_run_id,
             )
         # Drafting: the one shared pipeline. A repeat of this run replays the stored execution.
         revision, _execution = await self.content.execute_ai_draft_workflow(
@@ -400,6 +403,7 @@ class ContentComposeService:
         idempotency_key: str,
         user_id: UUID | None,
         correlation_id: str,
+        workflow_run_id: UUID | None = None,
     ) -> ContentBrief:
         link_context = await self.content.website_link_context(
             session, organization_id, website, topic=prompt, exclude_item_id=item.id
@@ -478,7 +482,21 @@ class ContentComposeService:
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=PLAN_AI_LATENCY_MS,
         )
-        output = await self.gateway.execute(request)
+        try:
+            output = await self.gateway.execute(request)
+        except AIProviderError as error:
+            await record_failed_execution(
+                session,
+                error=error,
+                organization_id=organization_id,
+                location_id=item.location_id,
+                task_definition_id=task.id,
+                workflow_run_id=workflow_run_id,
+                idempotency_key=f"compose-plan-{idempotency_key}",
+                input_references=request.input_references,
+                approved_fact_revision_ids=request.approved_fact_revision_ids,
+            )
+            raise
         plan = build_plan(
             output.get("plan"),
             forced_type=forced_type,

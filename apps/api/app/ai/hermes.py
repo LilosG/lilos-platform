@@ -19,9 +19,19 @@ from uuid import UUID
 import httpx
 
 from apps.api.app.ai.completion_text import DraftExtractionError, extract_draft
-from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+from apps.api.app.ai.errors import (
+    AIProviderConfigurationError,
+    AIProviderError,
+    AIProviderFailureCode,
+)
 from apps.api.app.ai.hermes_endpoint import normalize_hermes_base_url
-from apps.api.app.ai.providers import _SYSTEM_PROMPT, _build_prompt, _classify_http_error
+from apps.api.app.ai.providers import (
+    _SYSTEM_PROMPT,
+    _build_prompt,
+    completion_content,
+    completion_finish_reason,
+    http_failure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,51 +109,91 @@ class HermesAgentProvider:
                     },
                 )
         except httpx.TimeoutException:
-            raise AIProviderError("provider", "Hermes agent request timed out") from None
+            raise AIProviderError(
+                "provider",
+                "Hermes agent request timed out",
+                code=AIProviderFailureCode.TIMEOUT,
+                elapsed_ms=int((monotonic() - started) * 1000),
+            ) from None
         except httpx.ConnectError:
             raise AIProviderError(
-                "provider", "Could not connect to the Hermes agent runtime"
+                "provider",
+                "Could not connect to the Hermes agent runtime",
+                code=AIProviderFailureCode.CONNECTION,
+                elapsed_ms=int((monotonic() - started) * 1000),
             ) from None
         except httpx.RequestError as exc:
-            raise AIProviderError("provider", "Hermes agent request failed") from exc
+            raise AIProviderError(
+                "provider",
+                "Hermes agent request failed",
+                code=AIProviderFailureCode.CONNECTION,
+                elapsed_ms=int((monotonic() - started) * 1000),
+            ) from exc
 
         latency_ms = int((monotonic() - started) * 1000)
         if response.status_code != 200:
-            category, safe_message = _classify_http_error(response.status_code)
-            logger.warning(
-                "Hermes agent returned non-200",
-                extra={
-                    "event_name": "ai.hermes.http_error",
-                    "status_code": response.status_code,
-                    "task_key": task_key,
-                },
+            raise http_failure(response.status_code, elapsed_ms=latency_ms)
+
+        def failure(message: str, code: AIProviderFailureCode, **measured: Any) -> AIProviderError:
+            return AIProviderError(
+                "provider",
+                message,
+                code=code,
+                http_status=response.status_code,
+                elapsed_ms=latency_ms,
+                **measured,
             )
-            raise AIProviderError(category, safe_message)
 
         try:
             body = response.json()
         except (json.JSONDecodeError, ValueError):
-            raise AIProviderError(
-                "provider", "Hermes agent returned an unparseable response"
+            raise failure(
+                "Hermes agent returned an unparseable response",
+                AIProviderFailureCode.UNPARSEABLE_RESPONSE,
             ) from None
         if not isinstance(body, dict):
-            raise AIProviderError("provider", "Hermes agent returned an invalid response object")
+            raise failure(
+                "Hermes agent returned an invalid response object",
+                AIProviderFailureCode.UNPARSEABLE_RESPONSE,
+            )
         if self._api_key in json.dumps(body, sort_keys=True):
-            raise AIProviderError("provider", "Hermes agent returned unsafe output")
+            raise failure(
+                "Hermes agent returned unsafe output", AIProviderFailureCode.MALFORMED_OUTPUT
+            )
 
         choices = body.get("choices", [])
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-            raise AIProviderError("provider", "Hermes agent returned no completion choices")
+            raise failure(
+                "Hermes agent returned no completion choices", AIProviderFailureCode.NO_CHOICES
+            )
         message = choices[0].get("message")
         if not isinstance(message, dict):
-            raise AIProviderError("provider", "Hermes agent returned an invalid completion")
-        content_text = str(message.get("content", ""))
+            raise failure(
+                "Hermes agent returned an invalid completion", AIProviderFailureCode.NO_CHOICES
+            )
+        finish_reason = completion_finish_reason(choices[0])
+        reported = (
+            (body.get("usage") or {}).get("completion_tokens")
+            if isinstance(body.get("usage") or {}, dict)
+            else None
+        )
+        measured: dict[str, Any] = {
+            "finish_reason": finish_reason,
+            "output_tokens": reported if isinstance(reported, int) else None,
+        }
+        if finish_reason == "length":
+            raise failure(
+                "Hermes agent stopped before finishing (output token limit reached)",
+                AIProviderFailureCode.OUTPUT_TRUNCATED,
+                **measured,
+            )
+        content_text = completion_content(message)
         # The agent runtime cannot be sent response_format, so it answers in
         # prose as often as in JSON. Both are accepted; see completion_text.
         try:
             draft = extract_draft(content_text, subject="Hermes agent")
         except DraftExtractionError as error:
-            raise AIProviderError("provider", error.reason) from None
+            raise failure(error.reason, error.code, **measured) from None
 
         usage = body.get("usage", {}) or {}
         if not isinstance(usage, dict):
